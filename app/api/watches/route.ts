@@ -1,15 +1,15 @@
 import { and, asc, eq } from "drizzle-orm";
-import { currentUserId, authRequired } from "@/lib/auth";
+import { currentUser, authRequired } from "@/lib/auth";
 import { getDb } from "@/db";
 import { watches } from "@/db/schema";
 import { DEFAULT_TERM, getCourse, parseCount, sectionId } from "@/lib/umd";
 
 export async function GET(request: Request) {
-  const userId = currentUserId(request);
-  if (!userId) return authRequired();
+  const user = await currentUser(request);
+  if (!user) return authRequired();
   try {
-    const rows = await getDb().select().from(watches).where(eq(watches.userId, userId)).orderBy(asc(watches.courseId), asc(watches.sectionId));
-    return Response.json({ watches: rows.map((row) => ({ ...row, meetings: JSON.parse(row.meetings), instructors: JSON.parse(row.instructors) })) });
+    const rows = await getDb().select().from(watches).where(eq(watches.userId, user.id)).orderBy(asc(watches.courseId), asc(watches.sectionId));
+    return Response.json({ authProvider: user.provider, watches: rows.map((row) => ({ ...row, meetings: JSON.parse(row.meetings), instructors: JSON.parse(row.instructors) })) });
   } catch (error) {
     console.error("Failed to load seat watches", error);
     return Response.json({ error: "Seat watches are temporarily unavailable." }, { status: 503 });
@@ -17,8 +17,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const userId = currentUserId(request);
-  if (!userId) return authRequired();
+  const user = await currentUser(request);
+  if (!user) return authRequired();
   let payload: { courseId?: string; term?: string; sectionId?: string };
   try {
     payload = await request.json();
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     if (!detail || !section) return Response.json({ error: "That section is no longer listed for this term." }, { status: 404 });
     const db = getDb();
     const [saved] = await db.insert(watches).values({
-      userId,
+      userId: user.id,
       courseId,
       courseTitle: String(detail.course.name ?? courseId),
       term,
@@ -71,14 +71,14 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const userId = currentUserId(request);
-  if (!userId) return authRequired();
+  const user = await currentUser(request);
+  if (!user) return authRequired();
   const url = new URL(request.url);
   const term = url.searchParams.get("term") ?? "";
   const section = url.searchParams.get("section") ?? "";
   if (!/^\d{6}$/.test(term) || !section) return Response.json({ error: "Choose a watch to remove." }, { status: 400 });
   try {
-    await getDb().delete(watches).where(and(eq(watches.userId, userId), eq(watches.term, term), eq(watches.sectionId, section)));
+    await getDb().delete(watches).where(and(eq(watches.userId, user.id), eq(watches.term, term), eq(watches.sectionId, section)));
     return Response.json({ ok: true });
   } catch (error) {
     console.error("Failed to remove seat watch", error);

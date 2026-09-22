@@ -8,6 +8,13 @@
       "when": 1790105911922,
       "tag": "0000_confused_black_crow",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1790107704697,
+      "tag": "0001_superb_stryfe",
+      "breakpoints": true
     }
   ]
 }

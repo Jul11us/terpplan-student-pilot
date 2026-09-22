@@ -22,3 +22,17 @@ export const watches = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.userId, table.term, table.sectionId] })],
 );
+
+export const emailLoginCodes = sqliteTable("email_login_codes", {
+  emailHash: text("email_hash").primaryKey(),
+  codeHash: text("code_hash").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  sentAt: integer("sent_at").notNull(),
+});
+
+export const emailLoginRateLimits = sqliteTable("email_login_rate_limits", {
+  rateKey: text("rate_key").primaryKey(),
+  windowStartedAt: integer("window_started_at").notNull(),
+  requestCount: integer("request_count").notNull().default(0),
+});

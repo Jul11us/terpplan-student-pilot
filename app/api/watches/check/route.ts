@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { currentUserId, authRequired } from "@/lib/auth";
+import { currentUser, authRequired } from "@/lib/auth";
 import { getDb } from "@/db";
 import { watches } from "@/db/schema";
 import { DEFAULT_TERM, parseCount, sectionId, umdJson, type UmdSection } from "@/lib/umd";
@@ -7,11 +7,11 @@ import { DEFAULT_TERM, parseCount, sectionId, umdJson, type UmdSection } from "@
 const MIN_INTERVAL_MS = 60_000;
 
 export async function POST(request: Request) {
-  const userId = currentUserId(request);
-  if (!userId) return authRequired();
+  const user = await currentUser(request);
+  if (!user) return authRequired();
   const db = getDb();
   try {
-    const rows = await db.select().from(watches).where(eq(watches.userId, userId));
+    const rows = await db.select().from(watches).where(eq(watches.userId, user.id));
     const groups = new Map<string, typeof rows>();
     for (const row of rows) {
       const key = `${row.courseId}|${row.term}`;
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
           const seats = parseCount(found?.seats);
           const waitlist = parseCount(found?.waitlist);
           if (!found || openSeats === null) {
-            await db.update(watches).set({ status: found ? "unknown" : "failed", lastCheckedAt: checkedAt }).where(and(eq(watches.userId, userId), eq(watches.term, row.term), eq(watches.sectionId, row.sectionId)));
+            await db.update(watches).set({ status: found ? "unknown" : "failed", lastCheckedAt: checkedAt }).where(and(eq(watches.userId, user.id), eq(watches.term, row.term), eq(watches.sectionId, row.sectionId)));
             continue;
           }
           const newOpening = openSeats > 0 && (row.lastSuccessAt === null || (row.openSeats ?? 0) < openSeats) && row.lastNotifiedOpen !== openSeats;
@@ -46,18 +46,18 @@ export async function POST(request: Request) {
             lastCheckedAt: checkedAt,
             lastSuccessAt: checkedAt,
             lastNotifiedOpen: openSeats > 0 ? (newOpening ? openSeats : row.lastNotifiedOpen) : null,
-          }).where(and(eq(watches.userId, userId), eq(watches.term, row.term), eq(watches.sectionId, row.sectionId)));
+          }).where(and(eq(watches.userId, user.id), eq(watches.term, row.term), eq(watches.sectionId, row.sectionId)));
         }
       } catch (error) {
         console.error("Seat check failed", sample.courseId, error);
         const checkedAt = new Date().toISOString();
         for (const row of group) {
-          await db.update(watches).set({ status: row.lastSuccessAt ? "stale" : "failed", lastCheckedAt: checkedAt }).where(and(eq(watches.userId, userId), eq(watches.term, row.term), eq(watches.sectionId, row.sectionId)));
+          await db.update(watches).set({ status: row.lastSuccessAt ? "stale" : "failed", lastCheckedAt: checkedAt }).where(and(eq(watches.userId, user.id), eq(watches.term, row.term), eq(watches.sectionId, row.sectionId)));
         }
       }
     }
-    const updated = await db.select().from(watches).where(eq(watches.userId, userId));
-    return Response.json({ watches: updated.map((row) => ({ ...row, meetings: JSON.parse(row.meetings), instructors: JSON.parse(row.instructors) })), alerts, checkedAt: new Date().toISOString(), minIntervalSeconds: 60 });
+    const updated = await db.select().from(watches).where(eq(watches.userId, user.id));
+    return Response.json({ authProvider: user.provider, watches: updated.map((row) => ({ ...row, meetings: JSON.parse(row.meetings), instructors: JSON.parse(row.instructors) })), alerts, checkedAt: new Date().toISOString(), minIntervalSeconds: 60 });
   } catch (error) {
     console.error("Seat monitoring failed", error);
     return Response.json({ error: "Seat monitoring is temporarily unavailable." }, { status: 503 });
