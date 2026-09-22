@@ -18,14 +18,18 @@ export async function POST(request: Request) {
   }
   try {
     const emailHash = await hashEmail(email);
-    const record = await env.DB.prepare("SELECT code_hash, expires_at, attempt_count FROM email_login_codes WHERE email_hash = ?").bind(emailHash).first<{
+    const now = Math.floor(Date.now() / 1000);
+    const record = await env.DB.prepare(`
+      UPDATE email_login_codes
+      SET attempt_count = attempt_count + 1
+      WHERE email_hash = ? AND expires_at > ? AND attempt_count < 5
+      RETURNING code_hash, attempt_count
+    `).bind(emailHash, now).first<{
       code_hash: string;
-      expires_at: number;
       attempt_count: number;
     }>();
-    const now = Math.floor(Date.now() / 1000);
-    if (!record || record.expires_at <= now || record.attempt_count >= 5) {
-      await env.DB.prepare("DELETE FROM email_login_codes WHERE email_hash = ?").bind(emailHash).run();
+    if (!record) {
+      await env.DB.prepare("DELETE FROM email_login_codes WHERE email_hash = ? AND (expires_at <= ? OR attempt_count >= 5)").bind(emailHash, now).run();
       return Response.json({ error: "That code expired or is incorrect. Request a new code." }, { status: 401 });
     }
 
@@ -35,13 +39,14 @@ export async function POST(request: Request) {
       difference |= record.code_hash.charCodeAt(index) ^ (suppliedHash.charCodeAt(index) ?? 0);
     }
     if (difference !== 0) {
-      const attempts = record.attempt_count + 1;
-      if (attempts >= 5) await env.DB.prepare("DELETE FROM email_login_codes WHERE email_hash = ?").bind(emailHash).run();
-      else await env.DB.prepare("UPDATE email_login_codes SET attempt_count = ? WHERE email_hash = ?").bind(attempts, emailHash).run();
-      return Response.json({ error: attempts >= 5 ? "Too many attempts. Request a new code." : "That code is incorrect." }, { status: 401 });
+      if (record.attempt_count >= 5) {
+        await env.DB.prepare("DELETE FROM email_login_codes WHERE email_hash = ? AND code_hash = ? AND attempt_count >= 5").bind(emailHash, record.code_hash).run();
+      }
+      return Response.json({ error: record.attempt_count >= 5 ? "Too many attempts. Request a new code." : "That code is incorrect." }, { status: 401 });
     }
 
-    await env.DB.prepare("DELETE FROM email_login_codes WHERE email_hash = ?").bind(emailHash).run();
+    const consumed = await env.DB.prepare("DELETE FROM email_login_codes WHERE email_hash = ? AND code_hash = ? RETURNING email_hash").bind(emailHash, record.code_hash).first<{ email_hash: string }>();
+    if (!consumed) return Response.json({ error: "That code expired or is incorrect. Request a new code." }, { status: 401 });
     const token = await createEmailSession(emailHash);
     return Response.json({ ok: true, authProvider: "email" }, { headers: { "Set-Cookie": emailSessionCookie(token) } });
   } catch (error) {

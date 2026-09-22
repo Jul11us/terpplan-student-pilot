@@ -6,10 +6,11 @@ import { DEFAULT_TERM, getCourse, parseCount, sectionId } from "@/lib/umd";
 
 export async function GET(request: Request) {
   const user = await currentUser(request);
-  if (!user) return authRequired();
+  // Signed-out visitors are the normal first-load case, so answer with an empty list rather than a 401.
+  if (!user) return Response.json({ authenticated: false, watches: [] });
   try {
     const rows = await getDb().select().from(watches).where(eq(watches.userId, user.id)).orderBy(asc(watches.courseId), asc(watches.sectionId));
-    return Response.json({ authProvider: user.provider, watches: rows.map((row) => ({ ...row, meetings: JSON.parse(row.meetings), instructors: JSON.parse(row.instructors) })) });
+    return Response.json({ authenticated: true, authProvider: user.provider, watches: rows.map((row) => ({ ...row, meetings: JSON.parse(row.meetings), instructors: JSON.parse(row.instructors) })) });
   } catch (error) {
     console.error("Failed to load seat watches", error);
     return Response.json({ error: "Seat watches are temporarily unavailable." }, { status: 503 });

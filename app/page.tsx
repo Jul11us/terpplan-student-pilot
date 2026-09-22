@@ -36,13 +36,13 @@ const copy = {
     eyebrow: "UNIVERSITY OF MARYLAND · STUDENT PILOT", title: "Plan your next semester.",
     subtitle: "Find a course, build a schedule, and keep an eye on open seats.", find: "Find a course",
     schedule: "Build a schedule", watch: "Watch seats", search: "Search course code or title",
-    searchHint: "Try CMSC or Introduction to", term: "Term", results: "Course matches", select: "View sections",
+    searchHint: "e.g. CMSC131 or Calculus", term: "Term", results: "Course matches", select: "View sections",
     noResults: "No matches yet. Search by a course code or title.", sections: "Sections", addSchedule: "Add this course to plan", courseInPlan: "Course in plan",
     addWatch: "Watch this section", scheduleTitle: "Your schedule", emptySchedule: "Add courses from search to generate schedule options.",
     watchesTitle: "Seat watches", emptyWatches: "Watch a section to see it here.", refresh: "Check now", remove: "Remove",
     added: "Course added to plan", watched: "Seat watch saved", conflict: "Time conflict", noConflict: "No time conflicts found", planLimit: "A plan can include up to 10 courses.",
     signIn: "Sign in to save and sync your seat watches.", email: "Email address", emailCode: "Six-digit code", sendCode: "Email me a code", verifyCode: "Verify and sign in", codeSent: "Code sent. Check your inbox.",
-    emailPrivacy: "Your address is used to sign you in. Codes expire after 10 minutes.", chatgptSignIn: "Continue with ChatGPT", wrongCode: "That code could not be verified.", emailSignedIn: "Signed in with email", signOut: "Sign out",
+    emailPrivacy: "Your address is used to sign you in. Codes expire after 10 minutes.", wrongCode: "That code could not be verified.", emailSignedIn: "Signed in with email", signOut: "Sign out",
     loading: "Loading…", error: "Something went wrong. Please try again.",
     seats: "seats open", waitlist: "waitlist", checked: "Last checked", status: "Status", freshness: "Seat counts come from umd.io and may lag the official Schedule of Classes. Monitoring checks while this page is open, at most once a minute.",
     open: "Seats available", full: "Full", unknown: "Unknown", stale: "Last check failed · showing saved count", checking: "Checking…",
@@ -51,13 +51,13 @@ const copy = {
   },
   zh: {
     eyebrow: "马里兰大学 · 学生试用", title: "规划下一学期。", subtitle: "找课程、排进课表，并关注空余名额。",
-    find: "找课程", schedule: "排课", watch: "关注余位", search: "搜索课程编号或名称", searchHint: "试试 CMSC 或 Introduction to",
+    find: "找课程", schedule: "排课", watch: "关注余位", search: "搜索课程编号或名称", searchHint: "例如 CMSC131 或 Calculus",
     term: "学期", results: "匹配课程", select: "查看班次", noResults: "暂无匹配结果。请按课程编号或名称搜索。",
     sections: "可选班次", addSchedule: "将整门课程加入排课", courseInPlan: "课程已加入", addWatch: "关注这个班次", scheduleTitle: "我的课表",
     emptySchedule: "请从找课中添加课程，再生成排课方案。", watchesTitle: "余位关注", emptyWatches: "关注一个班次后会显示在这里。",
     refresh: "立即检查", remove: "移除", added: "已将课程加入排课", watched: "已保存余位关注", conflict: "时间冲突",
     noConflict: "没有发现时间冲突", planLimit: "每个排课方案最多添加 10 门课程。", signIn: "登录后即可保存并同步余位关注。", email: "邮箱地址", emailCode: "六位验证码", sendCode: "发送验证码", verifyCode: "验证并登录", codeSent: "验证码已发送，请查收邮箱。",
-    emailPrivacy: "邮箱仅用于登录。验证码将在 10 分钟后失效。", chatgptSignIn: "使用 ChatGPT 登录", wrongCode: "验证码无法验证。", emailSignedIn: "已通过邮箱登录", signOut: "退出登录",
+    emailPrivacy: "邮箱仅用于登录。验证码将在 10 分钟后失效。", wrongCode: "验证码无法验证。", emailSignedIn: "已通过邮箱登录", signOut: "退出登录",
     loading: "加载中…",
     error: "发生错误，请重试。", seats: "个空位", waitlist: "候补人数", checked: "上次检查", status: "状态",
     freshness: "余位数据来自 umd.io，可能晚于学校官方课表。打开本页时会检查余位，最多每分钟一次。",
@@ -68,6 +68,18 @@ const copy = {
 
 function sectionId(section: Section, courseId: string) {
   return String(section.section_id || (section.number ? `${courseId}-${section.number}` : "")).toUpperCase();
+}
+
+const termSeasons: Record<string, { en: string; zh: string }> = {
+  "01": { en: "Spring", zh: "春季" }, "05": { en: "Summer", zh: "夏季" },
+  "08": { en: "Fall", zh: "秋季" }, "12": { en: "Winter", zh: "冬季" },
+};
+
+function termLabel(term: string, language: "en" | "zh") {
+  const season = termSeasons[term.slice(4)];
+  if (!/^\d{6}$/.test(term) || !season) return term;
+  const year = term.slice(0, 4);
+  return language === "en" ? `${season.en} ${year}` : `${year} ${season.zh}`;
 }
 
 function dayNames(raw: string | null | undefined) {
@@ -131,7 +143,7 @@ export default function Home() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
-  const [authProvider, setAuthProvider] = useState<"email" | "chatgpt" | null>(null);
+  const [authProvider, setAuthProvider] = useState<"email" | null>(null);
   const [email, setEmail] = useState("");
   const [emailCode, setEmailCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
@@ -144,8 +156,9 @@ export default function Home() {
     if (response.status === 401) { setAuthenticated(false); setAuthProvider(null); return; }
     if (!response.ok) throw new Error(t.error);
     const payload = await response.json();
+    if (payload.authenticated === false) { setAuthenticated(false); setAuthProvider(null); setWatches([]); return; }
     setAuthenticated(true);
-    setAuthProvider(payload.authProvider === "email" ? "email" : "chatgpt");
+    setAuthProvider("email");
     setWatches(payload.watches ?? []);
   }, [t.error]);
 
@@ -312,13 +325,13 @@ export default function Home() {
         {error && <p role="alert" className="mb-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]">{error}</p>}
 
         {step === "find" && <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(330px,.85fr)]">
-          <div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-7"><div className="mb-5 flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">01 · {t.find}</p><h2 className="mt-2 font-serif text-2xl">{t.results}</h2></div><label className="grid gap-1 text-xs text-[#737b77]">{t.term}<select value={term} onChange={(event) => { activeCourseRef.current = ""; setTerm(event.target.value); setSelected(null); setSections([]); setProfessorRatings({}); setRatingsLoading(false); setPlanCourses([]); }} className="min-w-36 rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]">{(terms.length ? terms : [term]).map((item) => <option key={item} value={item}>{item}</option>)}</select></label></div>
+          <div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-7"><div className="mb-5 flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">01 · {t.find}</p><h2 className="mt-2 font-serif text-2xl">{t.results}</h2></div><label className="grid gap-1 text-xs text-[#737b77]">{t.term}<select value={term} onChange={(event) => { activeCourseRef.current = ""; setTerm(event.target.value); setSelected(null); setSections([]); setProfessorRatings({}); setRatingsLoading(false); setPlanCourses([]); }} className="min-w-36 rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]">{(terms.length ? terms : [term]).map((item) => <option key={item} value={item}>{termLabel(item, language)}</option>)}</select></label></div>
             <label className="block"><span className="sr-only">{t.search}</span><div className="flex items-center gap-3 rounded-xl border border-[#d9d6ce] bg-white px-4 py-3 focus-within:border-[#a34a39] focus-within:ring-2 focus-within:ring-[#a34a39]/10"><span aria-hidden="true" className="text-lg text-[#8a928e]">⌕</span><input value={query} onChange={(event) => { setQuery(event.target.value); if (event.target.value.trim().length < 2) setResults([]); }} placeholder={t.searchHint} className="w-full bg-transparent text-sm outline-none placeholder:text-[#a0a6a2]" /></div></label>
             <div className="mt-4 divide-y divide-[#ece9e2]">{searching && <p className="py-5 text-sm text-[#737b77]">{t.loading}</p>}{!searching && query.trim().length >= 2 && !results.length && !error && <p className="py-5 text-sm text-[#737b77]">{t.noResults}</p>}
               {results.map((course) => <button key={course.course_id} onClick={() => void openCourse(course)} className={`flex w-full items-center justify-between gap-4 py-4 text-left hover:bg-[#f6f4ef] ${selected?.course_id === course.course_id ? "text-[#9a372f]" : ""}`}><span><span className="block text-sm font-semibold">{course.course_id}<span className="ml-2 font-normal text-[#606966]">{course.name}</span></span><span className="mt-1 block text-xs text-[#89908c]">{course.department ?? course.course_id.slice(0, 4)}</span></span><span className="shrink-0 text-xs font-medium text-[#a34a39]">{t.select} →</span></button>)}
             </div>
           </div>
-          <div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-7"><div className="mb-5"><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{selected ? `${selected.course_id} · ${term}` : "02 · Sections"}</p><h2 className="mt-2 font-serif text-2xl">{selected?.name ?? t.sections}</h2>{selected && sections.length > 0 && <button onClick={() => addToSchedule(selected)} disabled={planCourses.some((item) => item.courseId === selected.course_id)} className="mt-4 rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:cursor-default disabled:opacity-60">{planCourses.some((item) => item.courseId === selected.course_id) ? t.courseInPlan : t.addSchedule}</button>}</div>
+          <div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-7"><div className="mb-5"><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{selected ? `${selected.course_id} · ${termLabel(term, language)}` : `02 · ${t.sections}`}</p><h2 className="mt-2 font-serif text-2xl">{selected?.name ?? t.sections}</h2>{selected && sections.length > 0 && <button onClick={() => addToSchedule(selected)} disabled={planCourses.some((item) => item.courseId === selected.course_id)} className="mt-4 rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:cursor-default disabled:opacity-60">{planCourses.some((item) => item.courseId === selected.course_id) ? t.courseInPlan : t.addSchedule}</button>}</div>
             {!selected && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm leading-6 text-[#717975]">{t.noResults}</p>}{loadingDetail && <p className="py-8 text-sm text-[#737b77]">{t.loading}</p>}
             {selected && !loadingDetail && !sections.length && !error && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm text-[#717975]">{language === "en" ? "No sections listed for this term." : "本学期没有列出班次。"}</p>}
             <div className="space-y-3">{sections.map((section) => { const id = sectionId(section, selected?.course_id ?? ""); const watching = watches.some((item) => item.sectionId === id && item.term === term); const open = count(section.open_seats);
@@ -330,7 +343,7 @@ export default function Home() {
         {step === "schedule" && <SchedulePlanner courses={planCourses} term={term} language={language} onRemove={(courseId) => setPlanCourses((current) => current.filter((course) => course.courseId !== courseId))} onBack={() => setStep("find")} />}
 
         {step === "watch" && <section className="mx-auto max-w-4xl rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-8"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">03 · {t.watch}</p><h2 className="mt-2 font-serif text-3xl">{t.watchesTitle}</h2></div><button onClick={() => void refreshWatches()} disabled={checking || !watches.length} className="rounded-lg bg-[#273c38] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{checking ? t.checking : t.refresh}</button></div>
-          {authenticated === false && <div className="mt-6 rounded-xl border border-[#e3dfd6] bg-white p-5"><p className="text-sm font-medium">{t.signIn}</p><label className="mt-4 grid gap-1.5 text-xs font-medium text-[#68716e]">{t.email}<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm text-[#202728] outline-none focus:border-[#a34a39]" /></label>{codeSent && <label className="mt-3 grid gap-1.5 text-xs font-medium text-[#68716e]">{t.emailCode}<input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={emailCode} onChange={(event) => setEmailCode(event.target.value.replace(/\D/g, "").slice(0, 6))} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm tracking-[.2em] text-[#202728] outline-none focus:border-[#a34a39]" /></label>}<p className="mt-2 text-xs leading-5 text-[#858d89]">{t.emailPrivacy}</p><div className="mt-4 flex flex-wrap gap-2">{!codeSent ? <button onClick={() => void requestEmailCode()} disabled={authBusy || !email.trim()} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.sendCode}</button> : <><button onClick={() => void verifyEmailCode()} disabled={authBusy || emailCode.length !== 6} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.verifyCode}</button><button onClick={() => void requestEmailCode()} disabled={authBusy} className="rounded-lg border border-[#dedbd3] px-4 py-2.5 text-sm font-medium text-[#68716e] disabled:opacity-50">{t.sendCode}</button></>}<a href="/signin-with-chatgpt?returnTo=%2F" target="_top" className="rounded-lg border border-[#dedbd3] px-4 py-2.5 text-sm font-semibold text-[#273c38]">{t.chatgptSignIn}</a></div></div>}
+          {authenticated === false && <div className="mt-6 rounded-xl border border-[#e3dfd6] bg-white p-5"><p className="text-sm font-medium">{t.signIn}</p><label className="mt-4 grid gap-1.5 text-xs font-medium text-[#68716e]">{t.email}<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm text-[#202728] outline-none focus:border-[#a34a39]" /></label>{codeSent && <label className="mt-3 grid gap-1.5 text-xs font-medium text-[#68716e]">{t.emailCode}<input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={emailCode} onChange={(event) => setEmailCode(event.target.value.replace(/\D/g, "").slice(0, 6))} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm tracking-[.2em] text-[#202728] outline-none focus:border-[#a34a39]" /></label>}<p className="mt-2 text-xs leading-5 text-[#858d89]">{t.emailPrivacy}</p><div className="mt-4 flex flex-wrap gap-2">{!codeSent ? <button onClick={() => void requestEmailCode()} disabled={authBusy || !email.trim()} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.sendCode}</button> : <><button onClick={() => void verifyEmailCode()} disabled={authBusy || emailCode.length !== 6} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.verifyCode}</button><button onClick={() => void requestEmailCode()} disabled={authBusy} className="rounded-lg border border-[#dedbd3] px-4 py-2.5 text-sm font-medium text-[#68716e] disabled:opacity-50">{t.sendCode}</button></>}</div></div>}
           {authenticated === true && authProvider === "email" && <div className="mt-6 flex items-center justify-between rounded-xl border border-[#e3dfd6] bg-white px-4 py-3"><span className="text-xs text-[#68716e]">{t.emailSignedIn}</span><button onClick={() => void signOutEmail()} className="text-xs font-medium text-[#8b5148] hover:underline">{t.signOut}</button></div>}
           {authenticated !== false && !watches.length && <p className="mt-6 rounded-xl bg-[#f2f0eb] p-5 text-sm text-[#717975]">{t.emptyWatches}</p>}{alerts.length > 0 && <div role="status" className="mt-5 rounded-xl border border-[#bdd4c1] bg-[#edf6ef] p-4 text-sm font-semibold text-[#315c43]">{language === "en" ? "Seats opened: " : "发现空位："}{alerts.join(", ")}</div>}
           {watches.length > 0 && <div className="mt-5 space-y-3">{watches.map((watch) => <article key={`${watch.term}-${watch.sectionId}`} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="font-semibold">{watch.courseId} · {watch.courseTitle}</p><p className="mt-1 text-sm text-[#626c67]">{watch.sectionId} <span className="mx-1 text-[#b5bab6]">/</span> {formatMeetings(watch.meetings)}</p><p className="mt-2 text-xs text-[#8a918e]">{t.checked}: {watch.lastCheckedAt ? new Date(watch.lastCheckedAt).toLocaleTimeString(language === "en" ? "en-US" : "zh-CN", { hour: "numeric", minute: "2-digit" }) : t.unknown}</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${watch.status === "ok" && (watch.openSeats ?? 0) > 0 ? "bg-[#eaf4ec] text-[#367047]" : watch.status === "stale" || watch.status === "failed" ? "bg-[#fff0ec] text-[#8c352c]" : "bg-[#f1efe9] text-[#68716e]"}`}>{watch.status === "stale" || watch.status === "failed" ? t.stale : watch.openSeats === null ? t.unknown : watch.openSeats > 0 ? t.open : t.full}</span><button onClick={() => void removeWatch(watch)} className="text-xs font-medium text-[#8b5148] hover:underline">{t.remove}</button></div></div><div className="mt-3 text-xs text-[#707874]">{t.status}: {seatLabel(watch.openSeats)}{watch.waitlist !== null ? ` · ${t.waitlist}: ${watch.waitlist}` : ""}</div></article>)}</div>}

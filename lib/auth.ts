@@ -5,7 +5,7 @@ const SESSION_SECONDS = 60 * 60 * 24 * 30;
 const encoder = new TextEncoder();
 
 type SessionPayload = { v: 1; emailHash: string; expiresAt: number };
-export type CurrentUser = { id: string; provider: "email" | "chatgpt" };
+export type CurrentUser = { id: string; provider: "email" };
 
 function toBase64Url(value: Uint8Array) {
   let binary = "";
@@ -73,10 +73,10 @@ async function emailSessionId(request: Request) {
 }
 
 export async function currentUser(request: Request): Promise<CurrentUser | null> {
+  // A public Worker cannot distinguish client-supplied identity headers from proxy headers.
+  // Only a session signed with our secret grants access to saved watches.
   const emailId = await emailSessionId(request);
   if (emailId) return { id: emailId, provider: "email" };
-  const chatgptId = request.headers.get("oai-authenticated-user-id")?.trim();
-  if (chatgptId) return { id: chatgptId.slice(0, 200), provider: "chatgpt" };
   return null;
 }
 
@@ -90,7 +90,7 @@ export function clearEmailSessionCookie() {
 
 export function authRequired() {
   return Response.json(
-    { error: "Sign in with ChatGPT or an email verification code to save seat watches." },
+    { error: "Sign in with an email verification code to save seat watches." },
     { status: 401 },
   );
 }

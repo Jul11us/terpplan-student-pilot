@@ -70,7 +70,7 @@ export async function POST(request: Request) {
       }),
     });
     if (!sent.ok) {
-      await env.DB.prepare("DELETE FROM email_login_codes WHERE email_hash = ?").bind(emailHash).run();
+      await env.DB.prepare("DELETE FROM email_login_codes WHERE email_hash = ? AND code_hash = ?").bind(emailHash, codeHash).run();
       console.error("Email provider rejected a sign-in message", sent.status);
       return Response.json({ error: "The sign-in email could not be sent. Please try again shortly." }, { status: 502 });
     }
