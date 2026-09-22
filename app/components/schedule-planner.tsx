@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 type Language = "en" | "zh";
-type Meeting = { days?: string | null; start_time?: string | null; end_time?: string | null; building?: string | null; room?: string | null };
+type Meeting = { days?: string | null; start_time?: string | null; end_time?: string | null; classtype?: string | null; building?: string | null; room?: string | null };
 type ProfessorRating = { name: string; averageRating: number | null; matched: boolean };
 type ScheduledSection = {
   course_id: string;
@@ -105,6 +105,14 @@ function seatCount(value: string | number | null | undefined) {
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
 }
 
+function meetingType(raw: string | null | undefined) {
+  const type = raw?.trim().toLowerCase();
+  if (type === "discussion") return "Discussion";
+  if (type === "lab") return "Lab";
+  if (!type || type === "lecture") return "Lecture";
+  return null;
+}
+
 function WeeklyCalendar({ sections, language }: { sections: ScheduledSection[]; language: Language }) {
   const t = copy[language];
   const firstMinute = 8 * 60;
@@ -135,8 +143,9 @@ function WeeklyCalendar({ sections, language }: { sections: ScheduledSection[]; 
           const clippedStart = Math.max(start, firstMinute);
           const clippedEnd = Math.min(end, lastMinute);
           if (clippedEnd <= clippedStart) return [];
-          return [<article key={section.section_id + "-" + day + "-" + index} className="absolute inset-x-1 overflow-hidden rounded-md border border-white/80 px-1.5 py-1 text-center text-[10px] leading-tight text-[#24312d] shadow-sm" style={{ top: (clippedStart - firstMinute) * pixelsPerMinute, height: Math.max(28, (clippedEnd - clippedStart) * pixelsPerMinute), backgroundColor: colors.get(section.course_id) }} title={section.course_id + " " + section.section_id + " · " + displayClock(start) + "–" + displayClock(end)}>
-            <strong className="block">{section.course_id}</strong><span>{section.section_id}</span><span className="block">{displayClock(start)}–{displayClock(end)}</span>
+          const type = meetingType(meeting.classtype);
+          return [<article key={section.section_id + "-" + day + "-" + index} className="absolute inset-x-1 overflow-hidden rounded-md border border-white/80 px-1.5 py-1 text-center text-[10px] leading-tight text-[#24312d] shadow-sm" style={{ top: (clippedStart - firstMinute) * pixelsPerMinute, height: Math.max(type ? 44 : 28, (clippedEnd - clippedStart) * pixelsPerMinute), backgroundColor: colors.get(section.course_id) }} title={section.course_id + " " + section.section_id + (type ? " · " + type : "") + " · " + displayClock(start) + "–" + displayClock(end)}>
+            <div className="flex items-center justify-center gap-1"><strong className="truncate">{section.course_id}</strong>{type && <span className="shrink-0 rounded bg-white/55 px-1 py-0.5 text-[8px] font-semibold uppercase tracking-wide">{type}</span>}</div><span>{section.section_id}</span><span className="block">{displayClock(start)}–{displayClock(end)}</span>
           </article>];
         }))}
       </div>)}
@@ -238,7 +247,8 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
         <WeeklyCalendar sections={chosen.selectedSections} language={language} />
         <div className="mt-4 space-y-2">{chosen.selectedSections.map((section) => <article key={section.section_id} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{section.course_id} · {section.course_title}</p><p className="mt-1 text-sm text-[#626c67]">{section.section_id}{(section.meetings ?? []).length ? " · " + (section.meetings ?? []).map((meeting) => {
           const start = minutes(meeting.start_time), end = minutes(meeting.end_time);
-          return start === null || end === null || !dayNames(meeting.days).length ? (language === "zh" ? "时间待定" : "Time TBA") : dayNames(meeting.days).join(" ") + " " + displayClock(start) + "–" + displayClock(end);
+          const type = meetingType(meeting.classtype);
+          return start === null || end === null || !dayNames(meeting.days).length ? (language === "zh" ? "时间待定" : "Time TBA") : (type ? type + " · " : "") + dayNames(meeting.days).join(" ") + " " + displayClock(start) + "–" + displayClock(end);
         }).join(" · ") : language === "zh" ? " · 时间待定" : " · Time TBA"}</p>
         {section.instructorRatings.length > 0 && <p className="mt-2 text-xs text-[#737b77]">{section.instructorRatings.map((item) => item.name + (item.averageRating === null ? "" : " · " + item.averageRating.toFixed(2))).join(" · ")}</p>}
         </div><span className="rounded-full bg-[#f1efe9] px-2.5 py-1 text-xs text-[#68716e]">{seatCount(section.open_seats) === null ? (language === "zh" ? "余位未知" : "Seats unknown") : seatCount(section.open_seats) + (language === "zh" ? " 个空位" : " seats open")}</span></div></article>)}</div>

@@ -5,6 +5,7 @@ export type UmdMeeting = {
   days?: string | null;
   start_time?: string | null;
   end_time?: string | null;
+  classtype?: string | null;
   building?: string | null;
   room?: string | null;
 };
