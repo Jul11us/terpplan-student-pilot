@@ -33,6 +33,7 @@ export type PlanPreferences = {
   windowEnd?: string | null;
   strictTime?: boolean;
   openSeatsOnly?: boolean;
+  includeFreshmanConnection?: boolean;
 };
 
 export type ScheduledSection = PlanSection & {
@@ -122,6 +123,16 @@ function openSeatCount(section: PlanSection) {
   return null;
 }
 
+// FC sections are reserved for students in the Freshman Connection program.
+export function isFreshmanConnection(section: PlanSection) {
+  const id = String(section.section_id || section.number || "").toUpperCase();
+  return /(^|-)FC[A-Z0-9]*$/.test(id);
+}
+
+function instructorKey(section: ScheduledSection) {
+  return section.course_id + ":" + (section.instructors ?? []).map(normalizeProfessorName).sort().join("+");
+}
+
 function isFull(section: PlanSection) {
   return openSeatCount(section) === 0;
 }
@@ -160,7 +171,9 @@ function conflicts(left: PlanSection, right: PlanSection) {
 
 function sectionRatings(section: PlanSection, ratings: Record<string, ProfessorSummary>) {
   return (section.instructors ?? []).filter((name) => name && !isInstructorTba(name)).map((name) => {
-    return ratings[normalizeProfessorName(name)] ?? {
+    const rating = ratings[normalizeProfessorName(name)];
+    // Keep the Schedule of Classes spelling; PlanetTerp sometimes differs in capitalization.
+    return rating ? { ...rating, name } : {
       name, matched: false, status: "limited" as const, averageRating: null, reviewCount: null, sourceUrl: null,
     };
   });
@@ -177,6 +190,7 @@ function parsePrefs(preferences: PlanPreferences) {
     interval,
     strictTime: Boolean(preferences.strictTime && interval),
     openSeatsOnly: Boolean(preferences.openSeatsOnly),
+    includeFreshmanConnection: Boolean(preferences.includeFreshmanConnection),
   };
 }
 
@@ -195,6 +209,7 @@ function allowedByPreferences(section: PlanSection, preference: ReturnType<typeo
   }
   if (preference.strictTime && meetings.length === 0) return false;
   if (preference.openSeatsOnly && isFull(section)) return false;
+  if (!preference.includeFreshmanConnection && isFreshmanConnection(section)) return false;
   return true;
 }
 
@@ -343,19 +358,20 @@ export function generateOptions(
     }
   };
   walk(0);
-  // Prefer options with a different lecture/instructor mix; fall back to near-duplicates only to fill the list.
+  // Fill the list in passes: first different instructors, then different lecture times, then anything left.
   const options: ScheduleOption[] = [];
-  const lectureMixes = new Set<string>();
-  for (const option of pool) {
-    const mix = option.selectedSections.map(lectureKey).sort().join("|");
-    if (lectureMixes.has(mix)) continue;
-    lectureMixes.add(mix);
-    options.push(option);
-    if (options.length === MAX_OPTIONS) break;
-  }
-  for (const option of pool) {
-    if (options.length === MAX_OPTIONS) break;
-    if (!options.includes(option)) options.push(option);
+  for (const keyOf of [instructorKey, lectureKey, null]) {
+    const used = new Set(keyOf ? options.map((option) => option.selectedSections.map(keyOf).sort().join("|")) : []);
+    for (const option of pool) {
+      if (options.length === MAX_OPTIONS) break;
+      if (options.includes(option)) continue;
+      if (keyOf) {
+        const mix = option.selectedSections.map(keyOf).sort().join("|");
+        if (used.has(mix)) continue;
+        used.add(mix);
+      }
+      options.push(option);
+    }
   }
   options.sort((a, b) => b.score - a.score);
   if (!options.length) warnings.push("No conflict-free combination was found for these courses.");

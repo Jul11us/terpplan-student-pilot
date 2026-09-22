@@ -42,6 +42,7 @@ const copy = {
     option: "Option", score: "Score", rating: "Instructor rating", gaps: "Between-class gaps", days: "Campus days", firstClass: "earliest class",
     openOnly: "Only use sections with open seats", fullIn: "Full", seatsUnknown: "Seats unknown", full: "Full", seat: "seat open", seatsOpen: "seats open",
     windowHint: "Classes outside this window lower the ranking; tick the box to exclude them.",
+    includeFc: "I'm in the Freshman Connection program (include FC sections)",
     minutes: "min", credits: "credits", lecture: "Lecture", discussion: "Discussion", lab: "Lab",
     select: "View this schedule", calendar: "Weekly timetable", unknown: "Times to confirm", noUnknown: "All meeting times are listed.",
     noOptions: "No conflict-free schedule was found. Remove a preference or course and try again.",
@@ -57,6 +58,7 @@ const copy = {
     option: "方案", score: "综合分", rating: "教师评分", gaps: "课间空档", days: "到校天数", firstClass: "最早上课",
     openOnly: "只使用有空位的班次", fullIn: "已满", seatsUnknown: "余位未知", full: "已满", seat: "个空位", seatsOpen: "个空位",
     windowHint: "时间段外的课程会降低排名；勾选后会直接排除。",
+    includeFc: "我参加了 Freshman Connection 项目（包含 FC 班次）",
     minutes: "分钟", credits: "学分", lecture: "讲课", discussion: "讨论课", lab: "实验课",
     select: "查看此方案", calendar: "每周课表", unknown: "需要确认的时间", noUnknown: "所有班次均列出了上课时间。",
     noOptions: "没有找到无冲突方案。可以移除一项偏好或课程后重试。",
@@ -185,6 +187,7 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
   const [windowEnd, setWindowEnd] = useState("");
   const [strictTime, setStrictTime] = useState(false);
   const [openSeatsOnly, setOpenSeatsOnly] = useState(false);
+  const [includeFreshmanConnection, setIncludeFreshmanConnection] = useState(false);
   const courseKey = useMemo(() => courses.map((course) => course.courseId).join("|"), [courses]);
 
   useEffect(() => {
@@ -209,7 +212,7 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
         body: JSON.stringify({
           courseIds: courses.map((course) => course.courseId),
           term,
-          preferences: { earliestStart: earliestStart || null, excludedDays, windowStart: windowStart || null, windowEnd: windowEnd || null, strictTime, openSeatsOnly },
+          preferences: { earliestStart: earliestStart || null, excludedDays, windowStart: windowStart || null, windowEnd: windowEnd || null, strictTime, openSeatsOnly, includeFreshmanConnection },
         }),
       });
       const payload = await response.json();
@@ -243,6 +246,7 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
         </div>
         <div className="mt-4"><p className="mb-2 text-xs font-medium text-[#68716e]">{t.excluded}</p><div className="flex flex-wrap gap-2">{DAYS.map((day, index) => <label key={day} className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[#e3e0d8] bg-[#fbfaf8] px-3 py-2 text-xs"><input type="checkbox" checked={excludedDays.includes(day)} onChange={(event) => setExcludedDays((current) => event.target.checked ? [...current, day] : current.filter((item) => item !== day))} />{t.weekdays[index]}</label>)}</div></div>
         <label className="mt-4 inline-flex items-center gap-2 text-xs text-[#68716e]"><input type="checkbox" checked={openSeatsOnly} onChange={(event) => setOpenSeatsOnly(event.target.checked)} />{t.openOnly}</label>
+        <label className="mt-2 flex items-center gap-2 text-xs text-[#68716e]"><input type="checkbox" checked={includeFreshmanConnection} onChange={(event) => setIncludeFreshmanConnection(event.target.checked)} />{t.includeFc}</label>
         <p className="mt-3 text-xs leading-5 text-[#858d89]">{t.windowHint}</p>
       </div>
       {error && <p role="alert" className="mt-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]">{error}</p>}

@@ -32,6 +32,7 @@ export async function POST(request: Request) {
     windowEnd: typeof rawPreferences.windowEnd === "string" ? rawPreferences.windowEnd : null,
     strictTime: rawPreferences.strictTime === true,
     openSeatsOnly: rawPreferences.openSeatsOnly === true,
+    includeFreshmanConnection: rawPreferences.includeFreshmanConnection === true,
   };
 
   const warnings: string[] = [];
