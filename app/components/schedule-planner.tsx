@@ -42,6 +42,7 @@ const copy = {
     option: "Option", score: "Score", rating: "Instructor rating", gaps: "Between-class gaps", days: "Campus days", firstClass: "earliest class",
     openOnly: "Only use sections with open seats", fullIn: "Full", seatsUnknown: "Seats unknown", full: "Full", seat: "seat open", seatsOpen: "seats open",
     windowHint: "Classes outside this window lower the ranking; tick the box to exclude them.",
+    minutes: "min", credits: "credits", lecture: "Lecture", discussion: "Discussion", lab: "Lab",
     select: "View this schedule", calendar: "Weekly timetable", unknown: "Times to confirm", noUnknown: "All meeting times are listed.",
     noOptions: "No conflict-free schedule was found. Remove a preference or course and try again.",
     fit: "Preferred-window fit", warning: "Some meeting times are missing, so those sections cannot be fully checked.",
@@ -56,6 +57,7 @@ const copy = {
     option: "方案", score: "综合分", rating: "教师评分", gaps: "课间空档", days: "到校天数", firstClass: "最早上课",
     openOnly: "只使用有空位的班次", fullIn: "已满", seatsUnknown: "余位未知", full: "已满", seat: "个空位", seatsOpen: "个空位",
     windowHint: "时间段外的课程会降低排名；勾选后会直接排除。",
+    minutes: "分钟", credits: "学分", lecture: "讲课", discussion: "讨论课", lab: "实验课",
     select: "查看此方案", calendar: "每周课表", unknown: "需要确认的时间", noUnknown: "所有班次均列出了上课时间。",
     noOptions: "没有找到无冲突方案。可以移除一项偏好或课程后重试。",
     fit: "符合时间偏好的比例", warning: "部分班次时间缺失，无法完整验证这些课程是否冲突。",
@@ -119,9 +121,9 @@ function seatText(value: string | number | null | undefined, t: (typeof copy)[La
 
 function meetingType(raw: string | null | undefined) {
   const type = raw?.trim().toLowerCase();
-  if (type === "discussion") return "Discussion";
-  if (type === "lab") return "Lab";
-  if (!type || type === "lecture") return "Lecture";
+  if (type === "discussion") return "discussion";
+  if (type === "lab") return "lab";
+  if (!type || type === "lecture") return "lecture";
   return null;
 }
 
@@ -155,7 +157,8 @@ function WeeklyCalendar({ sections, language }: { sections: ScheduledSection[]; 
           const clippedStart = Math.max(start, firstMinute);
           const clippedEnd = Math.min(end, lastMinute);
           if (clippedEnd <= clippedStart) return [];
-          const type = meetingType(meeting.classtype);
+          const kind = meetingType(meeting.classtype);
+          const type = kind ? t[kind] : null;
           return [<article key={section.section_id + "-" + day + "-" + index} className="absolute inset-x-1 overflow-hidden rounded-md border border-white/80 px-1.5 py-1 text-center text-[10px] leading-tight text-[#24312d] shadow-sm" style={{ top: (clippedStart - firstMinute) * pixelsPerMinute, height: Math.max(type ? 44 : 28, (clippedEnd - clippedStart) * pixelsPerMinute), backgroundColor: colors.get(section.course_id) }} title={section.course_id + " " + section.section_id + (type ? " · " + type : "") + " · " + displayClock(start) + "–" + displayClock(end)}>
             <div className="flex items-center justify-center gap-1"><strong className="truncate">{section.course_id}</strong>{type && <span className="shrink-0 rounded bg-white/55 px-1 py-0.5 text-[8px] font-semibold uppercase tracking-wide">{type}</span>}</div><span>{section.section_id}</span><span className="block">{displayClock(start)}–{displayClock(end)}</span>
           </article>];
@@ -253,17 +256,19 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
         <span className="flex items-center justify-between"><strong>{t.option} {index + 1}</strong><span className="text-xs text-[#737b77]">{t.score} {option.score.toFixed(2)}</span></span>
         <span className="mt-3 block text-xs leading-5 text-[#626c67]">{option.selectedSections.map((section) => section.section_id).join(" · ")}</span>
         {option.fullSectionIds?.length ? <span className="mt-2 inline-block rounded-full bg-[#f5e9e5] px-2 py-0.5 text-[11px] font-semibold text-[#8f4538]">{t.fullIn}: {option.fullSectionIds.join(", ")}</span> : null}
-        <span className="mt-3 block text-xs text-[#737b77]">{t.rating}: {option.professorRating === null ? "—" : option.professorRating.toFixed(2) + " / 5"} · {t.gaps}: {option.gapMinutes} min</span>
+        <span className="mt-3 block text-xs text-[#737b77]">{t.rating}: {option.professorRating === null ? "—" : option.professorRating.toFixed(2) + " / 5"} · {t.gaps}: {option.gapMinutes} {t.minutes}</span>
         <span className="mt-1 block text-xs text-[#737b77]">{t.days}: {option.campusDays.map((day) => t.weekdays[DAYS.indexOf(day as (typeof DAYS)[number])] ?? day).join(", ") || "—"}{option.earliestStart ? " · " + t.firstClass + " " + option.earliestStart : ""}</span>
         {option.timeFitPercent !== null && <span className="mt-1 block text-xs text-[#737b77]">{t.fit}: {Math.round(option.timeFitPercent)}%</span>}
       </button>)}</div>
       {chosen && <div className="mt-6">
-        <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h4 className="font-semibold">{t.calendar}</h4><p className="mt-1 text-xs text-[#737b77]">{chosen.selectedSections.map((section) => section.section_id).join(" · ")}</p></div><span className="text-xs text-[#737b77]">{t.rating}: {chosen.professorRating === null ? "—" : chosen.professorRating.toFixed(2) + " / 5"}{chosen.totalCredits ? " · " + chosen.totalCredits + " credits" : ""}</span></div>
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h4 className="font-semibold">{t.calendar}</h4><p className="mt-1 text-xs text-[#737b77]">{chosen.selectedSections.map((section) => section.section_id).join(" · ")}</p></div><span className="text-xs text-[#737b77]">{t.rating}: {chosen.professorRating === null ? "—" : chosen.professorRating.toFixed(2) + " / 5"}{chosen.totalCredits ? " · " + chosen.totalCredits + " " + t.credits : ""}</span></div>
         <WeeklyCalendar sections={chosen.selectedSections} language={language} />
         <div className="mt-4 space-y-2">{chosen.selectedSections.map((section) => <article key={section.section_id} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{section.course_id} · {section.course_title}</p><p className="mt-1 text-sm text-[#626c67]">{section.section_id}{(section.meetings ?? []).length ? " · " + (section.meetings ?? []).map((meeting) => {
           const start = minutes(meeting.start_time), end = minutes(meeting.end_time);
-          const type = meetingType(meeting.classtype);
-          return start === null || end === null || !dayNames(meeting.days).length ? (language === "zh" ? "时间待定" : "Time TBA") : (type ? type + " · " : "") + dayNames(meeting.days).join(" ") + " " + displayClock(start) + "–" + displayClock(end);
+          const kind = meetingType(meeting.classtype);
+          const type = kind ? t[kind] : null;
+          const days = dayNames(meeting.days).map((day) => t.weekdays[DAYS.indexOf(day as (typeof DAYS)[number])] ?? day);
+          return start === null || end === null || !days.length ? (language === "zh" ? "时间待定" : "Time TBA") : (type ? type + " · " : "") + days.join(" ") + " " + displayClock(start) + "–" + displayClock(end);
         }).join(" · ") : language === "zh" ? " · 时间待定" : " · Time TBA"}</p>
         {section.instructorRatings.length > 0 && <p className="mt-2 text-xs text-[#737b77]">{section.instructorRatings.map((item) => item.name + (item.averageRating === null ? "" : " · " + item.averageRating.toFixed(2) + " / 5")).join(" · ")}</p>}
         </div><span className={`rounded-full px-2.5 py-1 text-xs ${seatCount(section.open_seats) === 0 ? "bg-[#f5e9e5] font-semibold text-[#8f4538]" : "bg-[#f1efe9] text-[#68716e]"}`}>{seatText(section.open_seats, t)}</span></div></article>)}</div>

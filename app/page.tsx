@@ -59,7 +59,7 @@ const copy = {
     noConflict: "没有发现时间冲突", planLimit: "每个排课方案最多添加 10 门课程。", signIn: "登录后即可保存并同步余位关注。", email: "邮箱地址", emailCode: "六位验证码", sendCode: "发送验证码", verifyCode: "验证并登录", codeSent: "验证码已发送，请查收邮箱。",
     emailPrivacy: "邮箱仅用于登录。验证码将在 10 分钟后失效。", wrongCode: "验证码无法验证。", emailSignedIn: "已通过邮箱登录", signOut: "退出登录",
     loading: "加载中…",
-    error: "发生错误，请重试。", seats: "个空位", seat: "个空位", pickCourse: "从左侧匹配结果中选择一门课程，查看它的班次。", waitlist: "候补人数", checked: "上次检查", status: "状态",
+    error: "发生错误，请重试。", seats: "个空位", seat: "个空位", pickCourse: "从匹配结果中选择一门课程，查看它的班次。", waitlist: "候补人数", checked: "上次检查", status: "状态",
     freshness: "余位数据来自 umd.io，可能晚于学校官方课表。打开本页时会检查余位，最多每分钟一次。",
     open: "有空位", full: "已满", unknown: "未知", stale: "上次检查失败 · 显示已保存数据", checking: "检查中…",
     next: "下一步", back: "返回", termFallback: "无法读取学期列表，暂显示 2026 秋季", timeUnknown: "部分班次缺少上课时间，无法完整检查冲突。",
@@ -105,6 +105,8 @@ function minutes(raw: string | null | undefined): number | null {
   return hour * 60 + minute;
 }
 
+const zhDays: Record<string, string> = { Mon: "周一", Tue: "周二", Wed: "周三", Thu: "周四", Fri: "周五", Sat: "周六", Sun: "周日" };
+
 function displayTime(meeting: Meeting, language: "en" | "zh") {
   const start = minutes(meeting.start_time), end = minutes(meeting.end_time), days = dayNames(meeting.days);
   if (start === null || end === null || !days.length || end <= start) return language === "en" ? "Time TBA" : "时间待定";
@@ -112,7 +114,7 @@ function displayTime(meeting: Meeting, language: "en" | "zh") {
     const hour = Math.floor(value / 60), minute = value % 60;
     return `${hour % 12 || 12}:${String(minute).padStart(2, "0")}${hour < 12 ? "am" : "pm"}`;
   };
-  return `${days.join(" ")} · ${clock(start)}–${clock(end)}`;
+  return `${days.map((day) => language === "zh" ? zhDays[day] ?? day : day).join(" ")} · ${clock(start)}–${clock(end)}`;
 }
 
 function count(value: unknown) {
@@ -140,7 +142,8 @@ export default function Home() {
   const activeCourseRef = useRef("");
   const [watches, setWatches] = useState<Watch[]>([]);
   const [alerts, setAlerts] = useState<string[]>([]);
-  const [message, setMessage] = useState("");
+  // Store the message key, not the text, so it re-renders in the new language after a switch.
+  const [message, setMessage] = useState<"" | "added" | "watched" | "codeSent">("");
   const [error, setError] = useState("");
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [authProvider, setAuthProvider] = useState<"email" | null>(null);
@@ -234,7 +237,7 @@ export default function Home() {
       return;
     }
     setPlanCourses((current) => [...current, { courseId: course.course_id, courseTitle: course.name }]);
-    setMessage(t.added); setStep("schedule");
+    setMessage("added"); setStep("schedule");
   };
 
   const addWatch = async (course: Course, section: Section) => {
@@ -244,7 +247,7 @@ export default function Home() {
       const payload = await response.json();
       if (response.status === 401) { setAuthenticated(false); setAuthProvider(null); setStep("watch"); return; }
       if (!response.ok) throw new Error(payload.error || t.error);
-      setMessage(t.watched); setStep("watch"); await loadWatches();
+      setMessage("watched"); setStep("watch"); await loadWatches();
     } catch (cause) { setError(cause instanceof Error ? cause.message : t.error); }
   };
 
@@ -254,7 +257,7 @@ export default function Home() {
       const response = await fetch("/api/auth/request-code", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || t.error);
-      setCodeSent(true); setMessage(t.codeSent);
+      setCodeSent(true); setMessage("codeSent");
     } catch (cause) { setError(cause instanceof Error ? cause.message : t.error); }
     finally { setAuthBusy(false); }
   };
@@ -326,7 +329,7 @@ export default function Home() {
         </div>
 
         {termUnavailable && <p className="mb-4 rounded-xl border border-[#ead8b5] bg-[#fff8e8] px-4 py-3 text-sm text-[#745424]">{t.termFallback}</p>}
-        {message && <p role="status" className="mb-4 rounded-xl border border-[#bfd4c6] bg-[#edf6ef] px-4 py-3 text-sm text-[#315c43]">{message}</p>}
+        {message && <p role="status" className="mb-4 rounded-xl border border-[#bfd4c6] bg-[#edf6ef] px-4 py-3 text-sm text-[#315c43]">{t[message]}</p>}
         {error && <p role="alert" className="mb-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]">{error}</p>}
 
         {step === "find" && <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(330px,.85fr)]">
