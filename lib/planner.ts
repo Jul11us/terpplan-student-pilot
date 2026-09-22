@@ -359,12 +359,15 @@ export function generateOptions(
   };
   walk(0);
   // Fill the list in passes: first different instructors, then different lecture times, then anything left.
+  // Options with open seats go through every pass before any option containing a full section is considered.
   const options: ScheduleOption[] = [];
-  for (const keyOf of [instructorKey, lectureKey, null]) {
+  const passes = [false, true].flatMap((allowFull) => [instructorKey, lectureKey, null].map((keyOf) => ({ allowFull, keyOf })));
+  for (const { allowFull, keyOf } of passes) {
     const used = new Set(keyOf ? options.map((option) => option.selectedSections.map(keyOf).sort().join("|")) : []);
     for (const option of pool) {
       if (options.length === MAX_OPTIONS) break;
       if (options.includes(option)) continue;
+      if (!allowFull && option.fullSectionIds.length) continue;
       if (keyOf) {
         const mix = option.selectedSections.map(keyOf).sort().join("|");
         if (used.has(mix)) continue;
