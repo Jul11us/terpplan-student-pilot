@@ -1,0 +1,280 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+type Course = { course_id: string; name: string; department?: string };
+type Meeting = { days?: string | null; start_time?: string | null; end_time?: string | null; building?: string | null; room?: string | null };
+type Section = {
+  section_id?: string;
+  number?: string;
+  seats?: string | number | null;
+  open_seats?: string | number | null;
+  waitlist?: string | number | null;
+  instructors?: string[];
+  meetings?: Meeting[];
+};
+type Watch = {
+  courseId: string;
+  courseTitle: string;
+  term: string;
+  sectionId: string;
+  meetings: Meeting[];
+  instructors: string[];
+  seats: number | null;
+  openSeats: number | null;
+  waitlist: number | null;
+  status: string;
+  lastCheckedAt: string | null;
+};
+type ChosenSection = { courseId: string; courseTitle: string; term: string; sectionId: string; section: Section };
+
+const copy = {
+  en: {
+    eyebrow: "UNIVERSITY OF MARYLAND · STUDENT PILOT", title: "Plan your next semester.",
+    subtitle: "Find a course, build a schedule, and keep an eye on open seats.", find: "Find a course",
+    schedule: "Build a schedule", watch: "Watch seats", search: "Search course code or title",
+    searchHint: "Try CMSC or Introduction to", term: "Term", results: "Course matches", select: "View sections",
+    noResults: "No matches yet. Search by a course code or title.", sections: "Sections", addSchedule: "Add to schedule",
+    addWatch: "Watch this section", scheduleTitle: "Your schedule", emptySchedule: "Choose a section from course search to start your schedule.",
+    watchesTitle: "Seat watches", emptyWatches: "Watch a section to see it here.", refresh: "Check now", remove: "Remove",
+    added: "Added to schedule", watched: "Seat watch saved", conflict: "Time conflict", noConflict: "No time conflicts found",
+    signIn: "Sign in with ChatGPT to save your seat watches", loading: "Loading…", error: "Something went wrong. Please try again.",
+    seats: "seats open", waitlist: "waitlist", checked: "Last checked", status: "Status", freshness: "Seat counts come from umd.io and may lag the official Schedule of Classes. Monitoring checks while this page is open, at most once a minute.",
+    open: "Seats available", full: "Full", unknown: "Unknown", stale: "Last check failed · showing saved count", checking: "Checking…",
+    next: "Next step", back: "Back", termFallback: "Term list unavailable — showing Fall 2026",
+    timeUnknown: "Some meeting times are missing, so the conflict check is incomplete.",
+  },
+  zh: {
+    eyebrow: "马里兰大学 · 学生试用", title: "规划下一学期。", subtitle: "找课程、排进课表，并关注空余名额。",
+    find: "找课程", schedule: "排课", watch: "关注余位", search: "搜索课程编号或名称", searchHint: "试试 CMSC 或 Introduction to",
+    term: "学期", results: "匹配课程", select: "查看班次", noResults: "暂无匹配结果。请按课程编号或名称搜索。",
+    sections: "可选班次", addSchedule: "加入课表", addWatch: "关注这个班次", scheduleTitle: "我的课表",
+    emptySchedule: "先从课程搜索中选择一个班次。", watchesTitle: "余位关注", emptyWatches: "关注一个班次后会显示在这里。",
+    refresh: "立即检查", remove: "移除", added: "已加入课表", watched: "已保存余位关注", conflict: "时间冲突",
+    noConflict: "没有发现时间冲突", signIn: "使用 ChatGPT 登录以保存余位关注", loading: "加载中…",
+    error: "发生错误，请重试。", seats: "个空位", waitlist: "候补人数", checked: "上次检查", status: "状态",
+    freshness: "余位数据来自 umd.io，可能晚于学校官方课表。打开本页时会检查余位，最多每分钟一次。",
+    open: "有空位", full: "已满", unknown: "未知", stale: "上次检查失败 · 显示已保存数据", checking: "检查中…",
+    next: "下一步", back: "返回", termFallback: "无法读取学期列表，暂显示 2026 秋季", timeUnknown: "部分班次缺少上课时间，无法完整检查冲突。",
+  },
+} as const;
+
+function sectionId(section: Section, courseId: string) {
+  return String(section.section_id || (section.number ? `${courseId}-${section.number}` : "")).toUpperCase();
+}
+
+function dayNames(raw: string | null | undefined) {
+  if (!raw) return [];
+  const text = raw.toUpperCase().replace(/[^A-Z]/g, "");
+  const tokens: [string, string][] = [["TH", "Thu"], ["TU", "Tue"], ["SA", "Sat"], ["SU", "Sun"], ["M", "Mon"], ["W", "Wed"], ["F", "Fri"], ["T", "Tue"]];
+  const found: string[] = [];
+  for (let i = 0; i < text.length;) {
+    const token = tokens.find(([needle]) => text.startsWith(needle, i));
+    if (token) { found.push(token[1]); i += token[0].length; } else i += 1;
+  }
+  return found;
+}
+
+function minutes(raw: string | null | undefined): number | null {
+  if (!raw || /tba/i.test(raw)) return null;
+  const match = raw.trim().match(/^(\d{1,2}):(\d{2})\s*([ap]m)?$/i);
+  if (!match) return null;
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (match[3]) { if (hour === 12) hour = 0; if (match[3].toLowerCase() === "pm") hour += 12; }
+  if (hour > 23 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
+function displayTime(meeting: Meeting, language: "en" | "zh") {
+  const start = minutes(meeting.start_time), end = minutes(meeting.end_time), days = dayNames(meeting.days);
+  if (start === null || end === null || !days.length || end <= start) return language === "en" ? "Time TBA" : "时间待定";
+  const clock = (value: number) => {
+    const hour = Math.floor(value / 60), minute = value % 60;
+    return `${hour % 12 || 12}:${String(minute).padStart(2, "0")}${hour < 12 ? "am" : "pm"}`;
+  };
+  return `${days.join(" ")} · ${clock(start)}–${clock(end)}`;
+}
+
+function conflicts(a: ChosenSection, b: ChosenSection) {
+  if (a.courseId === b.courseId) return false;
+  return (a.section.meetings ?? []).some((left) => (b.section.meetings ?? []).some((right) => {
+    const ls = minutes(left.start_time), le = minutes(left.end_time), rs = minutes(right.start_time), re = minutes(right.end_time);
+    return ls !== null && le !== null && rs !== null && re !== null && le > ls && re > rs
+      && dayNames(left.days).some((day) => dayNames(right.days).includes(day)) && ls < re && rs < le;
+  }));
+}
+
+function count(value: unknown) {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0) return value;
+  if (typeof value === "string" && /^\d+$/.test(value.trim())) return Number(value);
+  return null;
+}
+
+export default function Home() {
+  const [language, setLanguage] = useState<"en" | "zh">("en");
+  const t = copy[language];
+  const [step, setStep] = useState<"find" | "schedule" | "watch">("find");
+  const [term, setTerm] = useState("202608");
+  const [terms, setTerms] = useState<string[]>([]);
+  const [termUnavailable, setTermUnavailable] = useState(false);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<Course[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selected, setSelected] = useState<Course | null>(null);
+  const [sections, setSections] = useState<Section[]>([]);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [basket, setBasket] = useState<ChosenSection[]>([]);
+  const [watches, setWatches] = useState<Watch[]>([]);
+  const [alerts, setAlerts] = useState<string[]>([]);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const [checking, setChecking] = useState(false);
+  const checkingRef = useRef(false);
+
+  const loadWatches = useCallback(async () => {
+    const response = await fetch("/api/watches");
+    if (response.status === 401) { setAuthenticated(false); return; }
+    if (!response.ok) throw new Error(t.error);
+    const payload = await response.json();
+    setAuthenticated(true);
+    setWatches(payload.watches ?? []);
+  }, [t.error]);
+
+  useEffect(() => {
+    fetch("/api/terms").then(async (response) => {
+      if (!response.ok) throw new Error("terms");
+      const payload = await response.json();
+      setTerms(payload.terms ?? []);
+      if (payload.defaultTerm) setTerm(payload.defaultTerm);
+    }).catch(() => setTermUnavailable(true));
+    const initialLoad = window.setTimeout(() => loadWatches().catch(() => setError(t.error)), 0);
+    return () => window.clearTimeout(initialLoad);
+  }, [loadWatches, t.error]);
+
+  useEffect(() => {
+    const text = query.trim();
+    if (text.length < 2) return;
+    const timeout = window.setTimeout(async () => {
+      setSearching(true); setError("");
+      try {
+        const response = await fetch(`/api/search?q=${encodeURIComponent(text)}&term=${encodeURIComponent(term)}`);
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || t.error);
+        setResults(payload.results ?? []);
+      } catch (cause) { setError(cause instanceof Error ? cause.message : t.error); setResults([]); }
+      finally { setSearching(false); }
+    }, 250);
+    return () => window.clearTimeout(timeout);
+  }, [query, term, t.error]);
+
+  const openCourse = async (course: Course) => {
+    setSelected(course); setSections([]); setLoadingDetail(true); setError(""); setMessage("");
+    try {
+      const response = await fetch(`/api/course?id=${encodeURIComponent(course.course_id)}&term=${encodeURIComponent(term)}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || t.error);
+      setSections(payload.sections ?? []);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t.error); }
+    finally { setLoadingDetail(false); }
+  };
+
+  const addToSchedule = (course: Course, section: Section) => {
+    const chosen = { courseId: course.course_id, courseTitle: course.name, term, sectionId: sectionId(section, course.course_id), section };
+    setBasket((current) => [...current.filter((item) => item.courseId !== course.course_id), chosen]);
+    setMessage(t.added); setStep("schedule");
+  };
+
+  const addWatch = async (course: Course, section: Section) => {
+    setError("");
+    try {
+      const response = await fetch("/api/watches", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ courseId: course.course_id, term, sectionId: sectionId(section, course.course_id) }) });
+      const payload = await response.json();
+      if (response.status === 401) { setAuthenticated(false); return; }
+      if (!response.ok) throw new Error(payload.error || t.error);
+      setMessage(t.watched); setStep("watch"); await loadWatches();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t.error); }
+  };
+
+  const removeWatch = async (watch: Watch) => {
+    const params = new URLSearchParams({ term: watch.term, section: watch.sectionId });
+    const response = await fetch(`/api/watches?${params}`, { method: "DELETE" });
+    if (!response.ok) { setError(t.error); return; }
+    setWatches((current) => current.filter((item) => !(item.term === watch.term && item.sectionId === watch.sectionId)));
+  };
+
+  const refreshWatches = useCallback(async () => {
+    if (checkingRef.current || !watches.length) return;
+    checkingRef.current = true; setChecking(true); setError("");
+    try {
+      const response = await fetch("/api/watches/check", { method: "POST" });
+      const payload = await response.json();
+      if (response.status === 401) { setAuthenticated(false); return; }
+      if (!response.ok) throw new Error(payload.error || t.error);
+      setWatches(payload.watches ?? []);
+      setAlerts((payload.alerts ?? []).map((item: { courseId: string; sectionId: string }) => `${item.courseId} ${item.sectionId}`));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t.error); }
+    finally { checkingRef.current = false; setChecking(false); }
+  }, [t.error, watches.length]);
+
+  useEffect(() => {
+    if (step !== "watch" || !watches.length) return;
+    const initialCheck = window.setTimeout(() => void refreshWatches(), 0);
+    const interval = window.setInterval(() => void refreshWatches(), 60_000);
+    return () => { window.clearTimeout(initialCheck); window.clearInterval(interval); };
+  }, [step, watches.length, refreshWatches]);
+
+  const conflictPairs = useMemo(() => basket.flatMap((item, index) => basket.slice(index + 1).filter((other) => conflicts(item, other))), [basket]);
+  const conflictsFor = (item: ChosenSection) => basket.filter((other) => other.sectionId !== item.sectionId && conflicts(item, other));
+  const hasUnknownTimes = basket.some((item) => (item.section.meetings ?? []).some((meeting) => minutes(meeting.start_time) === null || minutes(meeting.end_time) === null || !dayNames(meeting.days).length));
+  const formatMeetings = (meetings: Meeting[] | undefined) => meetings?.length ? meetings.map((meeting) => displayTime(meeting, language)).join(" · ") : language === "en" ? "Time TBA" : "时间待定";
+  const seatLabel = (value: number | string | null | undefined) => count(value) === null ? t.unknown : count(value) === 1 ? `1 ${t.seats}` : `${count(value)} ${t.seats}`;
+
+  return (
+    <main className="min-h-screen bg-[#f5f3ef] text-[#202728]">
+      <header className="border-b border-[#dedbd3] bg-[#fbfaf8]"><div className="mx-auto flex max-w-[1320px] items-center justify-between px-5 py-4 sm:px-8">
+        <a href="#top" className="flex items-center gap-3 font-semibold tracking-tight"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#bd302f] font-serif text-lg text-white">T</span><span>TerpPlan</span><span className="hidden rounded-full border border-[#e5c9bd] px-2 py-1 text-[10px] font-semibold uppercase tracking-[.12em] text-[#8d4333] sm:inline">Student pilot</span></a>
+        <div className="flex items-center gap-3"><span className="hidden text-xs text-[#707674] sm:inline">{t.eyebrow}</span><button onClick={() => setLanguage(language === "en" ? "zh" : "en")} className="rounded-lg border border-[#dcd9d0] px-3 py-2 text-xs font-medium hover:bg-white">{language === "en" ? "中文" : "English"}</button></div>
+      </div></header>
+
+      <div id="top" className="mx-auto max-w-[1320px] px-5 pb-16 pt-8 sm:px-8 sm:pt-12">
+        <div className="mb-8 grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end"><div><p className="mb-3 text-[11px] font-semibold uppercase tracking-[.17em] text-[#a34a39]">{t.eyebrow}</p><h1 className="font-serif text-4xl leading-tight tracking-[-.03em] sm:text-5xl">{t.title}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#646d69]">{t.subtitle}</p></div>
+          <nav aria-label="Planning steps" className="flex flex-wrap gap-2 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-2">{(["find", "schedule", "watch"] as const).map((item, index) => <button key={item} onClick={() => setStep(item)} aria-current={step === item ? "step" : undefined} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition ${step === item ? "bg-[#273c38] text-white" : "text-[#68716e] hover:bg-[#eeece6]"}`}><span className="grid h-5 w-5 place-items-center rounded-full bg-white/15 text-[10px]">0{index + 1}</span>{t[item]}</button>)}</nav>
+        </div>
+
+        {termUnavailable && <p className="mb-4 rounded-xl border border-[#ead8b5] bg-[#fff8e8] px-4 py-3 text-sm text-[#745424]">{t.termFallback}</p>}
+        {message && <p role="status" className="mb-4 rounded-xl border border-[#bfd4c6] bg-[#edf6ef] px-4 py-3 text-sm text-[#315c43]">{message}</p>}
+        {error && <p role="alert" className="mb-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]">{error}</p>}
+
+        {step === "find" && <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(330px,.85fr)]">
+          <div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-7"><div className="mb-5 flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">01 · {t.find}</p><h2 className="mt-2 font-serif text-2xl">{t.results}</h2></div><label className="grid gap-1 text-xs text-[#737b77]">{t.term}<select value={term} onChange={(event) => { setTerm(event.target.value); setSelected(null); setSections([]); setBasket([]); }} className="min-w-36 rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]">{(terms.length ? terms : [term]).map((item) => <option key={item} value={item}>{item}</option>)}</select></label></div>
+            <label className="block"><span className="sr-only">{t.search}</span><div className="flex items-center gap-3 rounded-xl border border-[#d9d6ce] bg-white px-4 py-3 focus-within:border-[#a34a39] focus-within:ring-2 focus-within:ring-[#a34a39]/10"><span aria-hidden="true" className="text-lg text-[#8a928e]">⌕</span><input value={query} onChange={(event) => { setQuery(event.target.value); if (event.target.value.trim().length < 2) setResults([]); }} placeholder={t.searchHint} className="w-full bg-transparent text-sm outline-none placeholder:text-[#a0a6a2]" /></div></label>
+            <div className="mt-4 divide-y divide-[#ece9e2]">{searching && <p className="py-5 text-sm text-[#737b77]">{t.loading}</p>}{!searching && query.trim().length >= 2 && !results.length && !error && <p className="py-5 text-sm text-[#737b77]">{t.noResults}</p>}
+              {results.map((course) => <button key={course.course_id} onClick={() => void openCourse(course)} className={`flex w-full items-center justify-between gap-4 py-4 text-left hover:bg-[#f6f4ef] ${selected?.course_id === course.course_id ? "text-[#9a372f]" : ""}`}><span><span className="block text-sm font-semibold">{course.course_id}<span className="ml-2 font-normal text-[#606966]">{course.name}</span></span><span className="mt-1 block text-xs text-[#89908c]">{course.department ?? course.course_id.slice(0, 4)}</span></span><span className="shrink-0 text-xs font-medium text-[#a34a39]">{t.select} →</span></button>)}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-7"><div className="mb-5"><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{selected ? `${selected.course_id} · ${term}` : "02 · Sections"}</p><h2 className="mt-2 font-serif text-2xl">{selected?.name ?? t.sections}</h2></div>
+            {!selected && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm leading-6 text-[#717975]">{t.noResults}</p>}{loadingDetail && <p className="py-8 text-sm text-[#737b77]">{t.loading}</p>}
+            {selected && !loadingDetail && !sections.length && !error && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm text-[#717975]">{language === "en" ? "No sections listed for this term." : "本学期没有列出班次。"}</p>}
+            <div className="space-y-3">{sections.map((section) => { const id = sectionId(section, selected?.course_id ?? ""); const added = basket.some((item) => item.sectionId === id); const watching = watches.some((item) => item.sectionId === id && item.term === term); const open = count(section.open_seats);
+              return <article key={id} className="rounded-xl border border-[#e7e4dc] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">{id}</h3><p className="mt-1 text-xs text-[#626c67]">{formatMeetings(section.meetings)}</p>{section.instructors?.length ? <p className="mt-1 text-xs text-[#8a918e]">{section.instructors.join(", ")}</p> : null}</div><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${open === null ? "bg-[#f1efe9] text-[#68716e]" : open > 0 ? "bg-[#eaf4ec] text-[#367047]" : "bg-[#f5e9e5] text-[#8f4538]"}`}>{seatLabel(section.open_seats)}</span></div><div className="mt-4 flex flex-wrap gap-2"><button onClick={() => selected && addToSchedule(selected, section)} className="rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c]">{added ? (language === "en" ? "In schedule" : "已加入课表") : t.addSchedule}</button><button onClick={() => selected && void addWatch(selected, section)} disabled={watching} className="rounded-lg border border-[#d9d6ce] px-3 py-2 text-xs font-semibold text-[#48534f] hover:bg-[#f7f5f0] disabled:cursor-default disabled:opacity-50">{watching ? (language === "en" ? "Watching" : "已关注") : t.addWatch}</button></div></article>;
+            })}</div><p className="mt-5 border-t border-[#ece9e2] pt-4 text-xs leading-5 text-[#858d89]">{t.freshness}</p>
+          </div>
+        </section>}
+
+        {step === "schedule" && <section className="mx-auto max-w-4xl rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-8"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">02 · {t.schedule}</p><h2 className="mt-2 font-serif text-3xl">{t.scheduleTitle}</h2></div><button onClick={() => setStep("find")} className="rounded-lg border border-[#d9d6ce] px-3 py-2 text-sm font-medium hover:bg-white">← {t.back}</button></div>
+          {!basket.length && <p className="mt-6 rounded-xl bg-[#f2f0eb] p-5 text-sm text-[#717975]">{t.emptySchedule}</p>}{basket.length > 0 && <div className="mt-6 space-y-3">{basket.map((item) => { const overlapping = conflictsFor(item); return <article key={item.sectionId} className={`flex flex-wrap items-center justify-between gap-4 rounded-xl border p-4 ${overlapping.length ? "border-[#e2b4aa] bg-[#fff5f2]" : "border-[#e3e0d8] bg-white"}`}><div><p className="font-semibold">{item.courseId} · {item.courseTitle}</p><p className="mt-1 text-sm text-[#626c67]">{item.sectionId} <span className="mx-1 text-[#b5bab6]">/</span> {formatMeetings(item.section.meetings)}</p>{overlapping.length > 0 && <p className="mt-2 text-xs font-semibold text-[#9b3c32]">{t.conflict}: {overlapping.map((other) => other.sectionId).join(", ")}</p>}</div><button onClick={() => setBasket((current) => current.filter((entry) => entry.sectionId !== item.sectionId))} className="rounded-lg border border-[#dedbd3] px-3 py-2 text-xs font-medium text-[#6a736f] hover:bg-[#f6f4ef]">{t.remove}</button></article>; })}</div>}
+          <div className={`mt-5 rounded-xl px-4 py-3 text-sm font-medium ${conflictPairs.length ? "bg-[#fff0ec] text-[#8c352c]" : hasUnknownTimes ? "bg-[#fff8e8] text-[#745424]" : "bg-[#edf6ef] text-[#315c43]"}`}>{conflictPairs.length ? `${t.conflict} · ${conflictPairs.length}` : hasUnknownTimes ? t.timeUnknown : t.noConflict}</div><div className="mt-6 flex justify-end"><button onClick={() => setStep("watch")} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1d302c]">{t.next}: {t.watch} →</button></div>
+        </section>}
+
+        {step === "watch" && <section className="mx-auto max-w-4xl rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-8"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">03 · {t.watch}</p><h2 className="mt-2 font-serif text-3xl">{t.watchesTitle}</h2></div><button onClick={() => void refreshWatches()} disabled={checking || !watches.length} className="rounded-lg bg-[#273c38] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{checking ? t.checking : t.refresh}</button></div>
+          {authenticated === false && <div className="mt-6 rounded-xl border border-[#e3dfd6] bg-white p-5"><p className="text-sm font-medium">{t.signIn}</p><a href="/signin-with-chatgpt?returnTo=%2F" target="_top" className="mt-3 inline-flex rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white">Sign in with ChatGPT →</a></div>}
+          {authenticated !== false && !watches.length && <p className="mt-6 rounded-xl bg-[#f2f0eb] p-5 text-sm text-[#717975]">{t.emptyWatches}</p>}{alerts.length > 0 && <div role="status" className="mt-5 rounded-xl border border-[#bdd4c1] bg-[#edf6ef] p-4 text-sm font-semibold text-[#315c43]">{language === "en" ? "Seats opened: " : "发现空位："}{alerts.join(", ")}</div>}
+          {watches.length > 0 && <div className="mt-5 space-y-3">{watches.map((watch) => <article key={`${watch.term}-${watch.sectionId}`} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="font-semibold">{watch.courseId} · {watch.courseTitle}</p><p className="mt-1 text-sm text-[#626c67]">{watch.sectionId} <span className="mx-1 text-[#b5bab6]">/</span> {formatMeetings(watch.meetings)}</p><p className="mt-2 text-xs text-[#8a918e]">{t.checked}: {watch.lastCheckedAt ? new Date(watch.lastCheckedAt).toLocaleTimeString(language === "en" ? "en-US" : "zh-CN", { hour: "numeric", minute: "2-digit" }) : t.unknown}</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${watch.status === "ok" && (watch.openSeats ?? 0) > 0 ? "bg-[#eaf4ec] text-[#367047]" : watch.status === "stale" || watch.status === "failed" ? "bg-[#fff0ec] text-[#8c352c]" : "bg-[#f1efe9] text-[#68716e]"}`}>{watch.status === "stale" || watch.status === "failed" ? t.stale : watch.openSeats === null ? t.unknown : watch.openSeats > 0 ? t.open : t.full}</span><button onClick={() => void removeWatch(watch)} className="text-xs font-medium text-[#8b5148] hover:underline">{t.remove}</button></div></div><div className="mt-3 text-xs text-[#707874]">{t.status}: {seatLabel(watch.openSeats)}{watch.waitlist !== null ? ` · ${t.waitlist}: ${watch.waitlist}` : ""}</div></article>)}</div>}
+          <p className="mt-5 border-t border-[#ece9e2] pt-4 text-xs leading-5 text-[#858d89]">{t.freshness}</p>
+        </section>}
+      </div>
+    </main>
+  );
+}
