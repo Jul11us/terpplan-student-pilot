@@ -78,7 +78,7 @@ const termSeasons: Record<string, { en: string; zh: string }> = {
 function termLabel(term: string, language: "en" | "zh") {
   const season = termSeasons[term.slice(4)];
   if (!/^\d{6}$/.test(term) || !season) return term;
-  const year = term.slice(0, 4);
+  const year = Number(term.slice(0, 4)) + (term.slice(4) === "12" ? 1 : 0);
   return language === "en" ? `${season.en} ${year}` : `${year} ${season.zh}`;
 }
 
