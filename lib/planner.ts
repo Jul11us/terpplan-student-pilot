@@ -32,6 +32,7 @@ export type PlanPreferences = {
   windowStart?: string | null;
   windowEnd?: string | null;
   strictTime?: boolean;
+  openSeatsOnly?: boolean;
 };
 
 export type ScheduledSection = PlanSection & {
@@ -53,6 +54,7 @@ export type ScheduleOption = {
   campusDays: string[];
   timeFitPercent: number | null;
   unknownSectionIds: string[];
+  fullSectionIds: string[];
 };
 
 export type PlannerResult = {
@@ -64,6 +66,10 @@ export type PlannerResult = {
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 const MAX_NODES = 160_000;
 const MAX_OPTIONS = 3;
+// Keep a wider pool while searching so the final picks can differ in more than a discussion slot.
+const CANDIDATE_POOL = 60;
+// A full section cannot be registered for, so it should only win when nothing open fits.
+const FULL_SECTION_PENALTY = 2.5;
 const DAY_TOKENS: Array<[string, (typeof DAYS)[number]]> = [
   ["MONDAY", "Mon"], ["MON", "Mon"], ["MO", "Mon"], ["M", "Mon"],
   ["TUESDAY", "Tue"], ["TUES", "Tue"], ["TUE", "Tue"], ["TU", "Tue"],
@@ -109,6 +115,26 @@ export function minutes(raw: string | null | undefined) {
   return hour * 60 + minute;
 }
 
+function openSeatCount(section: PlanSection) {
+  const value = section.open_seats;
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0) return value;
+  if (typeof value === "string" && /^\d+$/.test(value.trim())) return Number(value);
+  return null;
+}
+
+function isFull(section: PlanSection) {
+  return openSeatCount(section) === 0;
+}
+
+// Sections that share a lecture (0101-0104) differ only in discussion; treat them as one choice for variety.
+function lectureKey(section: ScheduledSection) {
+  const lectures = (section.meetings ?? [])
+    .filter((meeting) => !/discussion|lab/i.test(meeting.classtype ?? ""))
+    .map((meeting) => [meeting.days, meeting.start_time, meeting.end_time].join(" "))
+    .sort();
+  return section.course_id + ":" + [...(section.instructors ?? [])].sort().join("+") + "@" + lectures.join(",");
+}
+
 function hasKnownTime(meeting: PlanMeeting) {
   const start = minutes(meeting.start_time);
   const end = minutes(meeting.end_time);
@@ -150,6 +176,7 @@ function parsePrefs(preferences: PlanPreferences) {
     excludedDays: new Set((preferences.excludedDays ?? []).flatMap((day) => dayNames(day))),
     interval,
     strictTime: Boolean(preferences.strictTime && interval),
+    openSeatsOnly: Boolean(preferences.openSeatsOnly),
   };
 }
 
@@ -167,6 +194,7 @@ function allowedByPreferences(section: PlanSection, preference: ReturnType<typeo
     }
   }
   if (preference.strictTime && meetings.length === 0) return false;
+  if (preference.openSeatsOnly && isFull(section)) return false;
   return true;
 }
 
@@ -177,6 +205,7 @@ function summarize(sections: ScheduledSection[], preferences: ReturnType<typeof 
   });
   const professorRating = courseRatings.length ? courseRatings.reduce((sum, value) => sum + value, 0) / courseRatings.length : null;
   const unknownSectionIds = sections.filter(hasUnknownTime).map((section) => section.section_id);
+  const fullSectionIds = sections.filter(isFull).map((section) => section.section_id);
   let unknownCount = sections.reduce((sum, section) => {
     const meetingCount = section.meetings?.length ? section.meetings.filter((meeting) => !hasKnownTime(meeting)).length : 1;
     const missingRatings = section.instructorRatings.filter((rating) => !rating.matched || rating.averageRating === null).length;
@@ -220,7 +249,8 @@ function summarize(sections: ScheduledSection[], preferences: ReturnType<typeof 
   const outsideMinutes = Math.max(0, knownMinutes - insideMinutes);
   if (preferences.interval) unknownCount += unknownSectionIds.length;
   const score = 0.4 + (professorRating ?? 0) - 0.008 * gapMinutes - 0.7 * earlyCount - 0.35 * unknownCount
-    - (preferences.interval ? 0.05 * (outsideMinutes + 90 * unknownSectionIds.length) : 0);
+    - (preferences.interval ? 0.05 * (outsideMinutes + 90 * unknownSectionIds.length) : 0)
+    - FULL_SECTION_PENALTY * fullSectionIds.length;
   const campusDays = DAYS.filter((day) => sections.some((section) => (section.meetings ?? []).some((meeting) => dayNames(meeting.days).includes(day))));
   const totalCredits = sections.reduce((sum, section) => sum + (section.credits ?? 0), 0);
   return {
@@ -234,6 +264,7 @@ function summarize(sections: ScheduledSection[], preferences: ReturnType<typeof 
     campusDays,
     timeFitPercent: preferences.interval && knownMinutes > 0 ? (insideMinutes / knownMinutes) * 100 : null,
     unknownSectionIds,
+    fullSectionIds,
   };
 }
 
@@ -277,13 +308,13 @@ export function generateOptions(
         const rating = rated.length ? rated.reduce((sum, item) => sum + item, 0) / rated.length : 0;
         const early = (section.meetings ?? []).filter((meeting) => hasKnownTime(meeting) && (minutes(meeting.start_time) as number) < 540).length;
         const unknown = Number(hasUnknownTime(section)) + section.instructorRatings.filter((item) => !item.matched || item.averageRating === null).length;
-        return rating - 0.7 * early - 0.35 * unknown;
+        return rating - 0.7 * early - 0.35 * unknown - (isFull(section) ? FULL_SECTION_PENALTY : 0);
       };
       return localScore(b) - localScore(a) || a.section_id.localeCompare(b.section_id);
     });
   }
 
-  const options: ScheduleOption[] = [];
+  const pool: ScheduleOption[] = [];
   const chosen: ScheduledSection[] = [];
   const seen = new Set<string>();
   let nodes = 0;
@@ -293,9 +324,9 @@ export function generateOptions(
       const key = chosen.map((section) => section.section_id).sort().join("|");
       if (seen.has(key)) return;
       seen.add(key);
-      options.push(summarize([...chosen], parsed));
-      options.sort((a, b) => b.score - a.score || a.selectedSections.map((section) => section.section_id).join("|").localeCompare(b.selectedSections.map((section) => section.section_id).join("|")));
-      if (options.length > MAX_OPTIONS) options.pop();
+      pool.push(summarize([...chosen], parsed));
+      pool.sort((a, b) => b.score - a.score || a.selectedSections.map((section) => section.section_id).join("|").localeCompare(b.selectedSections.map((section) => section.section_id).join("|")));
+      if (pool.length > CANDIDATE_POOL) pool.pop();
       return;
     }
     for (const candidate of groups[groupIndex].sections) {
@@ -312,8 +343,26 @@ export function generateOptions(
     }
   };
   walk(0);
+  // Prefer options with a different lecture/instructor mix; fall back to near-duplicates only to fill the list.
+  const options: ScheduleOption[] = [];
+  const lectureMixes = new Set<string>();
+  for (const option of pool) {
+    const mix = option.selectedSections.map(lectureKey).sort().join("|");
+    if (lectureMixes.has(mix)) continue;
+    lectureMixes.add(mix);
+    options.push(option);
+    if (options.length === MAX_OPTIONS) break;
+  }
+  for (const option of pool) {
+    if (options.length === MAX_OPTIONS) break;
+    if (!options.includes(option)) options.push(option);
+  }
+  options.sort((a, b) => b.score - a.score);
   if (!options.length) warnings.push("No conflict-free combination was found for these courses.");
   if (truncated) warnings.push("The search reached its safety limit. Results are the best options found, not a proven complete ranking.");
+  if (options.length && options.every((option) => option.fullSectionIds.length)) {
+    warnings.push("Every option includes at least one full section. Watch those sections or try different courses.");
+  }
   if (options.some((option) => option.unknownSectionIds.length)) {
     warnings.push("Some selected sections have TBA or incomplete meeting times; the schedule may still contain an unverified conflict.");
   }

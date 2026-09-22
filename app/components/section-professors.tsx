@@ -105,7 +105,7 @@ export default function SectionProfessors({ names, courseId, ratings, language, 
               <span className="font-medium text-[#525d59]">{name}</span>
               {isTba ? null : rating?.averageRating !== null && rating?.averageRating !== undefined ? (
                 <span className="rounded-full bg-[#f5efe2] px-2 py-1 text-[#795f2d]">
-                  {t.average}: {rating.averageRating.toFixed(2)}
+                  {t.average}: {rating.averageRating.toFixed(2)} / 5
                 </span>
               ) : ratingsLoading && !rating ? (
                 <span className="text-[#89908c]">{t.ratingLoading}</span>

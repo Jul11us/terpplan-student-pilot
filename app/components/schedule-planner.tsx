@@ -27,6 +27,7 @@ type ScheduleOption = {
   campusDays: string[];
   timeFitPercent: number | null;
   unknownSectionIds: string[];
+  fullSectionIds?: string[];
 };
 type PlanCourse = { courseId: string; courseTitle: string };
 
@@ -38,7 +39,9 @@ const copy = {
     generate: "Generate schedules", generating: "Finding conflict-free schedules…", preferences: "Schedule preferences",
     earliest: "Earliest class start", excluded: "Avoid these days", window: "Preferred time window",
     start: "From", end: "To", strict: "Keep every class inside this window", options: "Top schedule options",
-    option: "Option", score: "Score", rating: "Instructor rating", gaps: "Between-class gaps", days: "Campus days",
+    option: "Option", score: "Score", rating: "Instructor rating", gaps: "Between-class gaps", days: "Campus days", firstClass: "earliest class",
+    openOnly: "Only use sections with open seats", fullIn: "Full", seatsUnknown: "Seats unknown", full: "Full", seat: "seat open", seatsOpen: "seats open",
+    windowHint: "Classes outside this window lower the ranking; tick the box to exclude them.",
     select: "View this schedule", calendar: "Weekly timetable", unknown: "Times to confirm", noUnknown: "All meeting times are listed.",
     noOptions: "No conflict-free schedule was found. Remove a preference or course and try again.",
     fit: "Preferred-window fit", warning: "Some meeting times are missing, so those sections cannot be fully checked.",
@@ -50,7 +53,9 @@ const copy = {
     generate: "生成排课方案", generating: "正在寻找无时间冲突的方案…", preferences: "排课偏好",
     earliest: "最早上课时间", excluded: "希望避开的日期", window: "偏好上课时间段",
     start: "开始", end: "结束", strict: "所有课程都必须在此时间段内", options: "推荐方案",
-    option: "方案", score: "综合分", rating: "教师评分", gaps: "课间空档", days: "到校天数",
+    option: "方案", score: "综合分", rating: "教师评分", gaps: "课间空档", days: "到校天数", firstClass: "最早上课",
+    openOnly: "只使用有空位的班次", fullIn: "已满", seatsUnknown: "余位未知", full: "已满", seat: "个空位", seatsOpen: "个空位",
+    windowHint: "时间段外的课程会降低排名；勾选后会直接排除。",
     select: "查看此方案", calendar: "每周课表", unknown: "需要确认的时间", noUnknown: "所有班次均列出了上课时间。",
     noOptions: "没有找到无冲突方案。可以移除一项偏好或课程后重试。",
     fit: "符合时间偏好的比例", warning: "部分班次时间缺失，无法完整验证这些课程是否冲突。",
@@ -103,6 +108,13 @@ function displayClock(value: number) {
 function seatCount(value: string | number | null | undefined) {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function seatText(value: string | number | null | undefined, t: (typeof copy)[Language]) {
+  const open = seatCount(value);
+  if (open === null) return t.seatsUnknown;
+  if (open === 0) return t.full;
+  return open + " " + (open === 1 ? t.seat : t.seatsOpen);
 }
 
 function meetingType(raw: string | null | undefined) {
@@ -169,6 +181,7 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
   const [windowStart, setWindowStart] = useState("");
   const [windowEnd, setWindowEnd] = useState("");
   const [strictTime, setStrictTime] = useState(false);
+  const [openSeatsOnly, setOpenSeatsOnly] = useState(false);
   const courseKey = useMemo(() => courses.map((course) => course.courseId).join("|"), [courses]);
 
   useEffect(() => {
@@ -193,7 +206,7 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
         body: JSON.stringify({
           courseIds: courses.map((course) => course.courseId),
           term,
-          preferences: { earliestStart: earliestStart || null, excludedDays, windowStart: windowStart || null, windowEnd: windowEnd || null, strictTime },
+          preferences: { earliestStart: earliestStart || null, excludedDays, windowStart: windowStart || null, windowEnd: windowEnd || null, strictTime, openSeatsOnly },
         }),
       });
       const payload = await response.json();
@@ -221,12 +234,13 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
         <h3 className="font-semibold">{t.preferences}</h3>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <label className="grid gap-1.5 text-xs font-medium text-[#68716e]">{t.earliest}<input type="time" value={earliestStart} onChange={(event) => setEarliestStart(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]" /></label>
-          <label className="grid gap-1.5 text-xs font-medium text-[#68716e]">{t.start}<input type="time" value={windowStart} onChange={(event) => setWindowStart(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]" /></label>
-          <label className="grid gap-1.5 text-xs font-medium text-[#68716e]">{t.end}<input type="time" value={windowEnd} onChange={(event) => setWindowEnd(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]" /></label>
+          <label className="grid gap-1.5 text-xs font-medium text-[#68716e]">{t.window} · {t.start}<input type="time" value={windowStart} onChange={(event) => setWindowStart(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]" /></label>
+          <label className="grid gap-1.5 text-xs font-medium text-[#68716e]">{t.window} · {t.end}<input type="time" value={windowEnd} onChange={(event) => setWindowEnd(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]" /></label>
           <label className="flex items-end gap-2 pb-2 text-xs text-[#68716e]"><input type="checkbox" checked={strictTime} disabled={!windowStart || !windowEnd} onChange={(event) => setStrictTime(event.target.checked)} />{t.strict}</label>
         </div>
         <div className="mt-4"><p className="mb-2 text-xs font-medium text-[#68716e]">{t.excluded}</p><div className="flex flex-wrap gap-2">{DAYS.map((day, index) => <label key={day} className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[#e3e0d8] bg-[#fbfaf8] px-3 py-2 text-xs"><input type="checkbox" checked={excludedDays.includes(day)} onChange={(event) => setExcludedDays((current) => event.target.checked ? [...current, day] : current.filter((item) => item !== day))} />{t.weekdays[index]}</label>)}</div></div>
-        <p className="mt-4 text-xs leading-5 text-[#858d89]">{t.window}: outside classes lower the ranking. The strict option filters them out.</p>
+        <label className="mt-4 inline-flex items-center gap-2 text-xs text-[#68716e]"><input type="checkbox" checked={openSeatsOnly} onChange={(event) => setOpenSeatsOnly(event.target.checked)} />{t.openOnly}</label>
+        <p className="mt-3 text-xs leading-5 text-[#858d89]">{t.windowHint}</p>
       </div>
       {error && <p role="alert" className="mt-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]">{error}</p>}
       <div className="mt-5 flex justify-end"><button onClick={() => void generate()} disabled={loading} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1d302c] disabled:opacity-60">{loading ? t.generating : t.generate}</button></div>
@@ -238,20 +252,21 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
       <div className="mt-4 grid gap-3 lg:grid-cols-3">{options.map((option, index) => <button type="button" key={option.selectedSections.map((section) => section.section_id).join("|")} onClick={() => setSelectedOption(index)} aria-pressed={selectedOption === index} className={`rounded-xl border p-4 text-left transition ${selectedOption === index ? "border-[#536d64] bg-[#edf3ef] ring-2 ring-[#536d64]/15" : "border-[#e3e0d8] bg-white hover:border-[#b9c5be]"}`}>
         <span className="flex items-center justify-between"><strong>{t.option} {index + 1}</strong><span className="text-xs text-[#737b77]">{t.score} {option.score.toFixed(2)}</span></span>
         <span className="mt-3 block text-xs leading-5 text-[#626c67]">{option.selectedSections.map((section) => section.section_id).join(" · ")}</span>
-        <span className="mt-3 block text-xs text-[#737b77]">{t.rating}: {option.professorRating === null ? "—" : option.professorRating.toFixed(2)} · {t.gaps}: {option.gapMinutes} min</span>
-        <span className="mt-1 block text-xs text-[#737b77]">{t.days}: {option.campusDays.join(", ") || "—"}{option.earliestStart ? " · " + option.earliestStart : ""}</span>
+        {option.fullSectionIds?.length ? <span className="mt-2 inline-block rounded-full bg-[#f5e9e5] px-2 py-0.5 text-[11px] font-semibold text-[#8f4538]">{t.fullIn}: {option.fullSectionIds.join(", ")}</span> : null}
+        <span className="mt-3 block text-xs text-[#737b77]">{t.rating}: {option.professorRating === null ? "—" : option.professorRating.toFixed(2) + " / 5"} · {t.gaps}: {option.gapMinutes} min</span>
+        <span className="mt-1 block text-xs text-[#737b77]">{t.days}: {option.campusDays.map((day) => t.weekdays[DAYS.indexOf(day as (typeof DAYS)[number])] ?? day).join(", ") || "—"}{option.earliestStart ? " · " + t.firstClass + " " + option.earliestStart : ""}</span>
         {option.timeFitPercent !== null && <span className="mt-1 block text-xs text-[#737b77]">{t.fit}: {Math.round(option.timeFitPercent)}%</span>}
       </button>)}</div>
       {chosen && <div className="mt-6">
-        <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h4 className="font-semibold">{t.calendar}</h4><p className="mt-1 text-xs text-[#737b77]">{chosen.selectedSections.map((section) => section.section_id).join(" · ")}</p></div><span className="text-xs text-[#737b77]">{t.rating}: {chosen.professorRating === null ? "—" : chosen.professorRating.toFixed(2)}{chosen.totalCredits ? " · " + chosen.totalCredits + " credits" : ""}</span></div>
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h4 className="font-semibold">{t.calendar}</h4><p className="mt-1 text-xs text-[#737b77]">{chosen.selectedSections.map((section) => section.section_id).join(" · ")}</p></div><span className="text-xs text-[#737b77]">{t.rating}: {chosen.professorRating === null ? "—" : chosen.professorRating.toFixed(2) + " / 5"}{chosen.totalCredits ? " · " + chosen.totalCredits + " credits" : ""}</span></div>
         <WeeklyCalendar sections={chosen.selectedSections} language={language} />
         <div className="mt-4 space-y-2">{chosen.selectedSections.map((section) => <article key={section.section_id} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{section.course_id} · {section.course_title}</p><p className="mt-1 text-sm text-[#626c67]">{section.section_id}{(section.meetings ?? []).length ? " · " + (section.meetings ?? []).map((meeting) => {
           const start = minutes(meeting.start_time), end = minutes(meeting.end_time);
           const type = meetingType(meeting.classtype);
           return start === null || end === null || !dayNames(meeting.days).length ? (language === "zh" ? "时间待定" : "Time TBA") : (type ? type + " · " : "") + dayNames(meeting.days).join(" ") + " " + displayClock(start) + "–" + displayClock(end);
         }).join(" · ") : language === "zh" ? " · 时间待定" : " · Time TBA"}</p>
-        {section.instructorRatings.length > 0 && <p className="mt-2 text-xs text-[#737b77]">{section.instructorRatings.map((item) => item.name + (item.averageRating === null ? "" : " · " + item.averageRating.toFixed(2))).join(" · ")}</p>}
-        </div><span className="rounded-full bg-[#f1efe9] px-2.5 py-1 text-xs text-[#68716e]">{seatCount(section.open_seats) === null ? (language === "zh" ? "余位未知" : "Seats unknown") : seatCount(section.open_seats) + (language === "zh" ? " 个空位" : " seats open")}</span></div></article>)}</div>
+        {section.instructorRatings.length > 0 && <p className="mt-2 text-xs text-[#737b77]">{section.instructorRatings.map((item) => item.name + (item.averageRating === null ? "" : " · " + item.averageRating.toFixed(2) + " / 5")).join(" · ")}</p>}
+        </div><span className={`rounded-full px-2.5 py-1 text-xs ${seatCount(section.open_seats) === 0 ? "bg-[#f5e9e5] font-semibold text-[#8f4538]" : "bg-[#f1efe9] text-[#68716e]"}`}>{seatText(section.open_seats, t)}</span></div></article>)}</div>
       </div>}
     </div>}
   </section>;

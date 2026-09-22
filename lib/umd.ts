@@ -64,7 +64,8 @@ export async function getCourse(courseId: string, term: string) {
 
 export function sectionId(section: UmdSection, courseId: string): string | null {
   const id = String(section.section_id || (section.number ? `${courseId}-${section.number}` : "")).trim();
-  return /^[A-Z]{4}\d{3}[A-Z0-9]*-\d{4}$/.test(id.toUpperCase()) ? id.toUpperCase() : null;
+  // Section numbers are usually four digits (0101) but online/special sections use letters (FC01, ESG1).
+  return /^[A-Z]{4}\d{3}[A-Z0-9]*-[A-Z0-9]{4}$/.test(id.toUpperCase()) ? id.toUpperCase() : null;
 }
 
 export function courseIdIsValid(value: string): boolean {

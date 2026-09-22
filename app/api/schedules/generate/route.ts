@@ -31,6 +31,7 @@ export async function POST(request: Request) {
     windowStart: typeof rawPreferences.windowStart === "string" ? rawPreferences.windowStart : null,
     windowEnd: typeof rawPreferences.windowEnd === "string" ? rawPreferences.windowEnd : null,
     strictTime: rawPreferences.strictTime === true,
+    openSeatsOnly: rawPreferences.openSeatsOnly === true,
   };
 
   const warnings: string[] = [];
@@ -50,7 +51,10 @@ export async function POST(request: Request) {
         const id = normalizedSectionId(section, courseId);
         return id ? [{ ...section, section_id: id }] : [];
       });
-      if (sections.length < detail.sections.length) warnings.push(courseId + " had sections without a valid section ID; those entries were omitted.");
+      if (sections.length < detail.sections.length) {
+        const skipped = detail.sections.length - sections.length;
+        warnings.push(courseId + ": " + skipped + (skipped === 1 ? " section was" : " sections were") + " left out because the course data did not include a usable section number.");
+      }
       if (!sections.length) {
         warnings.push(courseId + " has no sections with valid section IDs for this term.");
         return null;

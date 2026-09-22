@@ -44,7 +44,7 @@ const copy = {
     signIn: "Sign in to save and sync your seat watches.", email: "Email address", emailCode: "Six-digit code", sendCode: "Email me a code", verifyCode: "Verify and sign in", codeSent: "Code sent. Check your inbox.",
     emailPrivacy: "Your address is used to sign you in. Codes expire after 10 minutes.", wrongCode: "That code could not be verified.", emailSignedIn: "Signed in with email", signOut: "Sign out",
     loading: "Loading…", error: "Something went wrong. Please try again.",
-    seats: "seats open", waitlist: "waitlist", checked: "Last checked", status: "Status", freshness: "Seat counts come from umd.io and may lag the official Schedule of Classes. Monitoring checks while this page is open, at most once a minute.",
+    seats: "seats open", seat: "seat open", pickCourse: "Pick a course from the matches to see its sections.", waitlist: "waitlist", checked: "Last checked", status: "Status", freshness: "Seat counts come from umd.io and may lag the official Schedule of Classes. Monitoring checks while this page is open, at most once a minute.",
     open: "Seats available", full: "Full", unknown: "Unknown", stale: "Last check failed · showing saved count", checking: "Checking…",
     next: "Next step", back: "Back", termFallback: "Term list unavailable — showing Fall 2026",
     timeUnknown: "Some meeting times are missing, so the conflict check is incomplete.",
@@ -59,7 +59,7 @@ const copy = {
     noConflict: "没有发现时间冲突", planLimit: "每个排课方案最多添加 10 门课程。", signIn: "登录后即可保存并同步余位关注。", email: "邮箱地址", emailCode: "六位验证码", sendCode: "发送验证码", verifyCode: "验证并登录", codeSent: "验证码已发送，请查收邮箱。",
     emailPrivacy: "邮箱仅用于登录。验证码将在 10 分钟后失效。", wrongCode: "验证码无法验证。", emailSignedIn: "已通过邮箱登录", signOut: "退出登录",
     loading: "加载中…",
-    error: "发生错误，请重试。", seats: "个空位", waitlist: "候补人数", checked: "上次检查", status: "状态",
+    error: "发生错误，请重试。", seats: "个空位", seat: "个空位", pickCourse: "从左侧匹配结果中选择一门课程，查看它的班次。", waitlist: "候补人数", checked: "上次检查", status: "状态",
     freshness: "余位数据来自 umd.io，可能晚于学校官方课表。打开本页时会检查余位，最多每分钟一次。",
     open: "有空位", full: "已满", unknown: "未知", stale: "上次检查失败 · 显示已保存数据", checking: "检查中…",
     next: "下一步", back: "返回", termFallback: "无法读取学期列表，暂显示 2026 秋季", timeUnknown: "部分班次缺少上课时间，无法完整检查冲突。",
@@ -199,7 +199,7 @@ export default function Home() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || t.error);
       if (activeCourseRef.current !== courseRequestKey) return;
-      setSections(payload.sections ?? []);
+      setSections([...(payload.sections ?? [])].sort((a: Section, b: Section) => sectionId(a, course.course_id).localeCompare(sectionId(b, course.course_id), "en", { numeric: true })));
       const names = [...new Set((payload.sections ?? []).flatMap((section: Section) => section.instructors ?? []))];
       if (names.length) {
         setRatingsLoading(true);
@@ -306,7 +306,12 @@ export default function Home() {
   }, [step, watches.length, refreshWatches]);
 
   const formatMeetings = (meetings: Meeting[] | undefined) => meetings?.length ? meetings.map((meeting) => displayTime(meeting, language)).join(" · ") : language === "en" ? "Time TBA" : "时间待定";
-  const seatLabel = (value: number | string | null | undefined) => count(value) === null ? t.unknown : count(value) === 1 ? `1 ${t.seats}` : `${count(value)} ${t.seats}`;
+  const seatLabel = (value: number | string | null | undefined) => {
+    const open = count(value);
+    if (open === null) return t.unknown;
+    if (open === 0) return t.full;
+    return `${open} ${open === 1 ? t.seat : t.seats}`;
+  };
 
   return (
     <main className="min-h-screen bg-[#f5f3ef] text-[#202728]">
@@ -332,7 +337,7 @@ export default function Home() {
             </div>
           </div>
           <div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-7"><div className="mb-5"><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{selected ? `${selected.course_id} · ${termLabel(term, language)}` : `02 · ${t.sections}`}</p><h2 className="mt-2 font-serif text-2xl">{selected?.name ?? t.sections}</h2>{selected && sections.length > 0 && <button onClick={() => addToSchedule(selected)} disabled={planCourses.some((item) => item.courseId === selected.course_id)} className="mt-4 rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:cursor-default disabled:opacity-60">{planCourses.some((item) => item.courseId === selected.course_id) ? t.courseInPlan : t.addSchedule}</button>}</div>
-            {!selected && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm leading-6 text-[#717975]">{t.noResults}</p>}{loadingDetail && <p className="py-8 text-sm text-[#737b77]">{t.loading}</p>}
+            {!selected && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm leading-6 text-[#717975]">{results.length ? t.pickCourse : t.noResults}</p>}{loadingDetail && <p className="py-8 text-sm text-[#737b77]">{t.loading}</p>}
             {selected && !loadingDetail && !sections.length && !error && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm text-[#717975]">{language === "en" ? "No sections listed for this term." : "本学期没有列出班次。"}</p>}
             <div className="space-y-3">{sections.map((section) => { const id = sectionId(section, selected?.course_id ?? ""); const watching = watches.some((item) => item.sectionId === id && item.term === term); const open = count(section.open_seats);
               return <article key={id} className="rounded-xl border border-[#e7e4dc] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">{id}</h3><p className="mt-1 text-xs text-[#626c67]">{formatMeetings(section.meetings)}</p>{section.instructors?.length ? <SectionProfessors names={section.instructors} courseId={selected?.course_id ?? ""} ratings={professorRatings} ratingsLoading={ratingsLoading} language={language} /> : null}</div><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${open === null ? "bg-[#f1efe9] text-[#68716e]" : open > 0 ? "bg-[#eaf4ec] text-[#367047]" : "bg-[#f5e9e5] text-[#8f4538]"}`}>{seatLabel(section.open_seats)}</span></div><div className="mt-4 flex flex-wrap gap-2"><button onClick={() => selected && void addWatch(selected, section)} disabled={watching} className="rounded-lg border border-[#d9d6ce] px-3 py-2 text-xs font-semibold text-[#48534f] hover:bg-[#f7f5f0] disabled:cursor-default disabled:opacity-50">{watching ? (language === "en" ? "Watching" : "已关注") : t.addWatch}</button></div></article>;
