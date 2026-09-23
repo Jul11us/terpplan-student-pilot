@@ -1,4 +1,5 @@
 import { DEFAULT_TERM, type CatalogItem, umdJson } from "@/lib/umd";
+import spring2027Catalog from "@/data/202701-catalog.json";
 
 type CacheEntry = { expiresAt: number; courses: CatalogItem[] };
 const catalogCache = new Map<string, CacheEntry>();
@@ -10,6 +11,17 @@ export async function GET(request: Request) {
   const term = url.searchParams.get("term") ?? DEFAULT_TERM;
   if (!/^\d{6}$/.test(term)) return Response.json({ error: "Choose a valid term." }, { status: 400 });
   if (query.length < 2) return Response.json({ results: [] });
+
+  if (term === "202701") {
+    const results = (spring2027Catalog as CatalogItem[])
+      .filter((course) => {
+        const compactCourseId = course.course_id.toLowerCase().replace(/\s+/g, "");
+        const haystack = `${course.course_id} ${course.name} ${course.department ?? ""}`.toLowerCase();
+        return haystack.includes(query) || compactCourseId.includes(compactQuery);
+      })
+      .slice(0, 40);
+    return Response.json({ results, term });
+  }
 
   try {
     let entry = catalogCache.get(term);

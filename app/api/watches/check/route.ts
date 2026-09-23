@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { currentUser, authRequired } from "@/lib/auth";
 import { getDb } from "@/db";
 import { watches } from "@/db/schema";
-import { DEFAULT_TERM, parseCount, sectionId, umdJson, type UmdSection } from "@/lib/umd";
+import { DEFAULT_TERM, getCourseSections, parseCount, sectionId } from "@/lib/umd";
 
 const MIN_INTERVAL_MS = 60_000;
 
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       const latestAttempt = Math.max(...group.map((item) => item.lastCheckedAt ? Date.parse(item.lastCheckedAt) : 0));
       if (latestAttempt && now - latestAttempt < MIN_INTERVAL_MS) continue;
       try {
-        const sectionData = await umdJson<UmdSection[]>(`/courses/${encodeURIComponent(sample.courseId)}/sections?semester=${encodeURIComponent(sample.term || DEFAULT_TERM)}`);
+        const sectionData = await getCourseSections(sample.courseId, sample.term || DEFAULT_TERM);
         const checkedAt = new Date().toISOString();
         for (const row of group) {
           const found = Array.isArray(sectionData) ? sectionData.find((item) => sectionId(item, row.courseId) === row.sectionId) : undefined;

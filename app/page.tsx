@@ -52,9 +52,9 @@ const copy = {
     signIn: "Sign in to save and sync your seat watches.", email: "Email address", emailCode: "Six-digit code", sendCode: "Email me a code", verifyCode: "Verify and sign in", codeSent: "Code sent. Check your inbox.",
     emailPrivacy: "Your address is used to sign you in. Codes expire after 10 minutes.", wrongCode: "That code could not be verified.", emailSignedIn: "Signed in with email", signOut: "Sign out",
     loading: "Loading…", error: "Something went wrong. Please try again.",
-    seats: "seats open", seat: "seat open", fcOnly: "Freshman Connection only", pickCourse: "Pick a course from the matches to see its sections.", waitlist: "waitlist", checked: "Last checked", status: "Status", freshness: "Seat counts come from umd.io and may lag the official Schedule of Classes. Monitoring checks while this page is open, at most once a minute.",
+    seats: "seats open", seat: "seat open", fcOnly: "Freshman Connection only", pickCourse: "Pick a course from the matches to see its sections.", waitlist: "waitlist", checked: "Last checked", status: "Status", freshness: "Seat counts come from UMD course data and may lag the official Schedule of Classes. This page checks at most once a minute while open.",
     open: "Seats available", full: "Full", unknown: "Unknown", stale: "Last check failed · showing saved count", checking: "Checking…",
-    next: "Next step", back: "Back", termFallback: "Term list unavailable — showing Fall 2026",
+    next: "Next step", back: "Back", termFallback: "Term list unavailable — showing Spring 2027",
     timeUnknown: "Some meeting times are missing, so the conflict check is incomplete.",
   },
   zh: {
@@ -68,9 +68,9 @@ const copy = {
     emailPrivacy: "邮箱仅用于登录。验证码将在 10 分钟后失效。", wrongCode: "验证码无法验证。", emailSignedIn: "已通过邮箱登录", signOut: "退出登录",
     loading: "加载中…",
     error: "发生错误，请重试。", seats: "个空位", seat: "个空位", fcOnly: "仅限 Freshman Connection", pickCourse: "从匹配结果中选择一门课程，查看它的班次。", waitlist: "候补人数", checked: "上次检查", status: "状态",
-    freshness: "余位数据来自 umd.io，可能晚于学校官方课表。打开本页时会检查余位，最多每分钟一次。",
+    freshness: "余位数据来自 UMD 课程数据，可能晚于学校官方课表。页面打开时最多每分钟检查一次。",
     open: "有空位", full: "已满", unknown: "未知", stale: "上次检查失败 · 显示已保存数据", checking: "检查中…",
-    next: "下一步", back: "返回", termFallback: "无法读取学期列表，暂显示 2026 秋季", timeUnknown: "部分班次缺少上课时间，无法完整检查冲突。",
+    next: "下一步", back: "返回", termFallback: "无法读取学期列表，暂显示 2027 春季", timeUnknown: "部分班次缺少上课时间，无法完整检查冲突。",
   },
 } as const;
 
@@ -135,7 +135,7 @@ export default function Home() {
   const [language, setLanguage] = useState<"en" | "zh">("en");
   const t = copy[language];
   const [step, setStep] = useState<"find" | "schedule" | "watch">("find");
-  const [term, setTerm] = useState("202608");
+  const [term, setTerm] = useState("202701");
   const [terms, setTerms] = useState<string[]>([]);
   const [termUnavailable, setTermUnavailable] = useState(false);
   const [query, setQuery] = useState("");
