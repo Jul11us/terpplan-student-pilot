@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import SchedulePlanner from "@/app/components/schedule-planner";
 import SectionProfessors from "@/app/components/section-professors";
 import type { ProfessorSummary } from "@/lib/planetterp";
+import { readSavedState, writeSavedState } from "@/lib/saved-state";
 
 type Course = { course_id: string; name: string; department?: string };
 type Meeting = { days?: string | null; start_time?: string | null; end_time?: string | null; building?: string | null; room?: string | null };
@@ -152,6 +153,9 @@ export default function Home() {
   const [ratingsLoading, setRatingsLoading] = useState(false);
   const activeCourseRef = useRef("");
   const planCoursesRef = useRef<PlanCourse[]>([]);
+  // Plans saved in this browser, one per term; kept in a ref so switching terms can restore them.
+  const savedPlansRef = useRef<Record<string, PlanCourse[]>>({});
+  const [restored, setRestored] = useState(false);
   const [watches, setWatches] = useState<Watch[]>([]);
   const [alerts, setAlerts] = useState<string[]>([]);
   // Store the message key, not the text, so it re-renders in the new language after a switch.
@@ -177,16 +181,44 @@ export default function Home() {
     setWatches(payload.watches ?? []);
   }, [t.error]);
 
+  const switchTerm = useCallback((nextTerm: string) => {
+    activeCourseRef.current = "";
+    setTerm(nextTerm);
+    setSelected(null); setSections([]); setProfessorRatings({}); setRatingsLoading(false);
+    setPlanCourses(savedPlansRef.current[nextTerm] ?? []);
+  }, []);
+
+  // Runs once: restore what this browser saved, then load the term list.
   useEffect(() => {
-    fetch("/api/terms").then(async (response) => {
-      if (!response.ok) throw new Error("terms");
-      const payload = await response.json() as TermsPayload;
-      setTerms(payload.terms ?? []);
-      if (payload.defaultTerm) setTerm(payload.defaultTerm);
-    }).catch(() => setTermUnavailable(true));
+    const restore = window.setTimeout(() => {
+      const saved = readSavedState();
+      savedPlansRef.current = saved.plans;
+      if (saved.language) setLanguage(saved.language);
+      if (saved.term) switchTerm(saved.term);
+      setRestored(true);
+      fetch("/api/terms").then(async (response) => {
+        if (!response.ok) throw new Error("terms");
+        const payload = await response.json() as TermsPayload;
+        const list = payload.terms ?? [];
+        setTerms(list);
+        // Keep the saved term if it is still offered; otherwise fall back to the current default.
+        if (payload.defaultTerm && (!saved.term || !list.includes(saved.term))) switchTerm(payload.defaultTerm);
+      }).catch(() => setTermUnavailable(true));
+    }, 0);
+    return () => window.clearTimeout(restore);
+  }, [switchTerm]);
+
+  useEffect(() => {
     const initialLoad = window.setTimeout(() => loadWatches().catch(() => setError(t.error)), 0);
     return () => window.clearTimeout(initialLoad);
   }, [loadWatches, t.error]);
+
+  // Save after every change, but only once the saved state has been restored so it is not overwritten.
+  useEffect(() => {
+    if (!restored) return;
+    savedPlansRef.current = { ...savedPlansRef.current, [term]: planCourses };
+    writeSavedState({ language, term, plans: savedPlansRef.current });
+  }, [restored, language, term, planCourses]);
 
   useEffect(() => {
     const text = query.trim();
@@ -367,7 +399,7 @@ export default function Home() {
         {error && <p role="alert" className="mb-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]">{error}</p>}
 
         {step === "find" && <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(330px,.85fr)]">
-          <div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-7"><div className="mb-5 flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">01 · {t.find}</p><h2 className="mt-2 font-serif text-2xl">{t.results}</h2></div><label className="grid gap-1 text-xs text-[#737b77]">{t.term}<select value={term} onChange={(event) => { activeCourseRef.current = ""; setTerm(event.target.value); setSelected(null); setSections([]); setProfessorRatings({}); setRatingsLoading(false); setPlanCourses([]); }} className="min-w-36 rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]">{(terms.length ? terms : [term]).map((item) => <option key={item} value={item}>{termLabel(item, language)}</option>)}</select></label></div>
+          <div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-7"><div className="mb-5 flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">01 · {t.find}</p><h2 className="mt-2 font-serif text-2xl">{t.results}</h2></div><label className="grid gap-1 text-xs text-[#737b77]">{t.term}<select value={term} onChange={(event) => switchTerm(event.target.value)} className="min-w-36 rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]">{(terms.length ? terms : [term]).map((item) => <option key={item} value={item}>{termLabel(item, language)}</option>)}</select></label></div>
             <label className="block"><span className="sr-only">{t.search}</span><div className="flex items-center gap-3 rounded-xl border border-[#d9d6ce] bg-white px-4 py-3 focus-within:border-[#a34a39] focus-within:ring-2 focus-within:ring-[#a34a39]/10"><span aria-hidden="true" className="text-lg text-[#8a928e]">⌕</span><input value={query} onChange={(event) => { setQuery(event.target.value); if (event.target.value.trim().length < 2) setResults([]); }} placeholder={t.searchHint} className="w-full bg-transparent text-sm outline-none placeholder:text-[#a0a6a2]" /></div></label>
             <div className="mt-4 divide-y divide-[#ece9e2]">{searching && <p className="py-5 text-sm text-[#737b77]">{t.loading}</p>}{!searching && query.trim().length >= 2 && !results.length && !error && <p className="py-5 text-sm text-[#737b77]">{t.noResults}</p>}
               {results.map((course) => <button key={course.course_id} onClick={() => void openCourse(course)} className={`flex w-full items-center justify-between gap-4 py-4 text-left hover:bg-[#f6f4ef] ${selected?.course_id === course.course_id ? "text-[#9a372f]" : ""}`}><span><span className="block text-sm font-semibold">{course.course_id}<span className="ml-2 font-normal text-[#606966]">{course.name}</span></span><span className="mt-1 block text-xs text-[#89908c]">{course.department ?? course.course_id.slice(0, 4)}</span></span><span className="shrink-0 text-xs font-medium text-[#a34a39]">{t.select} →</span></button>)}

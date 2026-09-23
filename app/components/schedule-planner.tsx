@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { readSavedState, writeSavedState } from "@/lib/saved-state";
 
 type Language = "en" | "zh";
 type Meeting = { days?: string | null; start_time?: string | null; end_time?: string | null; classtype?: string | null; building?: string | null; room?: string | null };
@@ -220,13 +221,19 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
   const [selectedOption, setSelectedOption] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [excludedDays, setExcludedDays] = useState<string[]>([]);
-  const [earliestStart, setEarliestStart] = useState("");
-  const [windowStart, setWindowStart] = useState("");
-  const [windowEnd, setWindowEnd] = useState("");
-  const [strictTime, setStrictTime] = useState(false);
-  const [openSeatsOnly, setOpenSeatsOnly] = useState(false);
-  const [includeFreshmanConnection, setIncludeFreshmanConnection] = useState(false);
+  // This panel only mounts after the page has loaded in the browser, so it can read saved preferences directly.
+  const [savedPreferences] = useState(() => readSavedState().preferences);
+  const [excludedDays, setExcludedDays] = useState<string[]>(savedPreferences?.excludedDays ?? []);
+  const [earliestStart, setEarliestStart] = useState(savedPreferences?.earliestStart ?? "");
+  const [windowStart, setWindowStart] = useState(savedPreferences?.windowStart ?? "");
+  const [windowEnd, setWindowEnd] = useState(savedPreferences?.windowEnd ?? "");
+  const [strictTime, setStrictTime] = useState(savedPreferences?.strictTime ?? false);
+  const [openSeatsOnly, setOpenSeatsOnly] = useState(savedPreferences?.openSeatsOnly ?? false);
+  const [includeFreshmanConnection, setIncludeFreshmanConnection] = useState(savedPreferences?.includeFreshmanConnection ?? false);
+
+  useEffect(() => {
+    writeSavedState({ preferences: { excludedDays, earliestStart, windowStart, windowEnd, strictTime, openSeatsOnly, includeFreshmanConnection } });
+  }, [excludedDays, earliestStart, windowStart, windowEnd, strictTime, openSeatsOnly, includeFreshmanConnection]);
   const courseKey = useMemo(() => courses.map((course) => course.courseId + (course.instructors ? ":" + course.instructors.join("+") : "")).join("|"), [courses]);
 
   // Results belong to the course list and term they were generated for; hide them once either changes.
