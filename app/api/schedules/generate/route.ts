@@ -1,5 +1,5 @@
 import { generateOptions, type PlanCourse, type PlanPreferences, type PlanWarning } from "@/lib/planner";
-import { getProfessorSummaries } from "@/lib/planetterp";
+import { getProfessorSummaries, normalizeProfessorName } from "@/lib/planetterp";
 import { courseIdIsValid, DEFAULT_TERM, getCourse, sectionId as normalizedSectionId } from "@/lib/umd";
 
 function creditsValue(value: unknown) {
@@ -8,7 +8,7 @@ function creditsValue(value: unknown) {
 }
 
 export async function POST(request: Request) {
-  let body: { courseIds?: unknown; term?: unknown; preferences?: unknown };
+  let body: { courseIds?: unknown; term?: unknown; preferences?: unknown; instructorFilters?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -35,6 +35,16 @@ export async function POST(request: Request) {
     includeFreshmanConnection: rawPreferences.includeFreshmanConnection === true,
   };
 
+  // Per-course instructor picks from the page; a course without an entry keeps every instructor.
+  const instructorFilters = new Map<string, Set<string>>();
+  if (body.instructorFilters && typeof body.instructorFilters === "object") {
+    for (const [courseId, names] of Object.entries(body.instructorFilters as Record<string, unknown>)) {
+      if (!Array.isArray(names)) continue;
+      const kept = names.filter((name): name is string => typeof name === "string").map(normalizeProfessorName).filter(Boolean);
+      if (kept.length) instructorFilters.set(courseId.trim().toUpperCase(), new Set(kept));
+    }
+  }
+
   const warnings: PlanWarning[] = [];
   const loaded = await Promise.all(courseIds.map(async (courseId) => {
     try {
@@ -48,15 +58,23 @@ export async function POST(request: Request) {
         return null;
       }
       const rawCourse = detail.course as Record<string, unknown>;
-      const sections = detail.sections.flatMap((section) => {
+      const validSections = detail.sections.flatMap((section) => {
         const id = normalizedSectionId(section, courseId);
         return id ? [{ ...section, section_id: id }] : [];
       });
-      if (sections.length < detail.sections.length) {
-        warnings.push({ code: "sectionsSkipped", courseId, count: detail.sections.length - sections.length });
+      const keptInstructors = instructorFilters.get(courseId);
+      const sections = keptInstructors
+        ? validSections.filter((section) => (section.instructors ?? []).some((name) => keptInstructors.has(normalizeProfessorName(name))))
+        : validSections;
+      if (validSections.length < detail.sections.length) {
+        warnings.push({ code: "sectionsSkipped", courseId, count: detail.sections.length - validSections.length });
+      }
+      if (!validSections.length) {
+        warnings.push({ code: "noValidSections", courseId });
+        return null;
       }
       if (!sections.length) {
-        warnings.push({ code: "noValidSections", courseId });
+        warnings.push({ code: "noSelectedInstructors", courseId });
         return null;
       }
       return {

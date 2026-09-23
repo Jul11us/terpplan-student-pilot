@@ -29,7 +29,8 @@ type Watch = {
   status: string;
   lastCheckedAt: string | null;
 };
-type PlanCourse = { courseId: string; courseTitle: string };
+// instructors: the instructors whose sections may be scheduled; undefined means all of them.
+type PlanCourse = { courseId: string; courseTitle: string; instructors?: string[] };
 // Shapes of the JSON bodies returned by this app's /api routes.
 type ApiError = { error?: string };
 type WatchesPayload = ApiError & { authenticated?: boolean; watches?: Watch[] };
@@ -45,7 +46,7 @@ const copy = {
     subtitle: "Find a course, build a schedule, and keep an eye on open seats.", find: "Find a course",
     schedule: "Build a schedule", watch: "Watch seats", search: "Search course code or title",
     searchHint: "e.g. CMSC131 or Calculus", term: "Term", results: "Course matches", select: "View sections",
-    noResults: "No matches yet. Search by a course code or title.", sections: "Sections", addSchedule: "Add this course to plan", courseInPlan: "Course in plan",
+    noResults: "No matches yet. Search by a course code or title.", sections: "Sections", addSchedule: "Add this course to plan", courseInPlan: "Course in plan", instructorPick: "Instructors to keep", instructorHint: "Tap a name to leave out that instructor's sections.", keepOne: "Keep at least one instructor.", allInstructors: "All",
     addWatch: "Watch this section", scheduleTitle: "Your schedule", emptySchedule: "Add courses from search to generate schedule options.",
     watchesTitle: "Seat watches", emptyWatches: "Watch a section to see it here.", refresh: "Check now", remove: "Remove",
     added: "Course added to plan", watched: "Seat watch saved", conflict: "Time conflict", noConflict: "No time conflicts found", planLimit: "A plan can include up to 10 courses.",
@@ -61,7 +62,7 @@ const copy = {
     eyebrow: "马里兰大学 · 学生试用", title: "规划下一学期。", subtitle: "找课程、排进课表，并关注空余名额。",
     find: "找课程", schedule: "排课", watch: "关注余位", search: "搜索课程编号或名称", searchHint: "例如 CMSC131 或 Calculus",
     term: "学期", results: "匹配课程", select: "查看班次", noResults: "暂无匹配结果。请按课程编号或名称搜索。",
-    sections: "可选班次", addSchedule: "将整门课程加入排课", courseInPlan: "课程已加入", addWatch: "关注这个班次", scheduleTitle: "我的课表",
+    sections: "可选班次", addSchedule: "将整门课程加入排课", courseInPlan: "课程已加入", instructorPick: "保留哪些老师", instructorHint: "点老师名字即可排除他的班次。", keepOne: "至少保留一位老师。", allInstructors: "全部", addWatch: "关注这个班次", scheduleTitle: "我的课表",
     emptySchedule: "请从找课中添加课程，再生成排课方案。", watchesTitle: "余位关注", emptyWatches: "关注一个班次后会显示在这里。",
     refresh: "立即检查", remove: "移除", added: "已将课程加入排课", watched: "已保存余位关注", conflict: "时间冲突",
     noConflict: "没有发现时间冲突", planLimit: "每个排课方案最多添加 10 门课程。", signIn: "登录后即可保存并同步余位关注。", email: "邮箱地址", emailCode: "六位验证码", sendCode: "发送验证码", verifyCode: "验证并登录", codeSent: "验证码已发送，请查收邮箱。",
@@ -145,9 +146,12 @@ export default function Home() {
   const [sections, setSections] = useState<Section[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [planCourses, setPlanCourses] = useState<PlanCourse[]>([]);
+  // Instructors left out for the course currently open in the sections panel.
+  const [excludedInstructors, setExcludedInstructors] = useState<string[]>([]);
   const [professorRatings, setProfessorRatings] = useState<Record<string, ProfessorSummary>>({});
   const [ratingsLoading, setRatingsLoading] = useState(false);
   const activeCourseRef = useRef("");
+  const planCoursesRef = useRef<PlanCourse[]>([]);
   const [watches, setWatches] = useState<Watch[]>([]);
   const [alerts, setAlerts] = useState<string[]>([]);
   // Store the message key, not the text, so it re-renders in the new language after a switch.
@@ -204,6 +208,7 @@ export default function Home() {
     const courseRequestKey = term + "|" + course.course_id;
     activeCourseRef.current = courseRequestKey;
     setSelected(course); setSections([]); setLoadingDetail(true); setError(""); setMessage(""); setProfessorRatings({});
+    setExcludedInstructors([]);
     setRatingsLoading(false);
     try {
       const response = await fetch(`/api/course?id=${encodeURIComponent(course.course_id)}&term=${encodeURIComponent(term)}`);
@@ -212,6 +217,9 @@ export default function Home() {
       if (activeCourseRef.current !== courseRequestKey) return;
       setSections([...(payload.sections ?? [])].sort((a: Section, b: Section) => sectionId(a, course.course_id).localeCompare(sectionId(b, course.course_id), "en", { numeric: true })));
       const names = [...new Set((payload.sections ?? []).flatMap((section: Section) => section.instructors ?? []))];
+      // Reopening a course that is already in the plan restores the instructors picked for it.
+      const kept = planCoursesRef.current.find((item) => item.courseId === course.course_id)?.instructors;
+      setExcludedInstructors(kept ? names.filter((name) => !kept.includes(name)) : []);
       if (names.length) {
         setRatingsLoading(true);
         void fetch("/api/professor-ratings", {
@@ -234,6 +242,24 @@ export default function Home() {
     finally { if (activeCourseRef.current === courseRequestKey) setLoadingDetail(false); }
   };
 
+  const courseInstructors = [...new Set(sections.flatMap((section) => section.instructors ?? []))].sort((a, b) => a.localeCompare(b));
+  const keptInstructors = courseInstructors.filter((name) => !excludedInstructors.includes(name));
+  const instructorFilter = excludedInstructors.length ? keptInstructors : undefined;
+  const visibleSections = excludedInstructors.length
+    ? sections.filter((section) => (section.instructors ?? []).some((name) => keptInstructors.includes(name)))
+    : sections;
+
+  const toggleInstructor = (name: string) => {
+    const next = excludedInstructors.includes(name) ? excludedInstructors.filter((item) => item !== name) : [...excludedInstructors, name];
+    if (next.length >= courseInstructors.length) { setError(t.keepOne); return; }
+    setError("");
+    setExcludedInstructors(next);
+    const kept = next.length ? courseInstructors.filter((item) => !next.includes(item)) : undefined;
+    if (selected) setPlanCourses((current) => current.map((item) => item.courseId === selected.course_id ? { ...item, instructors: kept } : item));
+  };
+
+  useEffect(() => { planCoursesRef.current = planCourses; }, [planCourses]);
+
   const addToSchedule = (course: Course) => {
     if (planCourses.some((item) => item.courseId === course.course_id)) {
       setStep("schedule");
@@ -244,7 +270,7 @@ export default function Home() {
       setStep("schedule");
       return;
     }
-    setPlanCourses((current) => [...current, { courseId: course.course_id, courseTitle: course.name }]);
+    setPlanCourses((current) => [...current, { courseId: course.course_id, courseTitle: course.name, instructors: instructorFilter }]);
     setMessage("added"); setStep("schedule");
   };
 
@@ -347,10 +373,11 @@ export default function Home() {
               {results.map((course) => <button key={course.course_id} onClick={() => void openCourse(course)} className={`flex w-full items-center justify-between gap-4 py-4 text-left hover:bg-[#f6f4ef] ${selected?.course_id === course.course_id ? "text-[#9a372f]" : ""}`}><span><span className="block text-sm font-semibold">{course.course_id}<span className="ml-2 font-normal text-[#606966]">{course.name}</span></span><span className="mt-1 block text-xs text-[#89908c]">{course.department ?? course.course_id.slice(0, 4)}</span></span><span className="shrink-0 text-xs font-medium text-[#a34a39]">{t.select} →</span></button>)}
             </div>
           </div>
-          <div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-7"><div className="mb-5"><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{selected ? `${selected.course_id} · ${termLabel(term, language)}` : `02 · ${t.sections}`}</p><h2 className="mt-2 font-serif text-2xl">{selected?.name ?? t.sections}</h2>{selected && sections.length > 0 && <button onClick={() => addToSchedule(selected)} disabled={planCourses.some((item) => item.courseId === selected.course_id)} className="mt-4 rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:cursor-default disabled:opacity-60">{planCourses.some((item) => item.courseId === selected.course_id) ? t.courseInPlan : t.addSchedule}</button>}</div>
+          <div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-7"><div className="mb-5"><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{selected ? `${selected.course_id} · ${termLabel(term, language)}` : `02 · ${t.sections}`}</p><h2 className="mt-2 font-serif text-2xl">{selected?.name ?? t.sections}</h2>{selected && sections.length > 0 && <button onClick={() => addToSchedule(selected)} disabled={planCourses.some((item) => item.courseId === selected.course_id)} className="mt-4 rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:cursor-default disabled:opacity-60">{planCourses.some((item) => item.courseId === selected.course_id) ? t.courseInPlan : t.addSchedule}</button>}
+              {selected && courseInstructors.length > 1 && <div className="mt-4"><p className="text-xs font-medium text-[#68716e]">{t.instructorPick} <span className="font-normal text-[#8a918e]">· {excludedInstructors.length ? `${keptInstructors.length}/${courseInstructors.length}` : t.allInstructors}</span></p><div className="mt-2 flex flex-wrap gap-2">{courseInstructors.map((name) => { const kept = !excludedInstructors.includes(name); return <button key={name} type="button" onClick={() => toggleInstructor(name)} aria-pressed={kept} className={`rounded-full border px-3 py-1.5 text-xs transition ${kept ? "border-[#536d64] bg-[#edf3ef] font-medium text-[#24312d]" : "border-[#e0ddd5] bg-white text-[#9aa19d] line-through"}`}>{kept ? "✓ " : ""}{name}</button>; })}</div><p className="mt-2 text-[11px] text-[#8a918e]">{t.instructorHint}</p></div>}</div>
             {!selected && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm leading-6 text-[#717975]">{results.length ? t.pickCourse : t.noResults}</p>}{loadingDetail && <p className="py-8 text-sm text-[#737b77]">{t.loading}</p>}
             {selected && !loadingDetail && !sections.length && !error && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm text-[#717975]">{language === "en" ? "No sections listed for this term." : "本学期没有列出班次。"}</p>}
-            <div className="space-y-3">{sections.map((section) => { const id = sectionId(section, selected?.course_id ?? ""); const watching = watches.some((item) => item.sectionId === id && item.term === term); const open = count(section.open_seats);
+            <div className="space-y-3">{visibleSections.map((section) => { const id = sectionId(section, selected?.course_id ?? ""); const watching = watches.some((item) => item.sectionId === id && item.term === term); const open = count(section.open_seats);
               return <article key={id} className="rounded-xl border border-[#e7e4dc] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">{id}{/-FC[A-Z0-9]*$/.test(id) && <span className="ml-2 rounded-full bg-[#f3ecdc] px-2 py-0.5 align-middle text-[10px] font-semibold text-[#7a5a24]">{t.fcOnly}</span>}</h3><p className="mt-1 text-xs text-[#626c67]">{formatMeetings(section.meetings)}</p>{section.instructors?.length ? <SectionProfessors names={section.instructors} courseId={selected?.course_id ?? ""} ratings={professorRatings} ratingsLoading={ratingsLoading} language={language} /> : null}</div><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${open === null ? "bg-[#f1efe9] text-[#68716e]" : open > 0 ? "bg-[#eaf4ec] text-[#367047]" : "bg-[#f5e9e5] text-[#8f4538]"}`}>{seatLabel(section.open_seats)}</span></div><div className="mt-4 flex flex-wrap gap-2"><button onClick={() => selected && void addWatch(selected, section)} disabled={watching} className="rounded-lg border border-[#d9d6ce] px-3 py-2 text-xs font-semibold text-[#48534f] hover:bg-[#f7f5f0] disabled:cursor-default disabled:opacity-50">{watching ? (language === "en" ? "Watching" : "已关注") : t.addWatch}</button></div></article>;
             })}</div><p className="mt-5 border-t border-[#ece9e2] pt-4 text-xs leading-5 text-[#858d89]">{t.freshness}</p>
           </div>

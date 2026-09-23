@@ -29,7 +29,7 @@ type ScheduleOption = {
   unknownSectionIds: string[];
   fullSectionIds?: string[];
 };
-type PlanCourse = { courseId: string; courseTitle: string };
+type PlanCourse = { courseId: string; courseTitle: string; instructors?: string[] };
 // Mirrors PlanWarning in lib/planner.ts.
 type PlanWarning = { code: string; courseId?: string; count?: number };
 
@@ -45,7 +45,7 @@ const copy = {
     openOnly: "Only use sections with open seats", fullIn: "Full", seatsUnknown: "Seats unknown", full: "Full", seat: "seat open", seatsOpen: "seats open",
     windowHint: "Classes outside this window lower the ranking; tick the box to exclude them.",
     includeFc: "I'm in the Freshman Connection program (include FC sections)",
-    minutes: "min", credits: "credits", lecture: "Lecture", discussion: "Discussion", lab: "Lab",
+    onlyInstructors: "Only", minutes: "min", credits: "credits", lecture: "Lecture", discussion: "Discussion", lab: "Lab",
     select: "View this schedule", calendar: "Weekly timetable", unknown: "Times to confirm", noUnknown: "All meeting times are listed.",
     noOptions: "No conflict-free schedule was found. Remove a preference or course and try again.",
     fit: "Preferred-window fit", warning: "Some meeting times are missing, so those sections cannot be fully checked.",
@@ -61,7 +61,7 @@ const copy = {
     openOnly: "只使用有空位的班次", fullIn: "已满", seatsUnknown: "余位未知", full: "已满", seat: "个空位", seatsOpen: "个空位",
     windowHint: "时间段外的课程会降低排名；勾选后会直接排除。",
     includeFc: "我参加了 Freshman Connection 项目（包含 FC 班次）",
-    minutes: "分钟", credits: "学分", lecture: "讲课", discussion: "讨论课", lab: "实验课",
+    onlyInstructors: "只排", minutes: "分钟", credits: "学分", lecture: "讲课", discussion: "讨论课", lab: "实验课",
     select: "查看此方案", calendar: "每周课表", unknown: "需要确认的时间", noUnknown: "所有班次均列出了上课时间。",
     noOptions: "没有找到无冲突方案。可以移除一项偏好或课程后重试。",
     fit: "符合时间偏好的比例", warning: "部分班次时间缺失，无法完整验证这些课程是否冲突。",
@@ -135,6 +135,7 @@ function warningText(warning: PlanWarning, language: Language) {
       case "courseLoadFailed": return course + " 加载失败，已从方案中略去。";
       case "ratingsLimited": return "有 " + count + " 位教师的评分未查询，因为本次请求达到了查询上限。";
       case "noEligibleSections": return course + " 没有符合当前排课偏好的班次。";
+      case "noSelectedInstructors": return course + " 本学期没有你选中的老师开的班次。";
       case "someCoursesOmitted": return "部分课程无法排入，方案只包含有可选班次的课程。";
       case "noConflictFree": return "这些课程找不到没有时间冲突的组合。";
       case "searchLimit": return "搜索达到了安全上限。结果是已找到的最佳方案，但不保证是完整排名。";
@@ -150,6 +151,7 @@ function warningText(warning: PlanWarning, language: Language) {
     case "courseLoadFailed": return course + " could not be loaded. It was left out of the options.";
     case "ratingsLimited": return count + " instructor ratings were not looked up because the request reached the lookup safety limit.";
     case "noEligibleSections": return course + " has no sections that satisfy the selected schedule preferences.";
+    case "noSelectedInstructors": return course + " has no sections taught by the instructors you kept.";
     case "someCoursesOmitted": return "Some requested courses could not be included; the options cover only courses with eligible sections.";
     case "noConflictFree": return "No conflict-free combination was found for these courses.";
     case "searchLimit": return "The search reached its safety limit. Results are the best options found, not a proven complete ranking.";
@@ -225,7 +227,7 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
   const [strictTime, setStrictTime] = useState(false);
   const [openSeatsOnly, setOpenSeatsOnly] = useState(false);
   const [includeFreshmanConnection, setIncludeFreshmanConnection] = useState(false);
-  const courseKey = useMemo(() => courses.map((course) => course.courseId).join("|"), [courses]);
+  const courseKey = useMemo(() => courses.map((course) => course.courseId + (course.instructors ? ":" + course.instructors.join("+") : "")).join("|"), [courses]);
 
   // Results belong to the course list and term they were generated for; hide them once either changes.
   const requestKey = courseKey + "@" + term;
@@ -247,6 +249,7 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           courseIds: courses.map((course) => course.courseId),
+          instructorFilters: Object.fromEntries(courses.filter((course) => course.instructors?.length).map((course) => [course.courseId, course.instructors])),
           term,
           preferences: { earliestStart: earliestStart || null, excludedDays, windowStart: windowStart || null, windowEnd: windowEnd || null, strictTime, openSeatsOnly, includeFreshmanConnection },
         }),
@@ -270,7 +273,7 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
       <button onClick={onBack} className="rounded-lg border border-[#d9d6ce] px-3 py-2 text-sm font-medium hover:bg-white">{t.back}</button>
     </div>
     {!courses.length ? <p className="mt-6 rounded-xl bg-[#f2f0eb] p-5 text-sm text-[#717975]">{t.addCourse}</p> : <>
-      <div className="mt-6 space-y-2">{courses.map((course) => <article key={course.courseId} className="flex items-center justify-between gap-4 rounded-xl border border-[#e3e0d8] bg-white px-4 py-3"><div><p className="font-semibold">{course.courseId}</p><p className="mt-0.5 text-xs text-[#737b77]">{course.courseTitle}</p></div><button onClick={() => onRemove(course.courseId)} className="rounded-lg border border-[#dedbd3] px-3 py-2 text-xs font-medium text-[#6a736f] hover:bg-[#f6f4ef]">{t.remove}</button></article>)}</div>
+      <div className="mt-6 space-y-2">{courses.map((course) => <article key={course.courseId} className="flex items-center justify-between gap-4 rounded-xl border border-[#e3e0d8] bg-white px-4 py-3"><div><p className="font-semibold">{course.courseId}</p><p className="mt-0.5 text-xs text-[#737b77]">{course.courseTitle}</p>{course.instructors?.length ? <p className="mt-1 text-xs text-[#536d64]">{t.onlyInstructors}: {course.instructors.join(", ")}</p> : null}</div><button onClick={() => onRemove(course.courseId)} className="rounded-lg border border-[#dedbd3] px-3 py-2 text-xs font-medium text-[#6a736f] hover:bg-[#f6f4ef]">{t.remove}</button></article>)}</div>
       <div className="mt-5 rounded-xl border border-[#e3e0d8] bg-white p-4 sm:p-5">
         <h3 className="font-semibold">{t.preferences}</h3>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

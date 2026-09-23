@@ -60,7 +60,7 @@ export type ScheduleOption = {
 
 // Warnings are sent as codes so the page can show them in the viewer's language.
 export type PlanWarning =
-  | { code: "courseNotFound" | "noSectionsListed" | "noValidSections" | "courseLoadFailed" | "noEligibleSections"; courseId: string }
+  | { code: "courseNotFound" | "noSectionsListed" | "noValidSections" | "courseLoadFailed" | "noEligibleSections" | "noSelectedInstructors"; courseId: string }
   | { code: "sectionsSkipped"; courseId: string; count: number }
   | { code: "ratingsLimited"; count: number }
   | { code: "someCoursesOmitted" | "noConflictFree" | "searchLimit" | "allOptionsFull" | "tbaTimes" };
