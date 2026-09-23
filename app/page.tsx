@@ -470,7 +470,7 @@ export default function Home() {
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button onClick={() => selected && chooseSection(selected, id, "pin")} aria-pressed={pinned} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${pinned ? "border-[#536d64] bg-[#edf3ef] text-[#24312d]" : "border-[#d9d6ce] text-[#48534f] hover:bg-[#f7f5f0]"}`}>{pinned ? t.unpinSection : t.pinSection}</button>
-                  <button onClick={() => selected && chooseSection(selected, id, "exclude")} aria-pressed={excluded} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${excluded ? "border-[#cfaea5] bg-[#f9efec] text-[#8f4538]" : "border-[#d9d6ce] text-[#48534f] hover:bg-[#f7f5f0]"}`}>{excluded ? t.includeSection : t.excludeSection}</button>
+                  <button onClick={() => selected && chooseSection(selected, id, "exclude")} disabled={Boolean(plan?.pinnedSectionId)} aria-pressed={excluded} className={`rounded-lg border px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${excluded ? "border-[#cfaea5] bg-[#f9efec] text-[#8f4538]" : "border-[#d9d6ce] text-[#48534f] hover:bg-[#f7f5f0]"}`}>{excluded ? t.includeSection : t.excludeSection}</button>
                   <button onClick={() => selected && void addWatch(selected, section)} disabled={watching} className="rounded-lg border border-[#d9d6ce] px-3 py-2 text-xs font-semibold text-[#48534f] hover:bg-[#f7f5f0] disabled:cursor-default disabled:opacity-50">{watching ? (language === "en" ? "Watching" : "已关注") : t.addWatch}</button>
                 </div>
               </article>;

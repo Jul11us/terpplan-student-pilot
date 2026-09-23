@@ -25,6 +25,7 @@ export type PlanCourse = {
   credits: number | null;
   sections: PlanSection[];
   seatCheckedAt?: string;
+  pinnedSectionId?: string;
 };
 
 export type PlanPreferences = {
@@ -64,6 +65,7 @@ export type ScheduleOption = {
 export type PlanWarning =
   | { code: "courseNotFound" | "noSectionsListed" | "noValidSections" | "courseLoadFailed" | "noEligibleSections" | "noSelectedInstructors" | "allSectionsExcluded"; courseId: string }
   | { code: "pinnedSectionUnavailable"; courseId: string; sectionId: string }
+  | { code: "pinnedSectionPreferenceConflict"; courseId: string; sectionId: string }
   | { code: "sectionsSkipped"; courseId: string; count: number }
   | { code: "ratingsLimited"; count: number }
   | { code: "someCoursesOmitted" | "noConflictFree" | "searchLimit" | "allOptionsFull" | "tbaTimes" };
@@ -204,22 +206,26 @@ function parsePrefs(preferences: PlanPreferences) {
   };
 }
 
-function allowedByPreferences(section: PlanSection, preference: ReturnType<typeof parsePrefs>) {
+function conflictsWithTimePreferences(section: PlanSection, preference: ReturnType<typeof parsePrefs>) {
   const meetings = section.meetings ?? [];
   for (const meeting of meetings) {
     const days = dayNames(meeting.days);
-    if (days.some((day) => preference.excludedDays.has(day))) return false;
+    if (days.some((day) => preference.excludedDays.has(day))) return true;
     const start = minutes(meeting.start_time);
     const end = minutes(meeting.end_time);
-    if (preference.earliest !== null && start !== null && start < preference.earliest) return false;
+    if (preference.earliest !== null && start !== null && start < preference.earliest) return true;
     if (preference.strictTime) {
-      if (!hasKnownTime(meeting) || !preference.interval) return false;
-      if (start! < preference.interval[0] || end! > preference.interval[1]) return false;
+      if (!hasKnownTime(meeting) || !preference.interval) return true;
+      if (start! < preference.interval[0] || end! > preference.interval[1]) return true;
     }
   }
-  if (preference.strictTime && meetings.length === 0) return false;
-  if (preference.openSeatsOnly && isFull(section)) return false;
-  if (!preference.includeFreshmanConnection && isFreshmanConnection(section)) return false;
+  return preference.strictTime && meetings.length === 0;
+}
+
+function allowedByPreferences(section: PlanSection, preference: ReturnType<typeof parsePrefs>, pinned: boolean) {
+  if (conflictsWithTimePreferences(section, preference)) return false;
+  if (!pinned && preference.openSeatsOnly && isFull(section)) return false;
+  if (!pinned && !preference.includeFreshmanConnection && isFreshmanConnection(section)) return false;
   return true;
 }
 
@@ -308,8 +314,13 @@ export function generateOptions(
   const warnings: PlanWarning[] = [];
   const parsed = parsePrefs(preferences);
   const groups = courses.map((course) => {
+    const pinnedSection = course.pinnedSectionId
+      ? (course.sections ?? []).find((section) => sectionId(section, course.course_id) === course.pinnedSectionId)
+      : undefined;
+    const pinnedConflict = Boolean(pinnedSection && conflictsWithTimePreferences(pinnedSection, parsed));
+    if (pinnedConflict) warnings.push({ code: "pinnedSectionPreferenceConflict", courseId: course.course_id, sectionId: course.pinnedSectionId! });
     const sections = (course.sections ?? [])
-      .filter((section) => allowedByPreferences(section, parsed))
+      .filter((section) => allowedByPreferences(section, parsed, sectionId(section, course.course_id) === course.pinnedSectionId))
       .map((section) => ({
         ...section,
         course_id: course.course_id,
@@ -319,7 +330,7 @@ export function generateOptions(
         instructorRatings: sectionRatings(section, ratings),
         seatCheckedAt: course.seatCheckedAt,
       } as ScheduledSection));
-    if (!sections.length) warnings.push({ code: "noEligibleSections", courseId: course.course_id });
+    if (!sections.length && !pinnedConflict) warnings.push({ code: "noEligibleSections", courseId: course.course_id });
     return { courseId: course.course_id, sections };
   }).filter((group) => group.sections.length > 0).sort((a, b) => a.sections.length - b.sections.length);
   if (groups.length !== courses.length) {

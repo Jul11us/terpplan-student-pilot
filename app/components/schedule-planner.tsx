@@ -144,6 +144,7 @@ function warningText(warning: PlanWarning, language: Language) {
       case "noEligibleSections": return course + " 没有符合当前排课偏好的班次。";
       case "noSelectedInstructors": return course + " 本学期没有你选中的老师开的班次。";
       case "pinnedSectionUnavailable": return (warning.sectionId ?? course) + " 已不在本学期班次列表中，请重新指定。";
+      case "pinnedSectionPreferenceConflict": return "你指定的 " + (warning.sectionId ?? course) + " 和你的日期或时间偏好冲突。请调整偏好或指定其他班次。";
       case "allSectionsExcluded": return course + " 的所有班次均被排除，请重新纳入至少一个班次。";
       case "someCoursesOmitted": return "部分课程无法排入，方案只包含有可选班次的课程。";
       case "noConflictFree": return "这些课程找不到没有时间冲突的组合。";
@@ -162,6 +163,7 @@ function warningText(warning: PlanWarning, language: Language) {
     case "noEligibleSections": return course + " has no sections that satisfy the selected schedule preferences.";
     case "noSelectedInstructors": return course + " has no sections taught by the instructors you kept.";
     case "pinnedSectionUnavailable": return (warning.sectionId ?? course) + " is no longer listed for this term. Choose another required section.";
+    case "pinnedSectionPreferenceConflict": return "Your required section " + (warning.sectionId ?? course) + " conflicts with your day or time preferences. Adjust your preferences or choose another section.";
     case "allSectionsExcluded": return "All sections of " + course + " are excluded. Allow at least one section.";
     case "someCoursesOmitted": return "Some requested courses could not be included; the options cover only courses with eligible sections.";
     case "noConflictFree": return "No conflict-free combination was found for these courses.";

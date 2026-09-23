@@ -113,6 +113,7 @@ export async function POST(request: Request) {
         credits: creditsValue(rawCourse.credits),
         sections,
         seatCheckedAt: detail.seatCheckedAt ?? undefined,
+        pinnedSectionId: pinnedSectionId ?? undefined,
       } satisfies PlanCourse;
     } catch {
       warnings.push({ code: "courseLoadFailed", courseId });
