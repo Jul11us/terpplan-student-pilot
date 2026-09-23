@@ -34,7 +34,11 @@ export async function checkWatchGroup(db: Db, group: WatchRow[]): Promise<GroupC
       if (!found || openSeats === null) {
         return db.update(watches).set({ status: found ? "unknown" : "failed", lastCheckedAt: checkedAt }).where(rowFilter(row));
       }
-      if (row.openSeats === 0 && openSeats > 0) result.openedFromFull.push(row);
+      // Alert rule: only a change from full (0) to open (> 0) queues an email, once per opening.
+      // If the seats are gone again before the email goes out, the stale alert is dropped.
+      const openedFromFull = row.openSeats === 0 && openSeats > 0;
+      if (openedFromFull) result.openedFromFull.push(row);
+      const alertPendingAt = openedFromFull ? checkedAt : openSeats === 0 ? null : row.alertPendingAt;
       const newOpening = openSeats > 0 && (row.lastSuccessAt === null || (row.openSeats ?? 0) < openSeats) && row.lastNotifiedOpen !== openSeats;
       if (newOpening) result.pageAlerts.push({ sectionId: row.sectionId, courseId: row.courseId, openSeats });
       return db.update(watches).set({
@@ -45,6 +49,7 @@ export async function checkWatchGroup(db: Db, group: WatchRow[]): Promise<GroupC
         lastCheckedAt: checkedAt,
         lastSuccessAt: snapshot.seatCheckedAt ?? checkedAt,
         lastNotifiedOpen: openSeats > 0 ? (newOpening ? openSeats : row.lastNotifiedOpen) : null,
+        alertPendingAt,
       }).where(rowFilter(row));
     });
     for (const update of updates) await update;

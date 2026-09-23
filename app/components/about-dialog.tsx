@@ -20,8 +20,9 @@ const copy = {
     privacyTitle: "Your privacy",
     privacy: [
       "Your plan and schedule preferences are saved only in this browser.",
-      "Your email is used only to send sign-in codes for seat watches.",
-      "Seat watches are checked only while this page is open, at most once a minute. No email or text alerts are sent.",
+      "Your email is used to send sign-in codes for seat watches. It is stored only if you turn on seat emails, and deleted when you turn them off.",
+      "With seat emails on, TerpPlan checks your watched sections about every 10 minutes and emails you once each time a full section opens. Every email has a link to stop them.",
+      "Seat watches are removed automatically 150 days after you add them.",
     ],
     analytics: "We count visits anonymously with Cloudflare Web Analytics (no cookies, no personal data) to see how TerpPlan is used.",
     contactTitle: "Feedback & collaboration",
@@ -40,8 +41,9 @@ const copy = {
     privacyTitle: "隐私",
     privacy: [
       "你的排课计划和偏好只保存在当前浏览器里。",
-      "邮箱只用于发送余位关注的登录验证码。",
-      "余位只在本页面打开时检查，最多每分钟一次；不会发送邮件或短信提醒。",
+      "邮箱用于发送余位关注的登录验证码；只有开启邮件提醒时才会保存，关闭提醒后即删除。",
+      "开启邮件提醒后，TerpPlan 约每 10 分钟检查一次你关注的班次，班次从满员变为有空位时每次发一封邮件，每封邮件都附有停止提醒的链接。",
+      "关注的班次会在添加 150 天后自动删除。",
     ],
     analytics: "我们使用 Cloudflare Web Analytics 匿名统计访问量（不使用 cookie，不收集个人信息），以了解 TerpPlan 的使用情况。",
     contactTitle: "反馈与合作",

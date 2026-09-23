@@ -15,6 +15,13 @@
       "when": 1790107704697,
       "tag": "0001_superb_stryfe",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790197270667,
+      "tag": "0002_tranquil_spencer_smythe",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { getDb } from "@/db";
 import { watches } from "@/db/schema";
+import { removeExpiredWatches, sendPendingAlerts } from "@/lib/alerts";
 import { checkWatchGroup, groupByCourse, latestCheck } from "@/lib/seat-check";
 
 // Background seat check for every student's watches, called by an external scheduler
@@ -31,6 +32,7 @@ export async function POST(request: Request) {
   const startedAt = Date.now();
   const db = getDb();
   try {
+    const expiredWatches = await removeExpiredWatches(db);
     const rows = await db.select().from(watches);
     const groups = groupByCourse(rows);
     const due = groups
@@ -45,6 +47,8 @@ export async function POST(request: Request) {
       if (!result.ok) failedCourses += 1;
       openedFromFull += result.openedFromFull.length;
     }
+    // Openings found here or by an open page are both queued on the watch row, so none are missed.
+    const email = await sendPendingAlerts(db);
 
     // Counts only: no emails, user ids, or section details leave this endpoint.
     return Response.json({
@@ -55,6 +59,8 @@ export async function POST(request: Request) {
       deferredToNextRun: due.length - batch.length,
       failedCourses,
       openedFromFull,
+      ...email,
+      expiredWatches,
       durationMs: Date.now() - startedAt,
     });
   } catch (error) {

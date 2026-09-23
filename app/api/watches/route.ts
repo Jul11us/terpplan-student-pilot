@@ -2,6 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { currentUser, authRequired } from "@/lib/auth";
 import { getDb } from "@/db";
 import { watches } from "@/db/schema";
+import { MAX_WATCHES_PER_USER } from "@/lib/alerts";
 import { DEFAULT_TERM, getCourse, parseCount, sectionId } from "@/lib/umd";
 
 export async function GET(request: Request) {
@@ -38,6 +39,10 @@ export async function POST(request: Request) {
     const section = detail?.sections.find((item) => sectionId(item, courseId) === wantedSection);
     if (!detail || !section) return Response.json({ error: "That section is no longer listed for this term." }, { status: 404 });
     const db = getDb();
+    const existing = await db.select({ sectionId: watches.sectionId, term: watches.term }).from(watches).where(eq(watches.userId, user.id));
+    if (existing.length >= MAX_WATCHES_PER_USER && !existing.some((item) => item.term === term && item.sectionId === wantedSection)) {
+      return Response.json({ error: `You can watch up to ${MAX_WATCHES_PER_USER} sections. Remove one to add another.`, code: "watchLimit" }, { status: 409 });
+    }
     const [saved] = await db.insert(watches).values({
       userId: user.id,
       courseId,
