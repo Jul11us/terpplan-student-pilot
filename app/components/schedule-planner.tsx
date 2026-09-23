@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
+import { formatSeatReadTime } from "@/lib/seat-time";
 
 type Language = "en" | "zh";
 type Meeting = { days?: string | null; start_time?: string | null; end_time?: string | null; classtype?: string | null; building?: string | null; room?: string | null };
@@ -16,6 +17,7 @@ type ScheduledSection = {
   instructorRatings: ProfessorRating[];
   open_seats?: string | number | null;
   waitlist?: string | number | null;
+  seatCheckedAt?: string;
 };
 type ScheduleOption = {
   selectedSections: ScheduledSection[];
@@ -30,9 +32,9 @@ type ScheduleOption = {
   unknownSectionIds: string[];
   fullSectionIds?: string[];
 };
-type PlanCourse = { courseId: string; courseTitle: string; instructors?: string[] };
+type PlanCourse = { courseId: string; courseTitle: string; instructors?: string[]; pinnedSectionId?: string; excludedSectionIds?: string[] };
 // Mirrors PlanWarning in lib/planner.ts.
-type PlanWarning = { code: string; courseId?: string; count?: number };
+type PlanWarning = { code: string; courseId?: string; sectionId?: string; count?: number };
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 const COLORS = ["#bda0d5", "#ffdadb", "#79ded4", "#ecd34e", "#a8c9ed", "#f2b98c", "#bcd7a1", "#d6bee5", "#accfce", "#e2c4a2"];
@@ -52,6 +54,8 @@ const copy = {
     fit: "Preferred-window fit", warning: "Some meeting times are missing, so those sections cannot be fully checked.",
     loadError: "Schedule options could not be generated. Please try again.", invalidWindow: "Enter both ends of the preferred window, with the start before the end.", back: "← Back to course search",
     weekdays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+    pinned: "Required section", excludedSections: "Excluded sections", changeSections: "Change in course search",
+    seatReadAt: "Seat data read", seatReadHint: "This is when TerpPlan read the source, not when UMD updated it.",
   },
   zh: {
     courses: "待排课程", addCourse: "请先从找课中添加课程，再生成方案。", remove: "移除",
@@ -68,6 +72,8 @@ const copy = {
     fit: "符合时间偏好的比例", warning: "部分班次时间缺失，无法完整验证这些课程是否冲突。",
     loadError: "暂时无法生成排课方案，请重试。", invalidWindow: "请填写完整的偏好时间段，并确保开始时间早于结束时间。", back: "← 返回找课",
     weekdays: ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
+    pinned: "指定班次", excludedSections: "已排除班次", changeSections: "返回找课修改班次",
+    seatReadAt: "余位数据读取于", seatReadHint: "这是 TerpPlan 读取数据的时间，不代表 UMD 更新数据的时间。",
   },
 } as const;
 
@@ -137,6 +143,8 @@ function warningText(warning: PlanWarning, language: Language) {
       case "ratingsLimited": return "有 " + count + " 位教师的评分未查询，因为本次请求达到了查询上限。";
       case "noEligibleSections": return course + " 没有符合当前排课偏好的班次。";
       case "noSelectedInstructors": return course + " 本学期没有你选中的老师开的班次。";
+      case "pinnedSectionUnavailable": return (warning.sectionId ?? course) + " 已不在本学期班次列表中，请重新指定。";
+      case "allSectionsExcluded": return course + " 的所有班次均被排除，请重新纳入至少一个班次。";
       case "someCoursesOmitted": return "部分课程无法排入，方案只包含有可选班次的课程。";
       case "noConflictFree": return "这些课程找不到没有时间冲突的组合。";
       case "searchLimit": return "搜索达到了安全上限。结果是已找到的最佳方案，但不保证是完整排名。";
@@ -153,6 +161,8 @@ function warningText(warning: PlanWarning, language: Language) {
     case "ratingsLimited": return count + " instructor ratings were not looked up because the request reached the lookup safety limit.";
     case "noEligibleSections": return course + " has no sections that satisfy the selected schedule preferences.";
     case "noSelectedInstructors": return course + " has no sections taught by the instructors you kept.";
+    case "pinnedSectionUnavailable": return (warning.sectionId ?? course) + " is no longer listed for this term. Choose another required section.";
+    case "allSectionsExcluded": return "All sections of " + course + " are excluded. Allow at least one section.";
     case "someCoursesOmitted": return "Some requested courses could not be included; the options cover only courses with eligible sections.";
     case "noConflictFree": return "No conflict-free combination was found for these courses.";
     case "searchLimit": return "The search reached its safety limit. Results are the best options found, not a proven complete ranking.";
@@ -234,7 +244,7 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
   useEffect(() => {
     writeSavedState({ preferences: { excludedDays, earliestStart, windowStart, windowEnd, strictTime, openSeatsOnly, includeFreshmanConnection } });
   }, [excludedDays, earliestStart, windowStart, windowEnd, strictTime, openSeatsOnly, includeFreshmanConnection]);
-  const courseKey = useMemo(() => courses.map((course) => course.courseId + (course.instructors ? ":" + course.instructors.join("+") : "")).join("|"), [courses]);
+  const courseKey = useMemo(() => courses.map((course) => [course.courseId, course.instructors?.join("+"), course.pinnedSectionId, course.excludedSectionIds?.join("+")].join(":" )).join("|"), [courses]);
 
   // Results belong to the course list and term they were generated for; hide them once either changes.
   const requestKey = courseKey + "@" + term;
@@ -257,6 +267,7 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
         body: JSON.stringify({
           courseIds: courses.map((course) => course.courseId),
           instructorFilters: Object.fromEntries(courses.filter((course) => course.instructors?.length).map((course) => [course.courseId, course.instructors])),
+          sectionFilters: Object.fromEntries(courses.filter((course) => course.pinnedSectionId || course.excludedSectionIds?.length).map((course) => [course.courseId, { pinnedSectionId: course.pinnedSectionId, excludedSectionIds: course.excludedSectionIds }])),
           term,
           preferences: { earliestStart: earliestStart || null, excludedDays, windowStart: windowStart || null, windowEnd: windowEnd || null, strictTime, openSeatsOnly, includeFreshmanConnection },
         }),
@@ -280,7 +291,7 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
       <button onClick={onBack} className="rounded-lg border border-[#d9d6ce] px-3 py-2 text-sm font-medium hover:bg-white">{t.back}</button>
     </div>
     {!courses.length ? <p className="mt-6 rounded-xl bg-[#f2f0eb] p-5 text-sm text-[#717975]">{t.addCourse}</p> : <>
-      <div className="mt-6 space-y-2">{courses.map((course) => <article key={course.courseId} className="flex items-center justify-between gap-4 rounded-xl border border-[#e3e0d8] bg-white px-4 py-3"><div><p className="font-semibold">{course.courseId}</p><p className="mt-0.5 text-xs text-[#737b77]">{course.courseTitle}</p>{course.instructors?.length ? <p className="mt-1 text-xs text-[#536d64]">{t.onlyInstructors}: {course.instructors.join(", ")}</p> : null}</div><button onClick={() => onRemove(course.courseId)} className="rounded-lg border border-[#dedbd3] px-3 py-2 text-xs font-medium text-[#6a736f] hover:bg-[#f6f4ef]">{t.remove}</button></article>)}</div>
+      <div className="mt-6 space-y-2">{courses.map((course) => <article key={course.courseId} className="flex items-center justify-between gap-4 rounded-xl border border-[#e3e0d8] bg-white px-4 py-3"><div><p className="font-semibold">{course.courseId}</p><p className="mt-0.5 text-xs text-[#737b77]">{course.courseTitle}</p>{course.instructors?.length ? <p className="mt-1 text-xs text-[#536d64]">{t.onlyInstructors}: {course.instructors.join(", ")}</p> : null}{course.pinnedSectionId && <p className="mt-1 text-xs font-medium text-[#315c43]">{t.pinned}: {course.pinnedSectionId}</p>}{course.excludedSectionIds?.length ? <p className="mt-1 text-xs text-[#8f4538]">{t.excludedSections}: {course.excludedSectionIds.join(", ")}</p> : null}{(course.pinnedSectionId || course.excludedSectionIds?.length) && <button onClick={onBack} className="mt-1 text-xs font-medium text-[#536d64] underline underline-offset-2">{t.changeSections}</button>}</div><button onClick={() => onRemove(course.courseId)} className="rounded-lg border border-[#dedbd3] px-3 py-2 text-xs font-medium text-[#6a736f] hover:bg-[#f6f4ef]">{t.remove}</button></article>)}</div>
       <div className="mt-5 rounded-xl border border-[#e3e0d8] bg-white p-4 sm:p-5">
         <h3 className="font-semibold">{t.preferences}</h3>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -320,7 +331,8 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
           return start === null || end === null || !days.length ? (language === "zh" ? "时间待定" : "Time TBA") : (type ? type + " · " : "") + days.join(" ") + " " + displayClock(start) + "–" + displayClock(end);
         }).join(" · ") : language === "zh" ? " · 时间待定" : " · Time TBA"}</p>
         {section.instructorRatings.length > 0 && <p className="mt-2 text-xs text-[#737b77]">{section.instructorRatings.map((item) => item.name + (item.averageRating === null ? "" : " · " + item.averageRating.toFixed(2) + " / 5")).join(" · ")}</p>}
-        </div><span className={`rounded-full px-2.5 py-1 text-xs ${seatCount(section.open_seats) === 0 ? "bg-[#f5e9e5] font-semibold text-[#8f4538]" : "bg-[#f1efe9] text-[#68716e]"}`}>{seatText(section.open_seats, t)}</span></div></article>)}</div>
+        </div><div className="text-right"><span className={`inline-block rounded-full px-2.5 py-1 text-xs ${seatCount(section.open_seats) === 0 ? "bg-[#f5e9e5] font-semibold text-[#8f4538]" : "bg-[#f1efe9] text-[#68716e]"}`}>{seatText(section.open_seats, t)}</span>{formatSeatReadTime(section.seatCheckedAt, language) && <p className="mt-1 text-[11px] text-[#858d89]">{t.seatReadAt}: {formatSeatReadTime(section.seatCheckedAt, language)}</p>}</div></div></article>)}</div>
+        <p className="mt-3 text-xs leading-5 text-[#858d89]">{t.seatReadHint}</p>
       </div>}
     </div>}
   </section>;

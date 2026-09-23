@@ -50,7 +50,7 @@ export async function POST(request: Request) {
       openSeats: parseCount(section.open_seats),
       waitlist: parseCount(section.waitlist),
       status: parseCount(section.open_seats) === null ? "unknown" : "ok",
-      lastSuccessAt: new Date().toISOString(),
+      lastSuccessAt: detail.seatCheckedAt,
     }).onConflictDoUpdate({
       target: [watches.userId, watches.term, watches.sectionId],
       set: {
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
         openSeats: parseCount(section.open_seats),
         waitlist: parseCount(section.waitlist),
         status: parseCount(section.open_seats) === null ? "unknown" : "ok",
-        lastSuccessAt: new Date().toISOString(),
+        lastSuccessAt: detail.seatCheckedAt,
       },
     }).returning();
     return Response.json({ watch: { ...saved, meetings: JSON.parse(saved.meetings), instructors: JSON.parse(saved.instructors) } }, { status: 201 });

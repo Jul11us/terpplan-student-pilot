@@ -8,7 +8,7 @@ function creditsValue(value: unknown) {
 }
 
 export async function POST(request: Request) {
-  let body: { courseIds?: unknown; term?: unknown; preferences?: unknown; instructorFilters?: unknown };
+  let body: { courseIds?: unknown; term?: unknown; preferences?: unknown; instructorFilters?: unknown; sectionFilters?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -45,7 +45,22 @@ export async function POST(request: Request) {
     }
   }
 
+  const sectionFilters = new Map<string, { pinnedSectionId: string | null; excludedSectionIds: Set<string> }>();
+  if (body.sectionFilters && typeof body.sectionFilters === "object" && !Array.isArray(body.sectionFilters)) {
+    for (const [rawCourseId, value] of Object.entries(body.sectionFilters as Record<string, unknown>)) {
+      const courseId = rawCourseId.trim().toUpperCase();
+      if (!courseIds.includes(courseId) || !value || typeof value !== "object" || Array.isArray(value)) continue;
+      const filter = value as Record<string, unknown>;
+      const validId = (id: unknown): id is string => typeof id === "string" && id.startsWith(courseId + "-") && id.length <= 40;
+      sectionFilters.set(courseId, {
+        pinnedSectionId: validId(filter.pinnedSectionId) ? filter.pinnedSectionId : null,
+        excludedSectionIds: new Set(Array.isArray(filter.excludedSectionIds) ? filter.excludedSectionIds.filter(validId).slice(0, 500) : []),
+      });
+    }
+  }
+
   const warnings: PlanWarning[] = [];
+  let sectionSelectionFailed = false;
   const loaded = await Promise.all(courseIds.map(async (courseId) => {
     try {
       const detail = await getCourse(courseId, term);
@@ -62,10 +77,25 @@ export async function POST(request: Request) {
         const id = normalizedSectionId(section, courseId);
         return id ? [{ ...section, section_id: id }] : [];
       });
+      const sectionFilter = sectionFilters.get(courseId);
+      const pinnedSectionId = sectionFilter?.pinnedSectionId;
+      if (pinnedSectionId && !validSections.some((section) => section.section_id === pinnedSectionId)) {
+        warnings.push({ code: "pinnedSectionUnavailable", courseId, sectionId: pinnedSectionId });
+        sectionSelectionFailed = true;
+        return null;
+      }
+      const selectedSections = pinnedSectionId
+        ? validSections.filter((section) => section.section_id === pinnedSectionId)
+        : validSections.filter((section) => !sectionFilter?.excludedSectionIds.has(section.section_id));
+      if (!selectedSections.length && validSections.length) {
+        warnings.push({ code: "allSectionsExcluded", courseId });
+        sectionSelectionFailed = true;
+        return null;
+      }
       const keptInstructors = instructorFilters.get(courseId);
-      const sections = keptInstructors
-        ? validSections.filter((section) => (section.instructors ?? []).some((name) => keptInstructors.has(normalizeProfessorName(name))))
-        : validSections;
+      const sections = keptInstructors && !pinnedSectionId
+        ? selectedSections.filter((section) => (section.instructors ?? []).some((name) => keptInstructors.has(normalizeProfessorName(name))))
+        : selectedSections;
       if (validSections.length < detail.sections.length) {
         warnings.push({ code: "sectionsSkipped", courseId, count: detail.sections.length - validSections.length });
       }
@@ -82,6 +112,7 @@ export async function POST(request: Request) {
         title: String(rawCourse.name ?? rawCourse.title ?? courseId),
         credits: creditsValue(rawCourse.credits),
         sections,
+        seatCheckedAt: detail.seatCheckedAt ?? undefined,
       } satisfies PlanCourse;
     } catch {
       warnings.push({ code: "courseLoadFailed", courseId });
@@ -89,6 +120,7 @@ export async function POST(request: Request) {
     }
   }));
   const courses: PlanCourse[] = loaded.filter((course) => course !== null);
+  if (sectionSelectionFailed) return Response.json({ term, options: [], warnings, truncated: false });
   if (!courses.length) return Response.json({ term, options: [], warnings, truncated: false });
   const names = [...new Set(courses.flatMap((course) => course.sections.flatMap((section) => section.instructors ?? [])))];
   const professorRatings = await getProfessorSummaries(names);

@@ -6,6 +6,7 @@ import SchedulePlanner from "@/app/components/schedule-planner";
 import SectionProfessors from "@/app/components/section-professors";
 import type { ProfessorSummary } from "@/lib/planetterp";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
+import { formatSeatReadTime } from "@/lib/seat-time";
 
 type Course = { course_id: string; name: string; department?: string };
 type Meeting = { days?: string | null; start_time?: string | null; end_time?: string | null; building?: string | null; room?: string | null };
@@ -30,15 +31,16 @@ type Watch = {
   waitlist: number | null;
   status: string;
   lastCheckedAt: string | null;
+  lastSuccessAt: string | null;
 };
 // instructors: the instructors whose sections may be scheduled; undefined means all of them.
-type PlanCourse = { courseId: string; courseTitle: string; instructors?: string[] };
+type PlanCourse = { courseId: string; courseTitle: string; instructors?: string[]; pinnedSectionId?: string; excludedSectionIds?: string[] };
 // Shapes of the JSON bodies returned by this app's /api routes.
 type ApiError = { error?: string };
 type WatchesPayload = ApiError & { authenticated?: boolean; watches?: Watch[] };
 type TermsPayload = { terms?: string[]; defaultTerm?: string };
 type SearchPayload = ApiError & { results?: Course[] };
-type CoursePayload = ApiError & { sections?: Section[] };
+type CoursePayload = ApiError & { sections?: Section[]; seatCheckedAt?: string };
 type RatingsPayload = { ratings?: Record<string, ProfessorSummary> };
 type CheckPayload = ApiError & { watches?: Watch[]; alerts?: { courseId: string; sectionId: string }[] };
 
@@ -59,6 +61,9 @@ const copy = {
     open: "Seats available", full: "Full", unknown: "Unknown", stale: "Last check failed · showing saved count", checking: "Checking…",
     next: "Next step", back: "Back", termFallback: "Term list unavailable — showing Spring 2027",
     timeUnknown: "Some meeting times are missing, so the conflict check is incomplete.",
+    pinSection: "Require this section", unpinSection: "Remove requirement", excludeSection: "Exclude from schedules", includeSection: "Allow in schedules",
+    keepSection: "Keep at least one section available.", seatReadAt: "Seat data read", seatReadHint: "This is when TerpPlan read the source, not when UMD updated it.",
+    pinnedInstructorHint: "Remove the required section before changing instructors.",
   },
   zh: {
     eyebrow: "马里兰大学 · 学生试用", title: "规划下一学期。", subtitle: "找课程、排进课表，并关注空余名额。",
@@ -74,6 +79,9 @@ const copy = {
     freshness: "余位数据来自 UMD 课程数据，可能晚于学校官方课表。页面打开时最多每分钟检查一次。",
     open: "有空位", full: "已满", unknown: "未知", stale: "上次检查失败 · 显示已保存数据", checking: "检查中…",
     next: "下一步", back: "返回", termFallback: "无法读取学期列表，暂显示 2027 春季", timeUnknown: "部分班次缺少上课时间，无法完整检查冲突。",
+    pinSection: "指定此班次", unpinSection: "取消指定", excludeSection: "排课时排除", includeSection: "重新纳入排课",
+    keepSection: "请至少保留一个可排班次。", seatReadAt: "余位数据读取于", seatReadHint: "这是 TerpPlan 读取数据的时间，不代表 UMD 更新数据的时间。",
+    pinnedInstructorHint: "请先取消指定班次，再修改教师筛选。",
   },
 } as const;
 
@@ -146,6 +154,7 @@ export default function Home() {
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<Course | null>(null);
   const [sections, setSections] = useState<Section[]>([]);
+  const [courseSeatCheckedAt, setCourseSeatCheckedAt] = useState<string | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [planCourses, setPlanCourses] = useState<PlanCourse[]>([]);
   // Instructors left out for the course currently open in the sections panel.
@@ -187,7 +196,7 @@ export default function Home() {
   const switchTerm = useCallback((nextTerm: string) => {
     activeCourseRef.current = "";
     setTerm(nextTerm);
-    setSelected(null); setSections([]); setProfessorRatings({}); setRatingsLoading(false);
+    setSelected(null); setSections([]); setCourseSeatCheckedAt(null); setProfessorRatings({}); setRatingsLoading(false);
     setPlanCourses(savedPlansRef.current[nextTerm] ?? []);
   }, []);
 
@@ -242,7 +251,7 @@ export default function Home() {
   const openCourse = async (course: Course) => {
     const courseRequestKey = term + "|" + course.course_id;
     activeCourseRef.current = courseRequestKey;
-    setSelected(course); setSections([]); setLoadingDetail(true); setError(""); setMessage(""); setProfessorRatings({});
+    setSelected(course); setSections([]); setCourseSeatCheckedAt(null); setLoadingDetail(true); setError(""); setMessage(""); setProfessorRatings({});
     setExcludedInstructors([]);
     setRatingsLoading(false);
     try {
@@ -250,6 +259,7 @@ export default function Home() {
       const payload = await response.json() as CoursePayload;
       if (!response.ok) throw new Error(payload.error || t.error);
       if (activeCourseRef.current !== courseRequestKey) return;
+      setCourseSeatCheckedAt(payload.seatCheckedAt ?? null);
       setSections([...(payload.sections ?? [])].sort((a: Section, b: Section) => sectionId(a, course.course_id).localeCompare(sectionId(b, course.course_id), "en", { numeric: true })));
       const names = [...new Set((payload.sections ?? []).flatMap((section: Section) => section.instructors ?? []))];
       // Reopening a course that is already in the plan restores the instructors picked for it.
@@ -279,12 +289,14 @@ export default function Home() {
 
   const courseInstructors = [...new Set(sections.flatMap((section) => section.instructors ?? []))].sort((a, b) => a.localeCompare(b));
   const keptInstructors = courseInstructors.filter((name) => !excludedInstructors.includes(name));
+  const selectedPlan = planCourses.find((item) => item.courseId === selected?.course_id);
   const instructorFilter = excludedInstructors.length ? keptInstructors : undefined;
   const visibleSections = excludedInstructors.length
     ? sections.filter((section) => (section.instructors ?? []).some((name) => keptInstructors.includes(name)))
     : sections;
 
   const toggleInstructor = (name: string) => {
+    if (selectedPlan?.pinnedSectionId) { setError(t.pinnedInstructorHint); return; }
     const next = excludedInstructors.includes(name) ? excludedInstructors.filter((item) => item !== name) : [...excludedInstructors, name];
     if (next.length >= courseInstructors.length) { setError(t.keepOne); return; }
     setError("");
@@ -307,6 +319,25 @@ export default function Home() {
     }
     setPlanCourses((current) => [...current, { courseId: course.course_id, courseTitle: course.name, instructors: instructorFilter }]);
     setMessage("added"); setStep("schedule");
+  };
+
+  const chooseSection = (course: Course, id: string, action: "pin" | "exclude") => {
+    const existing = planCourses.find((item) => item.courseId === course.course_id);
+    if (!existing && planCourses.length >= 10) { setError(t.planLimit); return; }
+    const plan = existing ?? { courseId: course.course_id, courseTitle: course.name, instructors: instructorFilter };
+    const pinnedSectionId = action === "pin" ? (plan.pinnedSectionId === id ? undefined : id) : (plan.pinnedSectionId === id ? undefined : plan.pinnedSectionId);
+    const excludedSectionIds = action === "exclude"
+      ? plan.excludedSectionIds?.includes(id) ? plan.excludedSectionIds.filter((item) => item !== id) : [...(plan.excludedSectionIds ?? []), id]
+      : (plan.excludedSectionIds ?? []).filter((item) => item !== id);
+    if (!pinnedSectionId && sections.length > 0 && sections.every((section) => excludedSectionIds.includes(sectionId(section, course.course_id)))) {
+      setError(t.keepSection);
+      return;
+    }
+    const next = { ...plan, pinnedSectionId, excludedSectionIds, ...(pinnedSectionId ? { instructors: undefined } : {}) };
+    setPlanCourses((current) => existing ? current.map((item) => item.courseId === course.course_id ? next : item) : [...current, next]);
+    if (pinnedSectionId) setExcludedInstructors([]);
+    setError("");
+    setMessage("added");
   };
 
   const addWatch = async (course: Course, section: Section) => {
@@ -411,12 +442,31 @@ export default function Home() {
             </div>
           </div>
           <div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-7"><div className="mb-5"><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{selected ? `${selected.course_id} · ${termLabel(term, language)}` : `02 · ${t.sections}`}</p><h2 className="mt-2 font-serif text-2xl">{selected?.name ?? t.sections}</h2>{selected && sections.length > 0 && <button onClick={() => addToSchedule(selected)} disabled={planCourses.some((item) => item.courseId === selected.course_id)} className="mt-4 rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:cursor-default disabled:opacity-60">{planCourses.some((item) => item.courseId === selected.course_id) ? t.courseInPlan : t.addSchedule}</button>}
-              {selected && courseInstructors.length > 1 && <div className="mt-4"><p className="text-xs font-medium text-[#68716e]">{t.instructorPick} <span className="font-normal text-[#8a918e]">· {excludedInstructors.length ? `${keptInstructors.length}/${courseInstructors.length}` : t.allInstructors}</span></p><div className="mt-2 flex flex-wrap gap-2">{courseInstructors.map((name) => { const kept = !excludedInstructors.includes(name); return <button key={name} type="button" onClick={() => toggleInstructor(name)} aria-pressed={kept} className={`rounded-full border px-3 py-1.5 text-xs transition ${kept ? "border-[#536d64] bg-[#edf3ef] font-medium text-[#24312d]" : "border-[#e0ddd5] bg-white text-[#9aa19d] line-through"}`}>{kept ? "✓ " : ""}{name}</button>; })}</div><p className="mt-2 text-[11px] text-[#8a918e]">{t.instructorHint}</p></div>}</div>
+              {selected && courseInstructors.length > 1 && <div className="mt-4"><p className="text-xs font-medium text-[#68716e]">{t.instructorPick} <span className="font-normal text-[#8a918e]">· {excludedInstructors.length ? `${keptInstructors.length}/${courseInstructors.length}` : t.allInstructors}</span></p><div className="mt-2 flex flex-wrap gap-2">{courseInstructors.map((name) => { const kept = !excludedInstructors.includes(name); return <button key={name} type="button" onClick={() => toggleInstructor(name)} disabled={Boolean(selectedPlan?.pinnedSectionId)} aria-pressed={kept} className={`rounded-full border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${kept ? "border-[#536d64] bg-[#edf3ef] font-medium text-[#24312d]" : "border-[#e0ddd5] bg-white text-[#9aa19d] line-through"}`}>{kept ? "✓ " : ""}{name}</button>; })}</div><p className="mt-2 text-[11px] text-[#8a918e]">{selectedPlan?.pinnedSectionId ? t.pinnedInstructorHint : t.instructorHint}</p></div>}</div>
             {!selected && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm leading-6 text-[#717975]">{results.length ? t.pickCourse : t.noResults}</p>}{loadingDetail && <p className="py-8 text-sm text-[#737b77]">{t.loading}</p>}
             {selected && !loadingDetail && !sections.length && !error && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm text-[#717975]">{language === "en" ? "No sections listed for this term." : "本学期没有列出班次。"}</p>}
-            <div className="space-y-3">{visibleSections.map((section) => { const id = sectionId(section, selected?.course_id ?? ""); const watching = watches.some((item) => item.sectionId === id && item.term === term); const open = count(section.open_seats);
-              return <article key={id} className="rounded-xl border border-[#e7e4dc] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">{id}{/-FC[A-Z0-9]*$/.test(id) && <span className="ml-2 rounded-full bg-[#f3ecdc] px-2 py-0.5 align-middle text-[10px] font-semibold text-[#7a5a24]">{t.fcOnly}</span>}</h3><p className="mt-1 text-xs text-[#626c67]">{formatMeetings(section.meetings)}</p>{section.instructors?.length ? <SectionProfessors names={section.instructors} courseId={selected?.course_id ?? ""} ratings={professorRatings} ratingsLoading={ratingsLoading} language={language} /> : null}</div><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${open === null ? "bg-[#f1efe9] text-[#68716e]" : open > 0 ? "bg-[#eaf4ec] text-[#367047]" : "bg-[#f5e9e5] text-[#8f4538]"}`}>{seatLabel(section.open_seats)}</span></div><div className="mt-4 flex flex-wrap gap-2"><button onClick={() => selected && void addWatch(selected, section)} disabled={watching} className="rounded-lg border border-[#d9d6ce] px-3 py-2 text-xs font-semibold text-[#48534f] hover:bg-[#f7f5f0] disabled:cursor-default disabled:opacity-50">{watching ? (language === "en" ? "Watching" : "已关注") : t.addWatch}</button></div></article>;
-            })}</div><p className="mt-5 border-t border-[#ece9e2] pt-4 text-xs leading-5 text-[#858d89]">{t.freshness}</p>
+            <div className="space-y-3">{visibleSections.map((section) => {
+              const id = sectionId(section, selected?.course_id ?? "");
+              const watching = watches.some((item) => item.sectionId === id && item.term === term);
+              const open = count(section.open_seats);
+              const plan = planCourses.find((item) => item.courseId === selected?.course_id);
+              const pinned = plan?.pinnedSectionId === id;
+              const excluded = plan?.excludedSectionIds?.includes(id) ?? false;
+              return <article key={id} className={`rounded-xl border bg-white p-4 ${pinned ? "border-[#536d64] ring-1 ring-[#536d64]/20" : excluded ? "border-[#e7e4dc] opacity-70" : "border-[#e7e4dc]"}`}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div><h3 className="font-semibold">{id}{/-FC[A-Z0-9]*$/.test(id) && <span className="ml-2 rounded-full bg-[#f3ecdc] px-2 py-0.5 align-middle text-[10px] font-semibold text-[#7a5a24]">{t.fcOnly}</span>}</h3><p className="mt-1 text-xs text-[#626c67]">{formatMeetings(section.meetings)}</p>{section.instructors?.length ? <SectionProfessors names={section.instructors} courseId={selected?.course_id ?? ""} ratings={professorRatings} ratingsLoading={ratingsLoading} language={language} /> : null}</div>
+                  <div className="text-right"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${open === null ? "bg-[#f1efe9] text-[#68716e]" : open > 0 ? "bg-[#eaf4ec] text-[#367047]" : "bg-[#f5e9e5] text-[#8f4538]"}`}>{seatLabel(section.open_seats)}</span></div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button onClick={() => selected && chooseSection(selected, id, "pin")} aria-pressed={pinned} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${pinned ? "border-[#536d64] bg-[#edf3ef] text-[#24312d]" : "border-[#d9d6ce] text-[#48534f] hover:bg-[#f7f5f0]"}`}>{pinned ? t.unpinSection : t.pinSection}</button>
+                  <button onClick={() => selected && chooseSection(selected, id, "exclude")} aria-pressed={excluded} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${excluded ? "border-[#cfaea5] bg-[#f9efec] text-[#8f4538]" : "border-[#d9d6ce] text-[#48534f] hover:bg-[#f7f5f0]"}`}>{excluded ? t.includeSection : t.excludeSection}</button>
+                  <button onClick={() => selected && void addWatch(selected, section)} disabled={watching} className="rounded-lg border border-[#d9d6ce] px-3 py-2 text-xs font-semibold text-[#48534f] hover:bg-[#f7f5f0] disabled:cursor-default disabled:opacity-50">{watching ? (language === "en" ? "Watching" : "已关注") : t.addWatch}</button>
+                </div>
+              </article>;
+            })}</div>
+            {sections.length > 0 && formatSeatReadTime(courseSeatCheckedAt, language) && <p className="mt-4 text-xs text-[#707874]">{t.seatReadAt}: <time dateTime={courseSeatCheckedAt ?? undefined}>{formatSeatReadTime(courseSeatCheckedAt, language)}</time></p>}
+            {sections.length > 0 && <p className="mt-2 text-xs leading-5 text-[#858d89]">{t.seatReadHint}</p>}
+            <p className="mt-5 border-t border-[#ece9e2] pt-4 text-xs leading-5 text-[#858d89]">{t.freshness}</p>
           </div>
         </section>}
 
@@ -426,7 +476,8 @@ export default function Home() {
           {authenticated === false && <div className="mt-6 rounded-xl border border-[#e3dfd6] bg-white p-5"><p className="text-sm font-medium">{t.signIn}</p><label className="mt-4 grid gap-1.5 text-xs font-medium text-[#68716e]">{t.email}<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm text-[#202728] outline-none focus:border-[#a34a39]" /></label>{codeSent && <label className="mt-3 grid gap-1.5 text-xs font-medium text-[#68716e]">{t.emailCode}<input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={emailCode} onChange={(event) => setEmailCode(event.target.value.replace(/\D/g, "").slice(0, 6))} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm tracking-[.2em] text-[#202728] outline-none focus:border-[#a34a39]" /></label>}<p className="mt-2 text-xs leading-5 text-[#858d89]">{t.emailPrivacy}</p><div className="mt-4 flex flex-wrap gap-2">{!codeSent ? <button onClick={() => void requestEmailCode()} disabled={authBusy || !email.trim()} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.sendCode}</button> : <><button onClick={() => void verifyEmailCode()} disabled={authBusy || emailCode.length !== 6} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.verifyCode}</button><button onClick={() => void requestEmailCode()} disabled={authBusy} className="rounded-lg border border-[#dedbd3] px-4 py-2.5 text-sm font-medium text-[#68716e] disabled:opacity-50">{t.sendCode}</button></>}</div></div>}
           {authenticated === true && authProvider === "email" && <div className="mt-6 flex items-center justify-between rounded-xl border border-[#e3dfd6] bg-white px-4 py-3"><span className="text-xs text-[#68716e]">{t.emailSignedIn}</span><button onClick={() => void signOutEmail()} className="text-xs font-medium text-[#8b5148] hover:underline">{t.signOut}</button></div>}
           {authenticated !== false && !watches.length && <p className="mt-6 rounded-xl bg-[#f2f0eb] p-5 text-sm text-[#717975]">{t.emptyWatches}</p>}{alerts.length > 0 && <div role="status" className="mt-5 rounded-xl border border-[#bdd4c1] bg-[#edf6ef] p-4 text-sm font-semibold text-[#315c43]">{language === "en" ? "Seats opened: " : "发现空位："}{alerts.join(", ")}</div>}
-          {watches.length > 0 && <div className="mt-5 space-y-3">{watches.map((watch) => <article key={`${watch.term}-${watch.sectionId}`} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="font-semibold">{watch.courseId} · {watch.courseTitle}</p><p className="mt-1 text-sm text-[#626c67]">{watch.sectionId} <span className="mx-1 text-[#b5bab6]">/</span> {formatMeetings(watch.meetings)}</p><p className="mt-2 text-xs text-[#8a918e]">{t.checked}: {watch.lastCheckedAt ? new Date(watch.lastCheckedAt).toLocaleTimeString(language === "en" ? "en-US" : "zh-CN", { hour: "numeric", minute: "2-digit" }) : t.unknown}</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${watch.status === "ok" && (watch.openSeats ?? 0) > 0 ? "bg-[#eaf4ec] text-[#367047]" : watch.status === "stale" || watch.status === "failed" ? "bg-[#fff0ec] text-[#8c352c]" : "bg-[#f1efe9] text-[#68716e]"}`}>{watch.status === "stale" || watch.status === "failed" ? t.stale : watch.openSeats === null ? t.unknown : watch.openSeats > 0 ? t.open : t.full}</span><button onClick={() => void removeWatch(watch)} className="text-xs font-medium text-[#8b5148] hover:underline">{t.remove}</button></div></div><div className="mt-3 text-xs text-[#707874]">{t.status}: {seatLabel(watch.openSeats)}{watch.waitlist !== null ? ` · ${t.waitlist}: ${watch.waitlist}` : ""}</div></article>)}</div>}
+          {watches.length > 0 && <div className="mt-5 space-y-3">{watches.map((watch) => <article key={`${watch.term}-${watch.sectionId}`} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="font-semibold">{watch.courseId} · {watch.courseTitle}</p><p className="mt-1 text-sm text-[#626c67]">{watch.sectionId} <span className="mx-1 text-[#b5bab6]">/</span> {formatMeetings(watch.meetings)}</p><p className="mt-2 text-xs text-[#8a918e]">{t.seatReadAt}: {formatSeatReadTime(watch.lastSuccessAt, language) ?? t.unknown}</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${watch.status === "ok" && (watch.openSeats ?? 0) > 0 ? "bg-[#eaf4ec] text-[#367047]" : watch.status === "stale" || watch.status === "failed" ? "bg-[#fff0ec] text-[#8c352c]" : "bg-[#f1efe9] text-[#68716e]"}`}>{watch.status === "stale" || watch.status === "failed" ? t.stale : watch.openSeats === null ? t.unknown : watch.openSeats > 0 ? t.open : t.full}</span><button onClick={() => void removeWatch(watch)} className="text-xs font-medium text-[#8b5148] hover:underline">{t.remove}</button></div></div><div className="mt-3 text-xs text-[#707874]">{t.status}: {seatLabel(watch.openSeats)}{watch.waitlist !== null ? ` · ${t.waitlist}: ${watch.waitlist}` : ""}</div></article>)}</div>}
+          {watches.length > 0 && <p className="mt-3 text-xs leading-5 text-[#858d89]">{t.seatReadHint}</p>}
           <p className="mt-5 border-t border-[#ece9e2] pt-4 text-xs leading-5 text-[#858d89]">{t.freshness}</p>
         </section>}
       </div>

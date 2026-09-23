@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { currentUser, authRequired } from "@/lib/auth";
 import { getDb } from "@/db";
 import { watches } from "@/db/schema";
-import { DEFAULT_TERM, getCourseSections, parseCount, sectionId } from "@/lib/umd";
+import { DEFAULT_TERM, getCourseSectionsSnapshot, parseCount, sectionId } from "@/lib/umd";
 
 const MIN_INTERVAL_MS = 60_000;
 
@@ -25,7 +25,8 @@ export async function POST(request: Request) {
       const latestAttempt = Math.max(...group.map((item) => item.lastCheckedAt ? Date.parse(item.lastCheckedAt) : 0));
       if (latestAttempt && now - latestAttempt < MIN_INTERVAL_MS) continue;
       try {
-        const sectionData = await getCourseSections(sample.courseId, sample.term || DEFAULT_TERM);
+        const snapshot = await getCourseSectionsSnapshot(sample.courseId, sample.term || DEFAULT_TERM);
+        const sectionData = snapshot.sections;
         const checkedAt = new Date().toISOString();
         for (const row of group) {
           const found = Array.isArray(sectionData) ? sectionData.find((item) => sectionId(item, row.courseId) === row.sectionId) : undefined;
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
             waitlist,
             status: "ok",
             lastCheckedAt: checkedAt,
-            lastSuccessAt: checkedAt,
+            lastSuccessAt: snapshot.seatCheckedAt ?? checkedAt,
             lastNotifiedOpen: openSeats > 0 ? (newOpening ? openSeats : row.lastNotifiedOpen) : null,
           }).where(and(eq(watches.userId, user.id), eq(watches.term, row.term), eq(watches.sectionId, row.sectionId)));
         }

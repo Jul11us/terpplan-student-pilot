@@ -140,7 +140,7 @@ function parseTestudoCourse(html: string, courseId: string) {
 }
 
 type TestudoCourseDetail = NonNullable<ReturnType<typeof parseTestudoCourse>>;
-const testudoCourseCache = new Map<string, { expiresAt: number; detail: TestudoCourseDetail }>();
+const testudoCourseCache = new Map<string, { expiresAt: number; detail: TestudoCourseDetail & { seatCheckedAt: string } }>();
 
 async function getTestudoCourse(courseId: string, term: string) {
   const key = `${term}|${courseId}`;
@@ -154,27 +154,38 @@ async function getTestudoCourse(courseId: string, term: string) {
       const oldest = testudoCourseCache.keys().next().value;
       if (oldest) testudoCourseCache.delete(oldest);
     }
-    testudoCourseCache.set(key, { expiresAt: Date.now() + 30_000, detail });
+    const snapshot = { ...detail, seatCheckedAt: new Date().toISOString() };
+    testudoCourseCache.set(key, { expiresAt: Date.now() + 30_000, detail: snapshot });
+    return snapshot;
   }
   return detail;
 }
 
+export async function getCourseSectionsSnapshot(courseId: string, term: string) {
+  if (term === TESTUDO_TERM) {
+    const detail = await getTestudoCourse(courseId, term);
+    return { sections: detail?.sections ?? [], seatCheckedAt: detail?.seatCheckedAt ?? null };
+  }
+  const sections = await umdJson<UmdSection[]>(`/courses/${encodeURIComponent(courseId)}/sections?semester=${encodeURIComponent(term)}`);
+  return { sections, seatCheckedAt: new Date().toISOString() };
+}
+
 export async function getCourseSections(courseId: string, term: string) {
-  if (term === TESTUDO_TERM) return (await getTestudoCourse(courseId, term))?.sections ?? [];
-  return umdJson<UmdSection[]>(`/courses/${encodeURIComponent(courseId)}/sections?semester=${encodeURIComponent(term)}`);
+  return (await getCourseSectionsSnapshot(courseId, term)).sections;
 }
 
 export async function getCourse(courseId: string, term: string) {
   if (term === TESTUDO_TERM) return getTestudoCourse(courseId, term);
-  const [coursePayload, sectionPayload] = await Promise.all([
+  const [coursePayload, sectionSnapshot] = await Promise.all([
     umdJson<unknown>(`/courses/${encodeURIComponent(courseId)}?semester=${encodeURIComponent(term)}`),
-    getCourseSections(courseId, term),
+    getCourseSectionsSnapshot(courseId, term),
   ]);
   const course = Array.isArray(coursePayload) ? coursePayload[0] : coursePayload;
   if (!course || typeof course !== "object") return null;
   return {
     course,
-    sections: Array.isArray(sectionPayload) ? (sectionPayload as UmdSection[]) : [],
+    sections: Array.isArray(sectionSnapshot.sections) ? sectionSnapshot.sections : [],
+    seatCheckedAt: sectionSnapshot.seatCheckedAt,
   };
 }
 

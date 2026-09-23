@@ -4,7 +4,13 @@
 
 const STORAGE_KEY = "terpplan:v1";
 
-export type SavedPlanCourse = { courseId: string; courseTitle: string; instructors?: string[] };
+export type SavedPlanCourse = {
+  courseId: string;
+  courseTitle: string;
+  instructors?: string[];
+  pinnedSectionId?: string;
+  excludedSectionIds?: string[];
+};
 
 export type SavedPreferences = {
   excludedDays: string[];
@@ -33,10 +39,15 @@ function planCourses(value: unknown): SavedPlanCourse[] {
     const record = item as Record<string, unknown>;
     if (typeof record.courseId !== "string" || !/^[A-Z]{4}\d{3}[A-Z0-9]*$/.test(record.courseId)) return [];
     const instructors = strings(record.instructors);
+    const sectionId = (value: unknown) => typeof value === "string" && value.startsWith(record.courseId + "-") ? value : null;
+    const pinnedSectionId = sectionId(record.pinnedSectionId);
+    const excludedSectionIds = [...new Set(strings(record.excludedSectionIds).filter((id) => sectionId(id) && id !== pinnedSectionId))];
     return [{
       courseId: record.courseId,
       courseTitle: typeof record.courseTitle === "string" ? record.courseTitle : record.courseId,
       ...(instructors.length ? { instructors } : {}),
+      ...(pinnedSectionId ? { pinnedSectionId } : {}),
+      ...(excludedSectionIds.length ? { excludedSectionIds } : {}),
     }];
   }).slice(0, 10);
 }

@@ -24,6 +24,7 @@ export type PlanCourse = {
   title: string;
   credits: number | null;
   sections: PlanSection[];
+  seatCheckedAt?: string;
 };
 
 export type PlanPreferences = {
@@ -42,6 +43,7 @@ export type ScheduledSection = PlanSection & {
   section_id: string;
   credits: number | null;
   instructorRatings: ProfessorSummary[];
+  seatCheckedAt?: string;
 };
 
 export type ScheduleOption = {
@@ -60,7 +62,8 @@ export type ScheduleOption = {
 
 // Warnings are sent as codes so the page can show them in the viewer's language.
 export type PlanWarning =
-  | { code: "courseNotFound" | "noSectionsListed" | "noValidSections" | "courseLoadFailed" | "noEligibleSections" | "noSelectedInstructors"; courseId: string }
+  | { code: "courseNotFound" | "noSectionsListed" | "noValidSections" | "courseLoadFailed" | "noEligibleSections" | "noSelectedInstructors" | "allSectionsExcluded"; courseId: string }
+  | { code: "pinnedSectionUnavailable"; courseId: string; sectionId: string }
   | { code: "sectionsSkipped"; courseId: string; count: number }
   | { code: "ratingsLimited"; count: number }
   | { code: "someCoursesOmitted" | "noConflictFree" | "searchLimit" | "allOptionsFull" | "tbaTimes" };
@@ -314,6 +317,7 @@ export function generateOptions(
         section_id: sectionId(section, course.course_id),
         credits: course.credits,
         instructorRatings: sectionRatings(section, ratings),
+        seatCheckedAt: course.seatCheckedAt,
       } as ScheduledSection));
     if (!sections.length) warnings.push({ code: "noEligibleSections", courseId: course.course_id });
     return { courseId: course.course_id, sections };
