@@ -64,6 +64,7 @@ const copy = {
     pinSection: "Require this section", unpinSection: "Remove requirement", excludeSection: "Exclude from schedules", includeSection: "Allow in schedules",
     keepSection: "Keep at least one section available.", seatReadAt: "Seat data read", seatReadHint: "This is when TerpPlan read the source, not when UMD updated it.",
     pinnedInstructorHint: "Remove the required section before changing instructors.",
+    selectedCourses: "Courses in your plan", noSelectedCourses: "No courses added for this term yet.",
   },
   zh: {
     eyebrow: "马里兰大学 · 学生试用", title: "规划下一学期。", subtitle: "找课程、排进课表，并关注空余名额。",
@@ -82,6 +83,7 @@ const copy = {
     pinSection: "指定此班次", unpinSection: "取消指定", excludeSection: "排课时排除", includeSection: "重新纳入排课",
     keepSection: "请至少保留一个可排班次。", seatReadAt: "余位数据读取于", seatReadHint: "这是 TerpPlan 读取数据的时间，不代表 UMD 更新数据的时间。",
     pinnedInstructorHint: "请先取消指定班次，再修改教师筛选。",
+    selectedCourses: "已选课程", noSelectedCourses: "这个学期还没有添加课程。",
   },
 } as const;
 
@@ -429,6 +431,15 @@ export default function Home() {
         <div className="mb-8 grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end"><div><p className="mb-3 text-[11px] font-semibold uppercase tracking-[.17em] text-[#a34a39]">{t.eyebrow}</p><h1 className="font-serif text-4xl leading-tight tracking-[-.03em] sm:text-5xl">{t.title}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#646d69]">{t.subtitle}</p></div>
           <nav aria-label="Planning steps" className="flex flex-wrap gap-2 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-2">{(["find", "schedule", "watch"] as const).map((item, index) => <button key={item} onClick={() => setStep(item)} aria-current={step === item ? "step" : undefined} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition ${step === item ? "bg-[#273c38] text-white" : "text-[#68716e] hover:bg-[#eeece6]"}`}><span className="grid h-5 w-5 place-items-center rounded-full bg-white/15 text-[10px]">0{index + 1}</span>{t[item]}</button>)}</nav>
         </div>
+
+        {step === "find" && restored && <section aria-label={t.selectedCourses} className="mb-5 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] px-4 py-3 sm:px-5">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <p className="shrink-0 text-xs font-semibold text-[#48534f]">{t.selectedCourses} <span className="ml-1 rounded-md bg-[#ece9e2] px-1.5 py-0.5 text-[11px] text-[#68716e]">{planCourses.length}/10</span></p>
+            <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+              {planCourses.length ? planCourses.map((course) => <span key={course.courseId} title={`${course.courseId} · ${course.courseTitle}`} className="rounded-lg border border-[#cddbd1] bg-[#edf3ef] px-2.5 py-1.5 text-xs font-semibold text-[#315c43]">{course.courseId}</span>) : <p className="text-xs text-[#8a918e]">{t.noSelectedCourses}</p>}
+            </div>
+          </div>
+        </section>}
 
         {termUnavailable && <p className="mb-4 rounded-xl border border-[#ead8b5] bg-[#fff8e8] px-4 py-3 text-sm text-[#745424]">{t.termFallback}</p>}
         {message && <p role="status" className="mb-4 rounded-xl border border-[#bfd4c6] bg-[#edf6ef] px-4 py-3 text-sm text-[#315c43]">{t[message]}</p>}
