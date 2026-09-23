@@ -30,6 +30,14 @@ type Watch = {
   lastCheckedAt: string | null;
 };
 type PlanCourse = { courseId: string; courseTitle: string };
+// Shapes of the JSON bodies returned by this app's /api routes.
+type ApiError = { error?: string };
+type WatchesPayload = ApiError & { authenticated?: boolean; watches?: Watch[] };
+type TermsPayload = { terms?: string[]; defaultTerm?: string };
+type SearchPayload = ApiError & { results?: Course[] };
+type CoursePayload = ApiError & { sections?: Section[] };
+type RatingsPayload = { ratings?: Record<string, ProfessorSummary> };
+type CheckPayload = ApiError & { watches?: Watch[]; alerts?: { courseId: string; sectionId: string }[] };
 
 const copy = {
   en: {
@@ -158,7 +166,7 @@ export default function Home() {
     const response = await fetch("/api/watches");
     if (response.status === 401) { setAuthenticated(false); setAuthProvider(null); return; }
     if (!response.ok) throw new Error(t.error);
-    const payload = await response.json();
+    const payload = await response.json() as WatchesPayload;
     if (payload.authenticated === false) { setAuthenticated(false); setAuthProvider(null); setWatches([]); return; }
     setAuthenticated(true);
     setAuthProvider("email");
@@ -168,7 +176,7 @@ export default function Home() {
   useEffect(() => {
     fetch("/api/terms").then(async (response) => {
       if (!response.ok) throw new Error("terms");
-      const payload = await response.json();
+      const payload = await response.json() as TermsPayload;
       setTerms(payload.terms ?? []);
       if (payload.defaultTerm) setTerm(payload.defaultTerm);
     }).catch(() => setTermUnavailable(true));
@@ -183,7 +191,7 @@ export default function Home() {
       setSearching(true); setError("");
       try {
         const response = await fetch(`/api/search?q=${encodeURIComponent(text)}&term=${encodeURIComponent(term)}`);
-        const payload = await response.json();
+        const payload = await response.json() as SearchPayload;
         if (!response.ok) throw new Error(payload.error || t.error);
         setResults(payload.results ?? []);
       } catch (cause) { setError(cause instanceof Error ? cause.message : t.error); setResults([]); }
@@ -199,7 +207,7 @@ export default function Home() {
     setRatingsLoading(false);
     try {
       const response = await fetch(`/api/course?id=${encodeURIComponent(course.course_id)}&term=${encodeURIComponent(term)}`);
-      const payload = await response.json();
+      const payload = await response.json() as CoursePayload;
       if (!response.ok) throw new Error(payload.error || t.error);
       if (activeCourseRef.current !== courseRequestKey) return;
       setSections([...(payload.sections ?? [])].sort((a: Section, b: Section) => sectionId(a, course.course_id).localeCompare(sectionId(b, course.course_id), "en", { numeric: true })));
@@ -211,7 +219,7 @@ export default function Home() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ names }),
         }).then(async (ratingsResponse) => {
-          const ratingPayload = await ratingsResponse.json();
+          const ratingPayload = await ratingsResponse.json() as RatingsPayload;
           if (!ratingsResponse.ok) throw new Error("ratings");
           if (activeCourseRef.current === courseRequestKey) setProfessorRatings(ratingPayload.ratings ?? {});
         }).catch(() => {
@@ -244,7 +252,7 @@ export default function Home() {
     setError("");
     try {
       const response = await fetch("/api/watches", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ courseId: course.course_id, term, sectionId: sectionId(section, course.course_id) }) });
-      const payload = await response.json();
+      const payload = await response.json() as ApiError;
       if (response.status === 401) { setAuthenticated(false); setAuthProvider(null); setStep("watch"); return; }
       if (!response.ok) throw new Error(payload.error || t.error);
       setMessage("watched"); setStep("watch"); await loadWatches();
@@ -255,7 +263,7 @@ export default function Home() {
     setError(""); setMessage(""); setAuthBusy(true);
     try {
       const response = await fetch("/api/auth/request-code", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email }) });
-      const payload = await response.json();
+      const payload = await response.json() as ApiError;
       if (!response.ok) throw new Error(payload.error || t.error);
       setCodeSent(true); setMessage("codeSent");
     } catch (cause) { setError(cause instanceof Error ? cause.message : t.error); }
@@ -266,7 +274,7 @@ export default function Home() {
     setError(""); setMessage(""); setAuthBusy(true);
     try {
       const response = await fetch("/api/auth/verify-code", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, code: emailCode }) });
-      const payload = await response.json();
+      const payload = await response.json() as ApiError;
       if (!response.ok) throw new Error(payload.error || t.wrongCode);
       setAuthenticated(true); setAuthProvider("email"); setEmailCode("");
       await loadWatches();
@@ -292,7 +300,7 @@ export default function Home() {
     checkingRef.current = true; setChecking(true); setError("");
     try {
       const response = await fetch("/api/watches/check", { method: "POST" });
-      const payload = await response.json();
+      const payload = await response.json() as CheckPayload;
       if (response.status === 401) { setAuthenticated(false); setAuthProvider(null); return; }
       if (!response.ok) throw new Error(payload.error || t.error);
       setWatches(payload.watches ?? []);

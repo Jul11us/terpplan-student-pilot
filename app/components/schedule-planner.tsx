@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 type Language = "en" | "zh";
 type Meeting = { days?: string | null; start_time?: string | null; end_time?: string | null; classtype?: string | null; building?: string | null; room?: string | null };
@@ -176,8 +176,7 @@ function WeeklyCalendar({ sections, language }: { sections: ScheduledSection[]; 
 
 export default function SchedulePlanner({ courses, term, language, onRemove, onBack }: Props) {
   const t = copy[language];
-  const [options, setOptions] = useState<ScheduleOption[]>([]);
-  const [warnings, setWarnings] = useState<string[]>([]);
+  const [generated, setGenerated] = useState<{ requestKey: string; options: ScheduleOption[]; warnings: string[] }>({ requestKey: "", options: [], warnings: [] });
   const [selectedOption, setSelectedOption] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -190,11 +189,10 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
   const [includeFreshmanConnection, setIncludeFreshmanConnection] = useState(false);
   const courseKey = useMemo(() => courses.map((course) => course.courseId).join("|"), [courses]);
 
-  useEffect(() => {
-    setOptions([]);
-    setWarnings([]);
-    setSelectedOption(0);
-  }, [courseKey, term]);
+  // Results belong to the course list and term they were generated for; hide them once either changes.
+  const requestKey = courseKey + "@" + term;
+  const options = generated.requestKey === requestKey ? generated.options : [];
+  const warnings = generated.requestKey === requestKey ? generated.warnings : [];
 
   const generate = async () => {
     if (!courses.length) return;
@@ -204,7 +202,7 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
     }
     setLoading(true);
     setError("");
-    setWarnings([]);
+    setGenerated((current) => ({ ...current, warnings: [] }));
     try {
       const response = await fetch("/api/schedules/generate", {
         method: "POST",
@@ -215,14 +213,13 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
           preferences: { earliestStart: earliestStart || null, excludedDays, windowStart: windowStart || null, windowEnd: windowEnd || null, strictTime, openSeatsOnly, includeFreshmanConnection },
         }),
       });
-      const payload = await response.json();
+      const payload = await response.json() as { error?: string; options?: ScheduleOption[]; warnings?: string[] };
       if (!response.ok) throw new Error(payload.error || t.loadError);
-      setOptions(payload.options ?? []);
-      setWarnings(payload.warnings ?? []);
+      setGenerated({ requestKey, options: payload.options ?? [], warnings: payload.warnings ?? [] });
       setSelectedOption(0);
     } catch {
       setError(t.loadError);
-      setOptions([]);
+      setGenerated({ requestKey, options: [], warnings: [] });
     } finally {
       setLoading(false);
     }

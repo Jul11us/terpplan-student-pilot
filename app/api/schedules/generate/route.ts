@@ -71,7 +71,7 @@ export async function POST(request: Request) {
       return null;
     }
   }));
-  const courses = loaded.filter((course): course is PlanCourse => course !== null);
+  const courses: PlanCourse[] = loaded.filter((course) => course !== null);
   if (!courses.length) return Response.json({ term, options: [], warnings, truncated: false });
   const names = [...new Set(courses.flatMap((course) => course.sections.flatMap((section) => section.instructors ?? [])))];
   const professorRatings = await getProfessorSummaries(names);
