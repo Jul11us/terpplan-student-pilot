@@ -58,9 +58,16 @@ export type ScheduleOption = {
   fullSectionIds: string[];
 };
 
+// Warnings are sent as codes so the page can show them in the viewer's language.
+export type PlanWarning =
+  | { code: "courseNotFound" | "noSectionsListed" | "noValidSections" | "courseLoadFailed" | "noEligibleSections"; courseId: string }
+  | { code: "sectionsSkipped"; courseId: string; count: number }
+  | { code: "ratingsLimited"; count: number }
+  | { code: "someCoursesOmitted" | "noConflictFree" | "searchLimit" | "allOptionsFull" | "tbaTimes" };
+
 export type PlannerResult = {
   options: ScheduleOption[];
-  warnings: string[];
+  warnings: PlanWarning[];
   truncated: boolean;
 };
 
@@ -295,7 +302,7 @@ export function generateOptions(
   ratings: Record<string, ProfessorSummary>,
   preferences: PlanPreferences,
 ): PlannerResult {
-  const warnings: string[] = [];
+  const warnings: PlanWarning[] = [];
   const parsed = parsePrefs(preferences);
   const groups = courses.map((course) => {
     const sections = (course.sections ?? [])
@@ -308,11 +315,11 @@ export function generateOptions(
         credits: course.credits,
         instructorRatings: sectionRatings(section, ratings),
       } as ScheduledSection));
-    if (!sections.length) warnings.push(course.course_id + " has no sections that satisfy the selected schedule preferences.");
+    if (!sections.length) warnings.push({ code: "noEligibleSections", courseId: course.course_id });
     return { courseId: course.course_id, sections };
   }).filter((group) => group.sections.length > 0).sort((a, b) => a.sections.length - b.sections.length);
   if (groups.length !== courses.length) {
-    warnings.push("Some requested courses could not be included; the options cover only courses with eligible sections.");
+    warnings.push({ code: "someCoursesOmitted" });
   }
   if (!groups.length) return { options: [], warnings, truncated: false };
 
@@ -377,13 +384,13 @@ export function generateOptions(
     }
   }
   options.sort((a, b) => b.score - a.score);
-  if (!options.length) warnings.push("No conflict-free combination was found for these courses.");
-  if (truncated) warnings.push("The search reached its safety limit. Results are the best options found, not a proven complete ranking.");
+  if (!options.length) warnings.push({ code: "noConflictFree" });
+  if (truncated) warnings.push({ code: "searchLimit" });
   if (options.length && options.every((option) => option.fullSectionIds.length)) {
-    warnings.push("Every option includes at least one full section. Watch those sections or try different courses.");
+    warnings.push({ code: "allOptionsFull" });
   }
   if (options.some((option) => option.unknownSectionIds.length)) {
-    warnings.push("Some selected sections have TBA or incomplete meeting times; the schedule may still contain an unverified conflict.");
+    warnings.push({ code: "tbaTimes" });
   }
   return { options, warnings, truncated };
 }

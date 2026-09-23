@@ -1,4 +1,4 @@
-import { generateOptions, type PlanCourse, type PlanPreferences } from "@/lib/planner";
+import { generateOptions, type PlanCourse, type PlanPreferences, type PlanWarning } from "@/lib/planner";
 import { getProfessorSummaries } from "@/lib/planetterp";
 import { courseIdIsValid, DEFAULT_TERM, getCourse, sectionId as normalizedSectionId } from "@/lib/umd";
 
@@ -35,16 +35,16 @@ export async function POST(request: Request) {
     includeFreshmanConnection: rawPreferences.includeFreshmanConnection === true,
   };
 
-  const warnings: string[] = [];
+  const warnings: PlanWarning[] = [];
   const loaded = await Promise.all(courseIds.map(async (courseId) => {
     try {
       const detail = await getCourse(courseId, term);
       if (!detail) {
-        warnings.push(courseId + " was not found for this term.");
+        warnings.push({ code: "courseNotFound", courseId });
         return null;
       }
       if (!detail.sections.length) {
-        warnings.push(courseId + " has no sections listed for this term.");
+        warnings.push({ code: "noSectionsListed", courseId });
         return null;
       }
       const rawCourse = detail.course as Record<string, unknown>;
@@ -53,11 +53,10 @@ export async function POST(request: Request) {
         return id ? [{ ...section, section_id: id }] : [];
       });
       if (sections.length < detail.sections.length) {
-        const skipped = detail.sections.length - sections.length;
-        warnings.push(courseId + ": " + skipped + (skipped === 1 ? " section was" : " sections were") + " left out because the course data did not include a usable section number.");
+        warnings.push({ code: "sectionsSkipped", courseId, count: detail.sections.length - sections.length });
       }
       if (!sections.length) {
-        warnings.push(courseId + " has no sections with valid section IDs for this term.");
+        warnings.push({ code: "noValidSections", courseId });
         return null;
       }
       return {
@@ -67,7 +66,7 @@ export async function POST(request: Request) {
         sections,
       } satisfies PlanCourse;
     } catch {
-      warnings.push(courseId + " could not be loaded. It was left out of the options.");
+      warnings.push({ code: "courseLoadFailed", courseId });
       return null;
     }
   }));
@@ -76,7 +75,7 @@ export async function POST(request: Request) {
   const names = [...new Set(courses.flatMap((course) => course.sections.flatMap((section) => section.instructors ?? [])))];
   const professorRatings = await getProfessorSummaries(names);
   const limitedRatings = Object.values(professorRatings).filter((rating) => rating.status === "limited").length;
-  if (limitedRatings) warnings.push(limitedRatings + " instructor ratings were not looked up because the request reached the lookup safety limit.");
+  if (limitedRatings) warnings.push({ code: "ratingsLimited", count: limitedRatings });
   const result = generateOptions(courses, professorRatings, preferences);
   return Response.json({
     term,

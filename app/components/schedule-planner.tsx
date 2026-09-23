@@ -30,6 +30,8 @@ type ScheduleOption = {
   fullSectionIds?: string[];
 };
 type PlanCourse = { courseId: string; courseTitle: string };
+// Mirrors PlanWarning in lib/planner.ts.
+type PlanWarning = { code: string; courseId?: string; count?: number };
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 const COLORS = ["#bda0d5", "#ffdadb", "#79ded4", "#ecd34e", "#a8c9ed", "#f2b98c", "#bcd7a1", "#d6bee5", "#accfce", "#e2c4a2"];
@@ -121,6 +123,42 @@ function seatText(value: string | number | null | undefined, t: (typeof copy)[La
   return open + " " + (open === 1 ? t.seat : t.seatsOpen);
 }
 
+function warningText(warning: PlanWarning, language: Language) {
+  const course = warning.courseId ?? "";
+  const count = warning.count ?? 0;
+  if (language === "zh") {
+    switch (warning.code) {
+      case "courseNotFound": return course + " 在本学期找不到。";
+      case "noSectionsListed": return course + " 本学期没有开设班次。";
+      case "sectionsSkipped": return course + "：有 " + count + " 个班次因课程数据缺少可用的班号而未纳入排课。";
+      case "noValidSections": return course + " 本学期没有可用班号的班次。";
+      case "courseLoadFailed": return course + " 加载失败，已从方案中略去。";
+      case "ratingsLimited": return "有 " + count + " 位教师的评分未查询，因为本次请求达到了查询上限。";
+      case "noEligibleSections": return course + " 没有符合当前排课偏好的班次。";
+      case "someCoursesOmitted": return "部分课程无法排入，方案只包含有可选班次的课程。";
+      case "noConflictFree": return "这些课程找不到没有时间冲突的组合。";
+      case "searchLimit": return "搜索达到了安全上限。结果是已找到的最佳方案，但不保证是完整排名。";
+      case "allOptionsFull": return "每个方案都至少包含一个已满的班次。可以关注这些班次的余位，或换其他课程。";
+      case "tbaTimes": return "部分班次的上课时间待定或不完整，方案中可能仍有未能核实的时间冲突。";
+    }
+  }
+  switch (warning.code) {
+    case "courseNotFound": return course + " was not found for this term.";
+    case "noSectionsListed": return course + " has no sections listed for this term.";
+    case "sectionsSkipped": return course + ": " + count + (count === 1 ? " section was" : " sections were") + " left out because the course data did not include a usable section number.";
+    case "noValidSections": return course + " has no sections with valid section IDs for this term.";
+    case "courseLoadFailed": return course + " could not be loaded. It was left out of the options.";
+    case "ratingsLimited": return count + " instructor ratings were not looked up because the request reached the lookup safety limit.";
+    case "noEligibleSections": return course + " has no sections that satisfy the selected schedule preferences.";
+    case "someCoursesOmitted": return "Some requested courses could not be included; the options cover only courses with eligible sections.";
+    case "noConflictFree": return "No conflict-free combination was found for these courses.";
+    case "searchLimit": return "The search reached its safety limit. Results are the best options found, not a proven complete ranking.";
+    case "allOptionsFull": return "Every option includes at least one full section. Watch those sections or try different courses.";
+    case "tbaTimes": return "Some selected sections have TBA or incomplete meeting times; the schedule may still contain an unverified conflict.";
+    default: return language === "zh" ? "排课时出现了一个问题。" : "Something needs attention in this schedule.";
+  }
+}
+
 function meetingType(raw: string | null | undefined) {
   const type = raw?.trim().toLowerCase();
   if (type === "discussion") return "discussion";
@@ -176,7 +214,7 @@ function WeeklyCalendar({ sections, language }: { sections: ScheduledSection[]; 
 
 export default function SchedulePlanner({ courses, term, language, onRemove, onBack }: Props) {
   const t = copy[language];
-  const [generated, setGenerated] = useState<{ requestKey: string; options: ScheduleOption[]; warnings: string[] }>({ requestKey: "", options: [], warnings: [] });
+  const [generated, setGenerated] = useState<{ requestKey: string; options: ScheduleOption[]; warnings: PlanWarning[] }>({ requestKey: "", options: [], warnings: [] });
   const [selectedOption, setSelectedOption] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -213,7 +251,7 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
           preferences: { earliestStart: earliestStart || null, excludedDays, windowStart: windowStart || null, windowEnd: windowEnd || null, strictTime, openSeatsOnly, includeFreshmanConnection },
         }),
       });
-      const payload = await response.json() as { error?: string; options?: ScheduleOption[]; warnings?: string[] };
+      const payload = await response.json() as { error?: string; options?: ScheduleOption[]; warnings?: PlanWarning[] };
       if (!response.ok) throw new Error(payload.error || t.loadError);
       setGenerated({ requestKey, options: payload.options ?? [], warnings: payload.warnings ?? [] });
       setSelectedOption(0);
@@ -249,7 +287,7 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
       {error && <p role="alert" className="mt-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]">{error}</p>}
       <div className="mt-5 flex justify-end"><button onClick={() => void generate()} disabled={loading} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1d302c] disabled:opacity-60">{loading ? t.generating : t.generate}</button></div>
     </>}
-    {warnings.length > 0 && <ul className="mt-5 space-y-2 rounded-xl border border-[#ead8b5] bg-[#fff8e8] p-4 text-sm text-[#745424]">{warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>}
+    {warnings.length > 0 && <ul className="mt-5 space-y-2 rounded-xl border border-[#ead8b5] bg-[#fff8e8] p-4 text-sm text-[#745424]">{warnings.map((warning, index) => <li key={index}>{warningText(warning, language)}</li>)}</ul>}
     {courses.length > 0 && options.length === 0 && !loading && !error && warnings.length > 0 && <p className="mt-4 text-sm text-[#68716e]">{t.noOptions}</p>}
     {options.length > 0 && <div className="mt-8">
       <h3 className="font-serif text-2xl">{t.options}</h3>
