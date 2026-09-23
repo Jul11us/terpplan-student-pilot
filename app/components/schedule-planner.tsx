@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { roomLabel } from "@/lib/room";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { formatSeatReadTime } from "@/lib/seat-time";
 
@@ -49,6 +50,8 @@ const copy = {
     windowHint: "Classes outside this window lower the ranking; tick the box to exclude them.",
     includeFc: "I'm in the Freshman Connection program (include FC sections)",
     onlyInstructors: "Only", minutes: "min", credits: "credits", lecture: "Lecture", discussion: "Discussion", lab: "Lab",
+    // Short forms for the narrow timetable blocks.
+    lectureShort: "LEC", discussionShort: "DIS", labShort: "LAB",
     select: "View this schedule", calendar: "Weekly timetable", unknown: "Times to confirm", noUnknown: "All meeting times are listed.",
     noOptions: "No conflict-free schedule was found. Remove a preference or course and try again.",
     fit: "Preferred-window fit", warning: "Some meeting times are missing, so those sections cannot be fully checked.",
@@ -67,6 +70,7 @@ const copy = {
     windowHint: "时间段外的课程会降低排名；勾选后会直接排除。",
     includeFc: "我参加了 Freshman Connection 项目（包含 FC 班次）",
     onlyInstructors: "只排", minutes: "分钟", credits: "学分", lecture: "讲课", discussion: "讨论课", lab: "实验课",
+    lectureShort: "讲课", discussionShort: "讨论课", labShort: "实验课",
     select: "查看此方案", calendar: "每周课表", unknown: "需要确认的时间", noUnknown: "所有班次均列出了上课时间。",
     noOptions: "没有找到无冲突方案。可以移除一项偏好或课程后重试。",
     fit: "符合时间偏好的比例", warning: "部分班次时间缺失，无法完整验证这些课程是否冲突。",
@@ -214,8 +218,11 @@ function WeeklyCalendar({ sections, language }: { sections: ScheduledSection[]; 
           if (clippedEnd <= clippedStart) return [];
           const kind = meetingType(meeting.classtype);
           const type = kind ? t[kind] : null;
-          return [<article key={section.section_id + "-" + day + "-" + index} className="absolute inset-x-1 overflow-hidden rounded-md border border-white/80 px-1.5 py-1 text-center text-[10px] leading-tight text-[#24312d] shadow-sm" style={{ top: (clippedStart - firstMinute) * pixelsPerMinute, height: Math.max(type ? 44 : 28, (clippedEnd - clippedStart) * pixelsPerMinute), backgroundColor: colors.get(section.course_id) }} title={section.course_id + " " + section.section_id + (type ? " · " + type : "") + " · " + displayClock(start) + "–" + displayClock(end)}>
-            <div className="flex items-center justify-center gap-1"><strong className="truncate">{section.course_id}</strong>{type && <span className="shrink-0 rounded bg-white/55 px-1 py-0.5 text-[8px] font-semibold uppercase tracking-wide">{type}</span>}</div><span>{section.section_id}</span><span className="block">{displayClock(start)}–{displayClock(end)}</span>
+          const shortType = kind ? t[`${kind}Short`] : null;
+          const sectionNumber = section.section_id.slice(section.course_id.length + 1) || section.section_id;
+          const room = roomLabel(meeting.building, meeting.room, language);
+          return [<article key={section.section_id + "-" + day + "-" + index} className="absolute inset-x-1 overflow-hidden rounded-md border border-white/80 px-1.5 py-1 text-center text-[10px] leading-tight text-[#24312d] shadow-sm" style={{ top: (clippedStart - firstMinute) * pixelsPerMinute, height: Math.max(48, (clippedEnd - clippedStart) * pixelsPerMinute), backgroundColor: colors.get(section.course_id) }} title={section.section_id + (type ? " · " + type : "") + " · " + displayClock(start) + "–" + displayClock(end) + " · " + room}>
+            <strong className="block truncate">{section.course_id} · {sectionNumber}</strong><span className="block truncate">{displayClock(start)}–{displayClock(end)}</span><span className="block truncate">{room}{shortType ? " · " + shortType : ""}</span>
           </article>];
         }))}
       </div>)}
@@ -330,7 +337,7 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
           const kind = meetingType(meeting.classtype);
           const type = kind ? t[kind] : null;
           const days = dayNames(meeting.days).map((day) => t.weekdays[DAYS.indexOf(day as (typeof DAYS)[number])] ?? day);
-          return start === null || end === null || !days.length ? (language === "zh" ? "时间待定" : "Time TBA") : (type ? type + " · " : "") + days.join(" ") + " " + displayClock(start) + "–" + displayClock(end);
+          return start === null || end === null || !days.length ? (language === "zh" ? "时间待定" : "Time TBA") : (type ? type + " · " : "") + days.join(" ") + " " + displayClock(start) + "–" + displayClock(end) + " · " + roomLabel(meeting.building, meeting.room, language);
         }).join(" · ") : language === "zh" ? " · 时间待定" : " · Time TBA"}</p>
         {section.instructorRatings.length > 0 && <p className="mt-2 text-xs text-[#737b77]">{section.instructorRatings.map((item) => item.name + (item.averageRating === null ? "" : " · " + item.averageRating.toFixed(2) + " / 5")).join(" · ")}</p>}
         </div><div className="text-right"><span className={`inline-block rounded-full px-2.5 py-1 text-xs ${seatCount(section.open_seats) === 0 ? "bg-[#f5e9e5] font-semibold text-[#8f4538]" : "bg-[#f1efe9] text-[#68716e]"}`}>{seatText(section.open_seats, t)}</span>{formatSeatReadTime(section.seatCheckedAt, language) && <p className="mt-1 text-[11px] text-[#858d89]">{t.seatReadAt}: {formatSeatReadTime(section.seatCheckedAt, language)}</p>}</div></div></article>)}</div>

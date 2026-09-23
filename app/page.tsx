@@ -5,6 +5,7 @@ import AboutDialog from "@/app/components/about-dialog";
 import SchedulePlanner from "@/app/components/schedule-planner";
 import SectionProfessors from "@/app/components/section-professors";
 import type { ProfessorSummary } from "@/lib/planetterp";
+import { roomLabel } from "@/lib/room";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { formatSeatReadTime } from "@/lib/seat-time";
 
@@ -135,7 +136,7 @@ function displayTime(meeting: Meeting, language: "en" | "zh") {
     const hour = Math.floor(value / 60), minute = value % 60;
     return `${hour % 12 || 12}:${String(minute).padStart(2, "0")}${hour < 12 ? "am" : "pm"}`;
   };
-  return `${days.map((day) => language === "zh" ? zhDays[day] ?? day : day).join(" ")} · ${clock(start)}–${clock(end)}`;
+  return `${days.map((day) => language === "zh" ? zhDays[day] ?? day : day).join(" ")} · ${clock(start)}–${clock(end)} · ${roomLabel(meeting.building, meeting.room, language)}`;
 }
 
 function count(value: unknown) {
