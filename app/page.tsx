@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import AboutDialog from "@/app/components/about-dialog";
 import SchedulePlanner from "@/app/components/schedule-planner";
 import SectionProfessors from "@/app/components/section-professors";
 import type { ProfessorSummary } from "@/lib/planetterp";
@@ -160,6 +161,8 @@ export default function Home() {
   const [alerts, setAlerts] = useState<string[]>([]);
   // Store the message key, not the text, so it re-renders in the new language after a switch.
   const [message, setMessage] = useState<"" | "added" | "watched" | "codeSent">("");
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const closeAbout = useCallback(() => setAboutOpen(false), []);
   const [error, setError] = useState("");
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [authProvider, setAuthProvider] = useState<"email" | null>(null);
@@ -385,9 +388,11 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#f5f3ef] text-[#202728]">
       <header className="border-b border-[#dedbd3] bg-[#fbfaf8]"><div className="mx-auto flex max-w-[1320px] items-center justify-between px-5 py-4 sm:px-8">
-        <a href="#top" className="flex items-center gap-3 font-semibold tracking-tight"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#bd302f] font-serif text-lg text-white">T</span><span>TerpPlan</span><span className="hidden rounded-full border border-[#e5c9bd] px-2 py-1 text-[10px] font-semibold uppercase tracking-[.12em] text-[#8d4333] sm:inline">Student pilot</span></a>
+        <div className="flex items-center gap-2"><a href="#top" className="flex items-center gap-3 font-semibold tracking-tight"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#bd302f] font-serif text-lg text-white">T</span><span>TerpPlan</span><span className="hidden rounded-full border border-[#e5c9bd] px-2 py-1 text-[10px] font-semibold uppercase tracking-[.12em] text-[#8d4333] sm:inline">Student pilot</span></a>
+          <button onClick={() => setAboutOpen(true)} className="ml-1 rounded-lg px-2.5 py-2 text-xs font-medium text-[#59635f] hover:bg-[#eeece6]">{language === "en" ? "About" : "关于"}</button></div>
         <div className="flex items-center gap-3"><span className="hidden text-xs text-[#707674] sm:inline">{t.eyebrow}</span><button onClick={() => setLanguage(language === "en" ? "zh" : "en")} className="rounded-lg border border-[#dcd9d0] px-3 py-2 text-xs font-medium hover:bg-white">{language === "en" ? "中文" : "English"}</button></div>
       </div></header>
+      {aboutOpen && <AboutDialog language={language} onClose={closeAbout} />}
 
       <div id="top" className="mx-auto max-w-[1320px] px-5 pb-16 pt-8 sm:px-8 sm:pt-12">
         <div className="mb-8 grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end"><div><p className="mb-3 text-[11px] font-semibold uppercase tracking-[.17em] text-[#a34a39]">{t.eyebrow}</p><h1 className="font-serif text-4xl leading-tight tracking-[-.03em] sm:text-5xl">{t.title}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#646d69]">{t.subtitle}</p></div>
