@@ -1,0 +1,25 @@
+name: Background seat check
+
+on:
+  schedule:
+    # Every 10 minutes (UTC). GitHub may start scheduled runs a few minutes late at busy times.
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: seat-check
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Trigger TerpPlan seat check
+        env:
+          WATCH_RUNNER_SECRET: ${{ secrets.WATCH_RUNNER_SECRET }}
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 90 \
+            -X POST \
+            -H "Authorization: Bearer ${WATCH_RUNNER_SECRET}" \
+            https://terpplan.com/api/watches/run

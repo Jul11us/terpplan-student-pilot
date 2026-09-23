@@ -1,8 +1,8 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { currentUser, authRequired } from "@/lib/auth";
 import { getDb } from "@/db";
 import { watches } from "@/db/schema";
-import { DEFAULT_TERM, getCourseSectionsSnapshot, parseCount, sectionId } from "@/lib/umd";
+import { checkWatchGroup, groupByCourse, latestCheck } from "@/lib/seat-check";
 
 const MIN_INTERVAL_MS = 60_000;
 
@@ -12,50 +12,13 @@ export async function POST(request: Request) {
   const db = getDb();
   try {
     const rows = await db.select().from(watches).where(eq(watches.userId, user.id));
-    const groups = new Map<string, typeof rows>();
-    for (const row of rows) {
-      const key = `${row.courseId}|${row.term}`;
-      groups.set(key, [...(groups.get(key) ?? []), row]);
-    }
     const alerts: { sectionId: string; courseId: string; openSeats: number }[] = [];
     const now = Date.now();
-    for (const group of groups.values()) {
-      const sample = group[0];
-      if (!sample) continue;
-      const latestAttempt = Math.max(...group.map((item) => item.lastCheckedAt ? Date.parse(item.lastCheckedAt) : 0));
+    for (const group of groupByCourse(rows)) {
+      const latestAttempt = latestCheck(group);
       if (latestAttempt && now - latestAttempt < MIN_INTERVAL_MS) continue;
-      try {
-        const snapshot = await getCourseSectionsSnapshot(sample.courseId, sample.term || DEFAULT_TERM);
-        const sectionData = snapshot.sections;
-        const checkedAt = new Date().toISOString();
-        for (const row of group) {
-          const found = Array.isArray(sectionData) ? sectionData.find((item) => sectionId(item, row.courseId) === row.sectionId) : undefined;
-          const openSeats = parseCount(found?.open_seats);
-          const seats = parseCount(found?.seats);
-          const waitlist = parseCount(found?.waitlist);
-          if (!found || openSeats === null) {
-            await db.update(watches).set({ status: found ? "unknown" : "failed", lastCheckedAt: checkedAt }).where(and(eq(watches.userId, user.id), eq(watches.term, row.term), eq(watches.sectionId, row.sectionId)));
-            continue;
-          }
-          const newOpening = openSeats > 0 && (row.lastSuccessAt === null || (row.openSeats ?? 0) < openSeats) && row.lastNotifiedOpen !== openSeats;
-          if (newOpening) alerts.push({ sectionId: row.sectionId, courseId: row.courseId, openSeats });
-          await db.update(watches).set({
-            seats,
-            openSeats,
-            waitlist,
-            status: "ok",
-            lastCheckedAt: checkedAt,
-            lastSuccessAt: snapshot.seatCheckedAt ?? checkedAt,
-            lastNotifiedOpen: openSeats > 0 ? (newOpening ? openSeats : row.lastNotifiedOpen) : null,
-          }).where(and(eq(watches.userId, user.id), eq(watches.term, row.term), eq(watches.sectionId, row.sectionId)));
-        }
-      } catch (error) {
-        console.error("Seat check failed", sample.courseId, error);
-        const checkedAt = new Date().toISOString();
-        for (const row of group) {
-          await db.update(watches).set({ status: row.lastSuccessAt ? "stale" : "failed", lastCheckedAt: checkedAt }).where(and(eq(watches.userId, user.id), eq(watches.term, row.term), eq(watches.sectionId, row.sectionId)));
-        }
-      }
+      const result = await checkWatchGroup(db, group);
+      alerts.push(...result.pageAlerts);
     }
     const updated = await db.select().from(watches).where(eq(watches.userId, user.id));
     return Response.json({ authProvider: user.provider, watches: updated.map((row) => ({ ...row, meetings: JSON.parse(row.meetings), instructors: JSON.parse(row.instructors) })), alerts, checkedAt: new Date().toISOString(), minIntervalSeconds: 60 });
