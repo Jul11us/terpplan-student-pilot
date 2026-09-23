@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { analyticsEnabled } from "@/lib/site-config";
 
 type Language = "en" | "zh";
 
@@ -22,6 +23,7 @@ const copy = {
       "Your email is used only to send sign-in codes for seat watches.",
       "Seat watches are checked only while this page is open, at most once a minute. No email or text alerts are sent.",
     ],
+    analytics: "We count visits anonymously with Cloudflare Web Analytics (no cookies, no personal data) to see how TerpPlan is used.",
     contactTitle: "Feedback & collaboration",
     contact: "Found a bug, have an idea, or want to work together? Email",
     close: "Close",
@@ -41,6 +43,7 @@ const copy = {
       "邮箱只用于发送余位关注的登录验证码。",
       "余位只在本页面打开时检查，最多每分钟一次；不会发送邮件或短信提醒。",
     ],
+    analytics: "我们使用 Cloudflare Web Analytics 匿名统计访问量（不使用 cookie，不收集个人信息），以了解 TerpPlan 的使用情况。",
     contactTitle: "反馈与合作",
     contact: "发现问题、有建议，或想合作？欢迎发邮件到",
     close: "关闭",
@@ -69,7 +72,7 @@ export default function AboutDialog({ language, onClose }: { language: Language;
       <h3 className="mt-6 text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{t.dataTitle}</h3>
       <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-6 text-[#48534f]">{t.data.map((item) => <li key={item}>{item}</li>)}</ul>
       <h3 className="mt-5 text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{t.privacyTitle}</h3>
-      <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-6 text-[#48534f]">{t.privacy.map((item) => <li key={item}>{item}</li>)}</ul>
+      <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-6 text-[#48534f]">{[...t.privacy, ...(analyticsEnabled ? [t.analytics] : [])].map((item) => <li key={item}>{item}</li>)}</ul>
       <h3 className="mt-5 text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{t.contactTitle}</h3>
       <p className="mt-2 text-sm leading-6 text-[#48534f]">{t.contact} <a href={`mailto:${CONTACT_EMAIL}`} className="font-semibold text-[#a34a39] underline underline-offset-2">{CONTACT_EMAIL}</a></p>
     </section>

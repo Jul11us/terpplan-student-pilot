@@ -1,15 +1,41 @@
 import type { Metadata } from "next";
+import { CLOUDFLARE_ANALYTICS_TOKEN, SITE_URL, analyticsEnabled } from "@/lib/site-config";
 import "./globals.css";
 
+const title = "TerpPlan · UMD course & schedule planner";
+const description = "Find University of Maryland courses, compare conflict-free schedules, and watch open seats. Free and student-built. 马里兰大学选课与排课助手。";
+
 export const metadata: Metadata = {
-  title: "TerpPlan Student Pilot",
-  description: "Find UMD courses, build a conflict-checked schedule, and watch section seats.",
+  metadataBase: new URL(SITE_URL),
+  title,
+  description,
+  applicationName: "TerpPlan",
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    url: "/",
+    siteName: "TerpPlan",
+    title,
+    description,
+    locale: "en_US",
+    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "TerpPlan — Plan your next semester at UMD" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+    images: ["/og-image.png"],
+  },
   other: {
     "codex-preview": "development",
   },
   icons: {
-    icon: "/favicon.svg",
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon-32.png", type: "image/png", sizes: "32x32" },
+    ],
     shortcut: "/favicon.svg",
+    apple: { url: "/apple-touch-icon.png", sizes: "180x180" },
   },
 };
 
@@ -20,7 +46,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        {children}
+        {analyticsEnabled && (
+          <script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon={JSON.stringify({ token: CLOUDFLARE_ANALYTICS_TOKEN })} />
+        )}
+      </body>
     </html>
   );
 }
