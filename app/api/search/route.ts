@@ -6,6 +6,7 @@ const catalogCache = new Map<string, CacheEntry>();
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const query = (url.searchParams.get("q") ?? "").trim().toLowerCase();
+  const compactQuery = query.replace(/\s+/g, "");
   const term = url.searchParams.get("term") ?? DEFAULT_TERM;
   if (!/^\d{6}$/.test(term)) return Response.json({ error: "Choose a valid term." }, { status: 400 });
   if (query.length < 2) return Response.json({ results: [] });
@@ -21,7 +22,8 @@ export async function GET(request: Request) {
     const results = entry.courses
       .filter((course) => {
         const haystack = `${course.course_id} ${course.name} ${course.department ?? ""}`.toLowerCase();
-        return haystack.includes(query);
+        const compactCourseId = course.course_id.toLowerCase().replace(/\s+/g, "");
+        return haystack.includes(query) || compactCourseId.includes(compactQuery);
       })
       .slice(0, 40);
     return Response.json({ results, term });
