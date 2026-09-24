@@ -392,7 +392,7 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
       </button>)}</div>
       {chosen && <div className="mt-6">
         <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h4 className="font-semibold">{t.calendar}</h4><p className="mt-1 text-xs text-[#737b77]">{chosen.selectedSections.map((section) => section.section_id).join(" · ")}</p></div><span className="text-xs text-[#737b77]">{t.rating}: {chosen.professorRating === null ? "—" : chosen.professorRating.toFixed(2) + " / 5"}{chosen.totalCredits ? " · " + chosen.totalCredits + " " + t.credits : ""}</span></div>
-        <CalendarExport sections={chosen.selectedSections} term={term} termName={termName} language={language} />
+        <CalendarExport key={chosen.selectedSections.map((section) => section.section_id).join("|")} sections={chosen.selectedSections} term={term} termName={termName} language={language} />
         <WeeklyCalendar sections={chosen.selectedSections} language={language} />
         <div className="mt-4 space-y-2">{chosen.selectedSections.map((section) => <article key={section.section_id} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{section.course_id} · {section.course_title}</p><p className="mt-1 text-sm text-[#626c67]">{section.section_id}{(section.meetings ?? []).length ? " · " + (section.meetings ?? []).map((meeting) => {
           const start = minutes(meeting.start_time), end = minutes(meeting.end_time);
