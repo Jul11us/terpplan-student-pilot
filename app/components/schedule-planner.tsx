@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { buildIcs, type IcsMeeting } from "@/lib/ics";
 import { roomLabel } from "@/lib/room";
+import { TERM_CALENDARS } from "@/lib/term-calendar";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { formatSeatReadTime } from "@/lib/seat-time";
 
@@ -49,6 +51,11 @@ const copy = {
     openOnly: "Only use sections with open seats", fullIn: "Full", seatsUnknown: "Seats unknown", full: "Full", seat: "seat open", seatsOpen: "seats open",
     windowHint: "Classes outside this window lower the ranking; tick the box to exclude them.",
     includeFc: "I'm in the Freshman Connection program (include FC sections)",
+    exportCalendar: "Export to calendar (.ics)",
+    exportHelp: "Apple Calendar / Outlook: open the downloaded file. Google Calendar: on a computer, Settings → Import & export → Import.",
+    exportUnavailable: "Calendar export is not available for this term yet.",
+    exportSkipped: "Left out (time TBA):",
+    exportNote: "Regular class weeks only, without holidays or final exams. Confirm times and rooms in Testudo.",
     onlyInstructors: "Only", minutes: "min", credits: "credits", lecture: "Lecture", discussion: "Discussion", lab: "Lab",
     // Short forms for the narrow timetable blocks.
     lectureShort: "LEC", discussionShort: "DIS", labShort: "LAB",
@@ -69,6 +76,11 @@ const copy = {
     openOnly: "只使用有空位的班次", fullIn: "已满", seatsUnknown: "余位未知", full: "已满", seat: "个空位", seatsOpen: "个空位",
     windowHint: "时间段外的课程会降低排名；勾选后会直接排除。",
     includeFc: "我参加了 Freshman Connection 项目（包含 FC 班次）",
+    exportCalendar: "导出到日历（.ics）",
+    exportHelp: "Apple 日历 / Outlook：直接打开下载的文件。Google 日历：在电脑上进入 设置 → 导入和导出 → 导入。",
+    exportUnavailable: "这个学期的校历还没配置，暂时无法导出。",
+    exportSkipped: "未导出（时间待定）：",
+    exportNote: "只包含正常上课周，已去掉假期，不含期末考试。请以 Testudo 的时间和教室为准。",
     onlyInstructors: "只排", minutes: "分钟", credits: "学分", lecture: "讲课", discussion: "讨论课", lab: "实验课",
     lectureShort: "讲课", discussionShort: "讨论课", labShort: "实验课",
     select: "查看此方案", calendar: "每周课表", unknown: "需要确认的时间", noUnknown: "所有班次均列出了上课时间。",
@@ -84,6 +96,8 @@ const copy = {
 type Props = {
   courses: PlanCourse[];
   term: string;
+  // English term name such as "Spring 2027", used for the calendar name and file name.
+  termName: string;
   language: Language;
   onRemove: (courseId: string) => void;
   onBack: () => void;
@@ -234,7 +248,53 @@ function WeeklyCalendar({ sections, language }: { sections: ScheduledSection[]; 
   </div>;
 }
 
-export default function SchedulePlanner({ courses, term, language, onRemove, onBack }: Props) {
+function CalendarExport({ sections, term, termName, language }: { sections: ScheduledSection[]; term: string; termName: string; language: Language }) {
+  const t = copy[language];
+  const calendar = TERM_CALENDARS[term];
+  const [skipped, setSkipped] = useState<string[]>([]);
+
+  const download = () => {
+    if (!calendar) return;
+    const meetings: IcsMeeting[] = [];
+    const tba: string[] = [];
+    for (const section of sections) {
+      (section.meetings ?? []).forEach((meeting, index) => {
+        const start = minutes(meeting.start_time), end = minutes(meeting.end_time), days = dayNames(meeting.days);
+        if (start === null || end === null || end <= start || !days.length) { tba.push(section.section_id); return; }
+        const kind = meetingType(meeting.classtype);
+        meetings.push({
+          uid: `${term}-${section.section_id}-${index}@terpplan.com`,
+          summary: `${section.course_id} ${kind ? t[kind] : ""}`.trim(),
+          location: roomLabel(meeting.building, meeting.room, language),
+          description: [`${section.section_id} · ${section.course_title}`, (section.instructors ?? []).join(", "), t.exportNote].filter(Boolean).join("\n"),
+          days,
+          start,
+          end,
+        });
+      });
+      if (!section.meetings?.length) tba.push(section.section_id);
+    }
+    setSkipped([...new Set(tba)]);
+    const ics = buildIcs(meetings, calendar, `TerpPlan · ${termName}`);
+    const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `terpplan-${termName.toLowerCase().replace(/\s+/g, "-")}.ics`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  return <div className="mb-3 rounded-xl border border-[#e3e0d8] bg-white p-3 sm:p-4">
+    <div className="flex flex-wrap items-center gap-3">
+      <button onClick={download} disabled={!calendar} className="rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:opacity-50">{t.exportCalendar}</button>
+      <p className="min-w-0 flex-1 text-[11px] leading-5 text-[#737b77]">{calendar ? t.exportHelp : t.exportUnavailable}</p>
+    </div>
+    {calendar && <p className="mt-2 text-[11px] leading-5 text-[#858d89]">{t.exportNote}</p>}
+    {skipped.length > 0 && <p className="mt-2 text-[11px] text-[#745424]">{t.exportSkipped} {skipped.join(", ")}</p>}
+  </div>;
+}
+
+export default function SchedulePlanner({ courses, term, termName, language, onRemove, onBack }: Props) {
   const t = copy[language];
   const [generated, setGenerated] = useState<{ requestKey: string; options: ScheduleOption[]; warnings: PlanWarning[] }>({ requestKey: "", options: [], warnings: [] });
   const [selectedOption, setSelectedOption] = useState(0);
@@ -331,6 +391,7 @@ export default function SchedulePlanner({ courses, term, language, onRemove, onB
       </button>)}</div>
       {chosen && <div className="mt-6">
         <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h4 className="font-semibold">{t.calendar}</h4><p className="mt-1 text-xs text-[#737b77]">{chosen.selectedSections.map((section) => section.section_id).join(" · ")}</p></div><span className="text-xs text-[#737b77]">{t.rating}: {chosen.professorRating === null ? "—" : chosen.professorRating.toFixed(2) + " / 5"}{chosen.totalCredits ? " · " + chosen.totalCredits + " " + t.credits : ""}</span></div>
+        <CalendarExport sections={chosen.selectedSections} term={term} termName={termName} language={language} />
         <WeeklyCalendar sections={chosen.selectedSections} language={language} />
         <div className="mt-4 space-y-2">{chosen.selectedSections.map((section) => <article key={section.section_id} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{section.course_id} · {section.course_title}</p><p className="mt-1 text-sm text-[#626c67]">{section.section_id}{(section.meetings ?? []).length ? " · " + (section.meetings ?? []).map((meeting) => {
           const start = minutes(meeting.start_time), end = minutes(meeting.end_time);
