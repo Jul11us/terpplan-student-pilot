@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import RegistrationChecklist from "@/app/components/registration-checklist";
 import { buildIcs, type IcsMeeting } from "@/lib/ics";
 import { roomLabel } from "@/lib/room";
 import { TERM_CALENDARS } from "@/lib/term-calendar";
@@ -403,6 +404,7 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
         {section.instructorRatings.length > 0 && <p className="mt-2 text-xs text-[#737b77]">{section.instructorRatings.map((item) => item.name + (item.averageRating === null ? "" : " · " + item.averageRating.toFixed(2) + " / 5")).join(" · ")}</p>}
         </div><div className="text-right"><span className={`inline-block rounded-full px-2.5 py-1 text-xs ${seatCount(section.open_seats) === 0 ? "bg-[#f5e9e5] font-semibold text-[#8f4538]" : "bg-[#f1efe9] text-[#68716e]"}`}>{seatText(section.open_seats, t)}</span>{formatSeatReadTime(section.seatCheckedAt, language) && <p className="mt-1 text-[11px] text-[#858d89]">{t.seatReadAt}: {formatSeatReadTime(section.seatCheckedAt, language)}</p>}</div></div></article>)}</div>
         <p className="mt-3 text-xs leading-5 text-[#858d89]">{t.seatReadHint}</p>
+        <RegistrationChecklist option={chosen} others={options.filter((option) => option !== chosen)} language={language} />
       </div>}
     </div>}
   </section>;
