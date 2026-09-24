@@ -102,6 +102,9 @@ function parseTestudoCourse(html: string, courseId: string) {
   const department = firstClassText(html, "course-prefix-name") || courseId.slice(0, 4);
   const creditsText = firstClassText(html, "course-min-credits");
   const credits = creditsText && Number.isFinite(Number(creditsText)) ? Number(creditsText) : null;
+  // Variable-credit courses (e.g. 1-3) also list a maximum; fixed-credit courses leave it out.
+  const maxCreditsText = firstClassText(html, "course-max-credits");
+  const maxCredits = maxCreditsText && Number.isFinite(Number(maxCreditsText)) && Number(maxCreditsText) > (credits ?? 0) ? Number(maxCreditsText) : null;
   const sectionStarts = Array.from(html.matchAll(/<div\s+class=["']section(?:\s+[^"']*)?["'][^>]*>/gi));
   const sections = sectionStarts.flatMap((start, index): UmdSection[] => {
     const sectionHtml = html.slice(start.index ?? 0, sectionStarts[index + 1]?.index ?? html.length);
@@ -134,7 +137,7 @@ function parseTestudoCourse(html: string, courseId: string) {
   });
 
   return {
-    course: { course_id: courseId, name, department, credits },
+    course: { course_id: courseId, name, department, credits, max_credits: maxCredits },
     sections,
   };
 }

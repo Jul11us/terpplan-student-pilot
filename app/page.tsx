@@ -42,7 +42,7 @@ type ApiError = { error?: string; code?: string };
 type WatchesPayload = ApiError & { authenticated?: boolean; watches?: Watch[] };
 type TermsPayload = { terms?: string[]; defaultTerm?: string };
 type SearchPayload = ApiError & { results?: Course[] };
-type CoursePayload = ApiError & { sections?: Section[]; seatCheckedAt?: string };
+type CoursePayload = ApiError & { sections?: Section[]; seatCheckedAt?: string; course?: { credits?: unknown; max_credits?: unknown } };
 type RatingsPayload = { ratings?: Record<string, ProfessorSummary> };
 type CheckPayload = ApiError & { watches?: Watch[]; alerts?: { courseId: string; sectionId: string }[] };
 
@@ -59,7 +59,7 @@ const copy = {
     signIn: "Sign in to save and sync your seat watches.", email: "Email address", emailCode: "Six-digit code", sendCode: "Email me a code", verifyCode: "Verify and sign in", codeSent: "Code sent. Check your inbox.",
     watchLimit: "You can watch up to 10 sections. Remove one to add another.", emailPrivacy: "Your address is used to sign you in. Codes expire after 10 minutes.", wrongCode: "That code could not be verified.", emailSignedIn: "Signed in with email", signOut: "Sign out",
     loading: "Loading…", error: "Something went wrong. Please try again.",
-    seats: "seats open", seat: "seat open", fcOnly: "Freshman Connection only", pickCourse: "Pick a course from the matches to see its sections.", waitlist: "waitlist", checked: "Last checked", status: "Status", freshness: "Seat counts come from UMD course data and may lag the official Schedule of Classes. This page checks at most once a minute while open.",
+    seats: "seats open", seat: "seat open", credit: "credit", creditsUnit: "credits", capacity: "{n} seats total", waitlisted: "{n} waitlisted", fcOnly: "Freshman Connection only", pickCourse: "Pick a course from the matches to see its sections.", waitlist: "waitlist", checked: "Last checked", status: "Status", freshness: "Seat counts come from UMD course data and may lag the official Schedule of Classes. This page checks at most once a minute while open.",
     open: "Seats available", full: "Full", unknown: "Unknown", stale: "Last check failed · showing saved count", checking: "Checking…",
     next: "Next step", back: "Back", termFallback: "Term list unavailable — showing Spring 2027",
     timeUnknown: "Some meeting times are missing, so the conflict check is incomplete.",
@@ -78,7 +78,7 @@ const copy = {
     noConflict: "没有发现时间冲突", planLimit: "每个排课方案最多添加 10 门课程。", signIn: "登录后即可保存并同步余位关注。", email: "邮箱地址", emailCode: "六位验证码", sendCode: "发送验证码", verifyCode: "验证并登录", codeSent: "验证码已发送，请查收邮箱。",
     watchLimit: "最多可以关注 10 个班次，请先移除一个再添加。", emailPrivacy: "邮箱仅用于登录。验证码将在 10 分钟后失效。", wrongCode: "验证码无法验证。", emailSignedIn: "已通过邮箱登录", signOut: "退出登录",
     loading: "加载中…",
-    error: "发生错误，请重试。", seats: "个空位", seat: "个空位", fcOnly: "仅限 Freshman Connection", pickCourse: "从匹配结果中选择一门课程，查看它的班次。", waitlist: "候补人数", checked: "上次检查", status: "状态",
+    error: "发生错误，请重试。", seats: "个空位", seat: "个空位", credit: "学分", creditsUnit: "学分", capacity: "共 {n} 座", waitlisted: "候补 {n} 人", fcOnly: "仅限 Freshman Connection", pickCourse: "从匹配结果中选择一门课程，查看它的班次。", waitlist: "候补人数", checked: "上次检查", status: "状态",
     freshness: "余位数据来自 UMD 课程数据，可能晚于学校官方课表。页面打开时最多每分钟检查一次。",
     open: "有空位", full: "已满", unknown: "未知", stale: "上次检查失败 · 显示已保存数据", checking: "检查中…",
     next: "下一步", back: "返回", termFallback: "无法读取学期列表，暂显示 2027 春季", timeUnknown: "部分班次缺少上课时间，无法完整检查冲突。",
@@ -146,6 +146,15 @@ function count(value: unknown) {
   return null;
 }
 
+// "4", or a range such as "1–3" for variable-credit courses. umd.io may already send a range string.
+function creditsText(course: CoursePayload["course"]) {
+  const raw = course?.credits;
+  const text = typeof raw === "number" ? String(raw) : typeof raw === "string" ? raw.trim().replace(/\s*-\s*/, "–") : "";
+  if (!/^\d+(\.\d+)?(–\d+(\.\d+)?)?$/.test(text)) return null;
+  const max = typeof course?.max_credits === "number" ? course.max_credits : null;
+  return max && !text.includes("–") ? `${text}–${max}` : text;
+}
+
 export default function Home() {
   const [language, setLanguage] = useState<"en" | "zh">("en");
   const t = copy[language];
@@ -158,6 +167,7 @@ export default function Home() {
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<Course | null>(null);
   const [sections, setSections] = useState<Section[]>([]);
+  const [courseCredits, setCourseCredits] = useState<string | null>(null);
   const [courseSeatCheckedAt, setCourseSeatCheckedAt] = useState<string | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [planCourses, setPlanCourses] = useState<PlanCourse[]>([]);
@@ -255,7 +265,7 @@ export default function Home() {
   const openCourse = async (course: Course) => {
     const courseRequestKey = term + "|" + course.course_id;
     activeCourseRef.current = courseRequestKey;
-    setSelected(course); setSections([]); setCourseSeatCheckedAt(null); setLoadingDetail(true); setError(""); setMessage(""); setProfessorRatings({});
+    setSelected(course); setSections([]); setCourseSeatCheckedAt(null); setCourseCredits(null); setLoadingDetail(true); setError(""); setMessage(""); setProfessorRatings({});
     setExcludedInstructors([]);
     setRatingsLoading(false);
     try {
@@ -264,6 +274,7 @@ export default function Home() {
       if (!response.ok) throw new Error(payload.error || t.error);
       if (activeCourseRef.current !== courseRequestKey) return;
       setCourseSeatCheckedAt(payload.seatCheckedAt ?? null);
+      setCourseCredits(creditsText(payload.course));
       setSections([...(payload.sections ?? [])].sort((a: Section, b: Section) => sectionId(a, course.course_id).localeCompare(sectionId(b, course.course_id), "en", { numeric: true })));
       const names = [...new Set((payload.sections ?? []).flatMap((section: Section) => section.instructors ?? []))];
       // Reopening a course that is already in the plan restores the instructors picked for it.
@@ -454,7 +465,7 @@ export default function Home() {
               {results.map((course) => <button key={course.course_id} onClick={() => void openCourse(course)} className={`flex w-full items-center justify-between gap-4 py-4 text-left hover:bg-[#f6f4ef] ${selected?.course_id === course.course_id ? "text-[#9a372f]" : ""}`}><span><span className="block text-sm font-semibold">{course.course_id}<span className="ml-2 font-normal text-[#606966]">{course.name}</span></span><span className="mt-1 block text-xs text-[#89908c]">{course.department ?? course.course_id.slice(0, 4)}</span></span><span className="shrink-0 text-xs font-medium text-[#a34a39]">{t.select} →</span></button>)}
             </div>
           </div>
-          <div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-7"><div className="mb-5"><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{selected ? `${selected.course_id} · ${termLabel(term, language)}` : `02 · ${t.sections}`}</p><h2 className="mt-2 font-serif text-2xl">{selected?.name ?? t.sections}</h2>{selected && sections.length > 0 && <button onClick={() => addToSchedule(selected)} disabled={planCourses.some((item) => item.courseId === selected.course_id)} className="mt-4 rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:cursor-default disabled:opacity-60">{planCourses.some((item) => item.courseId === selected.course_id) ? t.courseInPlan : t.addSchedule}</button>}
+          <div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-7"><div className="mb-5"><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{selected ? `${selected.course_id} · ${termLabel(term, language)}` : `02 · ${t.sections}`}</p><h2 className="mt-2 font-serif text-2xl">{selected?.name ?? t.sections}</h2>{selected && courseCredits && <p className="mt-1 text-sm font-medium text-[#48534f]">{courseCredits} {courseCredits === "1" ? t.credit : t.creditsUnit}</p>}{selected && sections.length > 0 && <button onClick={() => addToSchedule(selected)} disabled={planCourses.some((item) => item.courseId === selected.course_id)} className="mt-4 rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:cursor-default disabled:opacity-60">{planCourses.some((item) => item.courseId === selected.course_id) ? t.courseInPlan : t.addSchedule}</button>}
               {selected && courseInstructors.length > 1 && <div className="mt-4"><p className="text-xs font-medium text-[#68716e]">{t.instructorPick} <span className="font-normal text-[#8a918e]">· {excludedInstructors.length ? `${keptInstructors.length}/${courseInstructors.length}` : t.allInstructors}</span></p><div className="mt-2 flex flex-wrap gap-2">{courseInstructors.map((name) => { const kept = !excludedInstructors.includes(name); return <button key={name} type="button" onClick={() => toggleInstructor(name)} disabled={Boolean(selectedPlan?.pinnedSectionId)} aria-pressed={kept} className={`rounded-full border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${kept ? "border-[#536d64] bg-[#edf3ef] font-medium text-[#24312d]" : "border-[#e0ddd5] bg-white text-[#9aa19d] line-through"}`}>{kept ? "✓ " : ""}{name}</button>; })}</div><p className="mt-2 text-[11px] text-[#8a918e]">{selectedPlan?.pinnedSectionId ? t.pinnedInstructorHint : t.instructorHint}</p></div>}</div>
             {!selected && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm leading-6 text-[#717975]">{results.length ? t.pickCourse : t.noResults}</p>}{loadingDetail && <p className="py-8 text-sm text-[#737b77]">{t.loading}</p>}
             {selected && !loadingDetail && !sections.length && !error && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm text-[#717975]">{language === "en" ? "No sections listed for this term." : "本学期没有列出班次。"}</p>}
@@ -468,7 +479,12 @@ export default function Home() {
               return <article key={id} className={`rounded-xl border bg-white p-4 ${pinned ? "border-[#536d64] ring-1 ring-[#536d64]/20" : excluded ? "border-[#e7e4dc] opacity-70" : "border-[#e7e4dc]"}`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div><h3 className="font-semibold">{id}{/-FC[A-Z0-9]*$/.test(id) && <span className="ml-2 rounded-full bg-[#f3ecdc] px-2 py-0.5 align-middle text-[10px] font-semibold text-[#7a5a24]">{t.fcOnly}</span>}</h3><p className="mt-1 text-xs text-[#626c67]">{formatMeetings(section.meetings)}</p>{section.instructors?.length ? <SectionProfessors names={section.instructors} courseId={selected?.course_id ?? ""} ratings={professorRatings} ratingsLoading={ratingsLoading} language={language} /> : null}</div>
-                  <div className="text-right"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${open === null ? "bg-[#f1efe9] text-[#68716e]" : open > 0 ? "bg-[#eaf4ec] text-[#367047]" : "bg-[#f5e9e5] text-[#8f4538]"}`}>{seatLabel(section.open_seats)}</span></div>
+                  <div className="text-right"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${open === null ? "bg-[#f1efe9] text-[#68716e]" : open > 0 ? "bg-[#eaf4ec] text-[#367047]" : "bg-[#f5e9e5] text-[#8f4538]"}`}>{seatLabel(section.open_seats)}</span>{(() => {
+                    // Capacity tells "nobody registered yet" (30 of 30 open) apart from "one seat left".
+                    const total = count(section.seats), waiting = count(section.waitlist);
+                    const parts = [total !== null ? t.capacity.replace("{n}", String(total)) : "", waiting ? t.waitlisted.replace("{n}", String(waiting)) : ""].filter(Boolean);
+                    return parts.length ? <p className="mt-1 text-[11px] text-[#737b77]">{parts.join(" · ")}</p> : null;
+                  })()}</div>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button onClick={() => selected && chooseSection(selected, id, "pin")} aria-pressed={pinned} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${pinned ? "border-[#536d64] bg-[#edf3ef] text-[#24312d]" : "border-[#d9d6ce] text-[#48534f] hover:bg-[#f7f5f0]"}`}>{pinned ? t.unpinSection : t.pinSection}</button>
