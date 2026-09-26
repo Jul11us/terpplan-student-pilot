@@ -7,11 +7,12 @@ import { roomLabel } from "@/lib/room";
 import { TERM_CALENDARS } from "@/lib/term-calendar";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { formatSeatReadTime } from "@/lib/seat-time";
+import { sharePath } from "@/lib/shared-schedule";
 
 type Language = "en" | "zh";
 type Meeting = { days?: string | null; start_time?: string | null; end_time?: string | null; classtype?: string | null; building?: string | null; room?: string | null };
 type ProfessorRating = { name: string; averageRating: number | null; matched: boolean };
-type ScheduledSection = {
+export type ScheduledSection = {
   course_id: string;
   course_title: string;
   section_id: string;
@@ -53,6 +54,8 @@ const copy = {
     windowHint: "Classes outside this window lower the ranking; tick the box to exclude them.",
     includeFc: "I'm in the Freshman Connection program (include FC sections)",
     exportCalendar: "Export to calendar (.ics)",
+    shareSchedule: "Copy share link", shareCopied: "Link copied", shareReady: "Share link", shareCopyFailed: "Copy the link below to share this schedule.",
+    shareHint: "Anyone with this link can see these sections. Times and seats are refreshed when they open it.",
     exportHelp: "Apple Calendar / Outlook: open the downloaded file. Google Calendar: on a computer, Settings → Import & export → Import.",
     exportUnavailable: "Calendar export is not available for this term yet.",
     exportSkipped: "Left out (time TBA):",
@@ -78,6 +81,8 @@ const copy = {
     windowHint: "时间段外的课程会降低排名；勾选后会直接排除。",
     includeFc: "我参加了 Freshman Connection 项目（包含 FC 班次）",
     exportCalendar: "导出到日历（.ics）",
+    shareSchedule: "复制分享链接", shareCopied: "链接已复制", shareReady: "分享链接", shareCopyFailed: "请复制下方链接分享这个课表。",
+    shareHint: "拿到链接的人可以查看这些班次；打开时会重新读取上课时间与余位。",
     exportHelp: "Apple 日历 / Outlook：直接打开下载的文件。Google 日历：在电脑上进入 设置 → 导入和导出 → 导入。",
     exportUnavailable: "这个学期的校历还没配置，暂时无法导出。",
     exportSkipped: "未导出（时间待定）：",
@@ -104,7 +109,7 @@ type Props = {
   onBack: () => void;
 };
 
-function dayNames(raw: string | null | undefined) {
+export function dayNames(raw: string | null | undefined) {
   if (!raw || /^(TBA|TBD|ARRANGED)$/i.test(raw.trim())) return [] as string[];
   const text = raw.toUpperCase().replace(/[^A-Z]/g, "");
   const tokens: Array<[string, string]> = [
@@ -121,7 +126,7 @@ function dayNames(raw: string | null | undefined) {
   return result;
 }
 
-function minutes(raw: string | null | undefined) {
+export function minutes(raw: string | null | undefined) {
   if (!raw || /tba|tbd/i.test(raw)) return null;
   const match = raw.trim().match(/^(\d{1,2}):(\d{2})\s*([ap]m)?$/i);
   if (!match) return null;
@@ -132,7 +137,7 @@ function minutes(raw: string | null | undefined) {
   return hour * 60 + minute;
 }
 
-function displayClock(value: number) {
+export function displayClock(value: number) {
   const hour = Math.floor(value / 60);
   return (hour % 12 || 12) + ":" + String(value % 60).padStart(2, "0") + (hour < 12 ? "am" : "pm");
 }
@@ -201,7 +206,7 @@ function meetingType(raw: string | null | undefined) {
   return null;
 }
 
-function WeeklyCalendar({ sections, language }: { sections: ScheduledSection[]; language: Language }) {
+export function WeeklyCalendar({ sections, language }: { sections: ScheduledSection[]; language: Language }) {
   const t = copy[language];
   const firstMinute = 8 * 60;
   const lastMinute = 22 * 60;
@@ -249,7 +254,7 @@ function WeeklyCalendar({ sections, language }: { sections: ScheduledSection[]; 
   </div>;
 }
 
-function CalendarExport({ sections, term, termName, language }: { sections: ScheduledSection[]; term: string; termName: string; language: Language }) {
+export function CalendarExport({ sections, term, termName, language }: { sections: ScheduledSection[]; term: string; termName: string; language: Language }) {
   const t = copy[language];
   const calendar = TERM_CALENDARS[term];
   const [skipped, setSkipped] = useState<string[]>([]);
@@ -301,6 +306,8 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
   const [selectedOption, setSelectedOption] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [shareUrl, setShareUrl] = useState("");
+  const [shareCopied, setShareCopied] = useState(false);
   // This panel only mounts after the page has loaded in the browser, so it can read saved preferences directly.
   const [savedPreferences] = useState(() => readSavedState().preferences);
   const [excludedDays, setExcludedDays] = useState<string[]>(savedPreferences?.excludedDays ?? []);
@@ -346,6 +353,8 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
       if (!response.ok) throw new Error(payload.error || t.loadError);
       setGenerated({ requestKey, options: payload.options ?? [], warnings: payload.warnings ?? [] });
       setSelectedOption(0);
+      setShareUrl("");
+      setShareCopied(false);
     } catch {
       setError(t.loadError);
       setGenerated({ requestKey, options: [], warnings: [] });
@@ -355,6 +364,17 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
   };
 
   const chosen = options[selectedOption];
+  const shareSchedule = async () => {
+    if (!chosen) return;
+    const url = window.location.origin + sharePath(term, chosen.selectedSections.map((section) => section.section_id), language);
+    setShareUrl(url);
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true);
+    } catch {
+      setShareCopied(false);
+    }
+  };
   return <section className="mx-auto max-w-6xl rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-8">
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">02 · {t.preferences}</p><h2 className="mt-2 font-serif text-3xl">{t.courses}</h2></div>
@@ -382,7 +402,7 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
     {courses.length > 0 && options.length === 0 && !loading && !error && warnings.length > 0 && <p className="mt-4 text-sm text-[#68716e]">{t.noOptions}</p>}
     {options.length > 0 && <div className="mt-8">
       <h3 className="font-serif text-2xl">{t.options}</h3>
-      <div className="mt-4 grid gap-3 lg:grid-cols-3">{options.map((option, index) => <button type="button" key={option.selectedSections.map((section) => section.section_id).join("|")} onClick={() => setSelectedOption(index)} aria-pressed={selectedOption === index} className={`rounded-xl border p-4 text-left transition ${selectedOption === index ? "border-[#536d64] bg-[#edf3ef] ring-2 ring-[#536d64]/15" : "border-[#e3e0d8] bg-white hover:border-[#b9c5be]"}`}>
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">{options.map((option, index) => <button type="button" key={option.selectedSections.map((section) => section.section_id).join("|")} onClick={() => { setSelectedOption(index); setShareUrl(""); setShareCopied(false); }} aria-pressed={selectedOption === index} className={`rounded-xl border p-4 text-left transition ${selectedOption === index ? "border-[#536d64] bg-[#edf3ef] ring-2 ring-[#536d64]/15" : "border-[#e3e0d8] bg-white hover:border-[#b9c5be]"}`}>
         <span className="flex items-center justify-between"><strong>{t.option} {index + 1}</strong><span className="text-xs text-[#737b77]">{t.score} {option.score.toFixed(2)}</span></span>
         <span className="mt-3 block text-xs leading-5 text-[#626c67]">{option.selectedSections.map((section) => section.section_id).join(" · ")}</span>
         {option.fullSectionIds?.length ? <span className="mt-2 inline-block rounded-full bg-[#f5e9e5] px-2 py-0.5 text-[11px] font-semibold text-[#8f4538]">{t.fullIn}: {option.fullSectionIds.join(", ")}</span> : null}
@@ -393,6 +413,10 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
       {chosen && <div className="mt-6">
         <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h4 className="font-semibold">{t.calendar}</h4><p className="mt-1 text-xs text-[#737b77]">{chosen.selectedSections.map((section) => section.section_id).join(" · ")}</p></div><span className="text-xs text-[#737b77]">{t.rating}: {chosen.professorRating === null ? "—" : chosen.professorRating.toFixed(2) + " / 5"}{chosen.totalCredits ? " · " + chosen.totalCredits + " " + t.credits : ""}</span></div>
         <CalendarExport key={chosen.selectedSections.map((section) => section.section_id).join("|")} sections={chosen.selectedSections} term={term} termName={termName} language={language} />
+        <div className="mb-3 rounded-xl border border-[#e3e0d8] bg-white p-3 sm:p-4">
+          <div className="flex flex-wrap items-center gap-3"><button type="button" onClick={() => void shareSchedule()} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]">{shareCopied ? t.shareCopied : t.shareSchedule}</button><p className="min-w-0 flex-1 text-[11px] leading-5 text-[#737b77]">{t.shareHint}</p></div>
+          {shareUrl && <div className="mt-3"><label htmlFor="share-schedule-url" className="text-[11px] font-medium text-[#68716e]">{shareCopied ? t.shareReady : t.shareCopyFailed}</label><input id="share-schedule-url" readOnly value={shareUrl} onFocus={(event) => event.target.select()} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-[#fbfaf8] px-3 py-2 text-xs text-[#273c38]" /></div>}
+        </div>
         <WeeklyCalendar sections={chosen.selectedSections} language={language} />
         <div className="mt-4 space-y-2">{chosen.selectedSections.map((section) => <article key={section.section_id} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{section.course_id} · {section.course_title}</p><p className="mt-1 text-sm text-[#626c67]">{section.section_id}{(section.meetings ?? []).length ? " · " + (section.meetings ?? []).map((meeting) => {
           const start = minutes(meeting.start_time), end = minutes(meeting.end_time);
