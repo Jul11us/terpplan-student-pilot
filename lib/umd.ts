@@ -93,6 +93,62 @@ async function testudoHtml(path: string) {
   return response.text();
 }
 
+// Prerequisites, restrictions and similar notes, normalized from either data source.
+export type CourseRequirementKind = "prerequisite" | "corequisite" | "restriction" | "creditOnlyFor" | "recommended" | "crossListed" | "formerly" | "additionalInfo" | "other";
+export type CourseRequirement = { kind: CourseRequirementKind; label: string; text: string };
+
+const REQUIREMENT_LABELS: Array<[RegExp, CourseRequirementKind]> = [
+  [/^prerequisite/i, "prerequisite"],
+  [/^corequisite/i, "corequisite"],
+  [/^restriction/i, "restriction"],
+  [/^credit only granted for/i, "creditOnlyFor"],
+  [/^recommended/i, "recommended"],
+  [/^(cross-listed|also offered as)/i, "crossListed"],
+  [/^formerly/i, "formerly"],
+  [/^additional information/i, "additionalInfo"],
+];
+
+function requirementKind(label: string): CourseRequirementKind {
+  return REQUIREMENT_LABELS.find(([pattern]) => pattern.test(label))?.[1] ?? "other";
+}
+
+// Testudo writes each requirement as "<strong>Prerequisite:</strong> text" inside the course text block;
+// the description is the approved text without a label, and extra notes sit in "course-text".
+function parseTestudoRequirements(html: string) {
+  const start = html.search(/class=["']approved-course-texts-container["']/i);
+  const end = html.search(/class=["']toggle-sections-link-container["']/i);
+  const region = start >= 0 ? html.slice(start, end > start ? end : undefined) : "";
+  const requirements: CourseRequirement[] = Array.from(region.matchAll(/<strong>([\s\S]*?)<\/strong>([\s\S]*?)<\/div>/gi), (match) => {
+    const label = htmlText(match[1] ?? "").replace(/:\s*$/, "");
+    return { kind: requirementKind(label), label, text: htmlText(match[2] ?? "") };
+  }).filter((item) => item.label && item.text);
+  const description = classTexts(region, "approved-course-text", "div")
+    .filter((text) => !REQUIREMENT_LABELS.some(([pattern]) => pattern.test(text)) && !/^[A-Z][A-Za-z -]+:/.test(text))
+    .join(" ");
+  for (const note of classTexts(region, "course-text", "div")) requirements.push({ kind: "other", label: "Note", text: note });
+  return { requirements, description: description || null };
+}
+
+// umd.io keeps the same information under course.relationships.
+const UMDIO_RELATIONSHIPS: Array<[string, CourseRequirementKind, string]> = [
+  ["prereqs", "prerequisite", "Prerequisite"],
+  ["coreqs", "corequisite", "Corequisite"],
+  ["restrictions", "restriction", "Restriction"],
+  ["credit_granted_for", "creditOnlyFor", "Credit only granted for"],
+  ["also_offered_as", "crossListed", "Also offered as"],
+  ["formerly", "formerly", "Formerly"],
+  ["additional_info", "additionalInfo", "Additional information"],
+];
+
+function umdioRequirements(course: Record<string, unknown>): CourseRequirement[] {
+  const relationships = course.relationships && typeof course.relationships === "object" ? course.relationships as Record<string, unknown> : {};
+  return UMDIO_RELATIONSHIPS.flatMap(([key, kind, label]) => {
+    const value = relationships[key];
+    const text = typeof value === "string" ? htmlText(value) : "";
+    return text ? [{ kind, label, text }] : [];
+  });
+}
+
 function parseTestudoCourse(html: string, courseId: string) {
   const escapedId = courseId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   if (!new RegExp(`<div\\s+id=["']${escapedId}["']\\s+class=["']course["']`, "i").test(html)) return null;
@@ -137,7 +193,7 @@ function parseTestudoCourse(html: string, courseId: string) {
   });
 
   return {
-    course: { course_id: courseId, name, department, credits, max_credits: maxCredits },
+    course: { course_id: courseId, name, department, credits, max_credits: maxCredits, ...parseTestudoRequirements(html) },
     sections,
   };
 }
@@ -185,8 +241,13 @@ export async function getCourse(courseId: string, term: string) {
   ]);
   const course = Array.isArray(coursePayload) ? coursePayload[0] : coursePayload;
   if (!course || typeof course !== "object") return null;
+  const record = course as Record<string, unknown>;
   return {
-    course,
+    course: {
+      ...record,
+      requirements: umdioRequirements(record),
+      description: typeof record.description === "string" && record.description.trim() ? htmlText(record.description) : null,
+    } as Record<string, unknown> & { requirements: CourseRequirement[]; description: string | null },
     sections: Array.isArray(sectionSnapshot.sections) ? sectionSnapshot.sections : [],
     seatCheckedAt: sectionSnapshot.seatCheckedAt,
   };

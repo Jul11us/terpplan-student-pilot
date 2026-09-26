@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import AboutDialog from "@/app/components/about-dialog";
+import CourseRequirements, { type CourseRequirement } from "@/app/components/course-requirements";
 import SchedulePlanner from "@/app/components/schedule-planner";
 import SeatEmailToggle from "@/app/components/seat-email-toggle";
 import SectionProfessors from "@/app/components/section-professors";
@@ -42,7 +43,7 @@ type ApiError = { error?: string; code?: string };
 type WatchesPayload = ApiError & { authenticated?: boolean; watches?: Watch[] };
 type TermsPayload = { terms?: string[]; defaultTerm?: string };
 type SearchPayload = ApiError & { results?: Course[] };
-type CoursePayload = ApiError & { sections?: Section[]; seatCheckedAt?: string; course?: { credits?: unknown; max_credits?: unknown } };
+type CoursePayload = ApiError & { sections?: Section[]; seatCheckedAt?: string; course?: { credits?: unknown; max_credits?: unknown; requirements?: CourseRequirement[]; description?: string | null } };
 type RatingsPayload = { ratings?: Record<string, ProfessorSummary> };
 type CheckPayload = ApiError & { watches?: Watch[]; alerts?: { courseId: string; sectionId: string }[] };
 
@@ -168,6 +169,7 @@ export default function Home() {
   const [selected, setSelected] = useState<Course | null>(null);
   const [sections, setSections] = useState<Section[]>([]);
   const [courseCredits, setCourseCredits] = useState<string | null>(null);
+  const [courseInfo, setCourseInfo] = useState<{ requirements: CourseRequirement[]; description: string | null } | null>(null);
   const [courseSeatCheckedAt, setCourseSeatCheckedAt] = useState<string | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [planCourses, setPlanCourses] = useState<PlanCourse[]>([]);
@@ -265,7 +267,7 @@ export default function Home() {
   const openCourse = async (course: Course) => {
     const courseRequestKey = term + "|" + course.course_id;
     activeCourseRef.current = courseRequestKey;
-    setSelected(course); setSections([]); setCourseSeatCheckedAt(null); setCourseCredits(null); setLoadingDetail(true); setError(""); setMessage(""); setProfessorRatings({});
+    setSelected(course); setSections([]); setCourseSeatCheckedAt(null); setCourseCredits(null); setCourseInfo(null); setLoadingDetail(true); setError(""); setMessage(""); setProfessorRatings({});
     setExcludedInstructors([]);
     setRatingsLoading(false);
     try {
@@ -275,6 +277,7 @@ export default function Home() {
       if (activeCourseRef.current !== courseRequestKey) return;
       setCourseSeatCheckedAt(payload.seatCheckedAt ?? null);
       setCourseCredits(creditsText(payload.course));
+      setCourseInfo({ requirements: Array.isArray(payload.course?.requirements) ? payload.course.requirements : [], description: payload.course?.description ?? null });
       setSections([...(payload.sections ?? [])].sort((a: Section, b: Section) => sectionId(a, course.course_id).localeCompare(sectionId(b, course.course_id), "en", { numeric: true })));
       const names = [...new Set((payload.sections ?? []).flatMap((section: Section) => section.instructors ?? []))];
       // Reopening a course that is already in the plan restores the instructors picked for it.
@@ -465,7 +468,7 @@ export default function Home() {
               {results.map((course) => <button key={course.course_id} onClick={() => void openCourse(course)} className={`flex w-full items-center justify-between gap-4 py-4 text-left hover:bg-[#f6f4ef] ${selected?.course_id === course.course_id ? "text-[#9a372f]" : ""}`}><span><span className="block text-sm font-semibold">{course.course_id}<span className="ml-2 font-normal text-[#606966]">{course.name}</span></span><span className="mt-1 block text-xs text-[#89908c]">{course.department ?? course.course_id.slice(0, 4)}</span></span><span className="shrink-0 text-xs font-medium text-[#a34a39]">{t.select} →</span></button>)}
             </div>
           </div>
-          <div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-7"><div className="mb-5"><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{selected ? `${selected.course_id} · ${termLabel(term, language)}` : `02 · ${t.sections}`}</p><h2 className="mt-2 font-serif text-2xl">{selected?.name ?? t.sections}</h2>{selected && courseCredits && <p className="mt-1 text-sm font-medium text-[#48534f]">{courseCredits} {courseCredits === "1" ? t.credit : t.creditsUnit}</p>}{selected && sections.length > 0 && <button onClick={() => addToSchedule(selected)} disabled={planCourses.some((item) => item.courseId === selected.course_id)} className="mt-4 rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:cursor-default disabled:opacity-60">{planCourses.some((item) => item.courseId === selected.course_id) ? t.courseInPlan : t.addSchedule}</button>}
+          <div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-7"><div className="mb-5"><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{selected ? `${selected.course_id} · ${termLabel(term, language)}` : `02 · ${t.sections}`}</p><h2 className="mt-2 font-serif text-2xl">{selected?.name ?? t.sections}</h2>{selected && courseCredits && <p className="mt-1 text-sm font-medium text-[#48534f]">{courseCredits} {courseCredits === "1" ? t.credit : t.creditsUnit}</p>}{selected && courseInfo && <CourseRequirements requirements={courseInfo.requirements} description={courseInfo.description} language={language} />}{selected && sections.length > 0 && <button onClick={() => addToSchedule(selected)} disabled={planCourses.some((item) => item.courseId === selected.course_id)} className="mt-4 rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:cursor-default disabled:opacity-60">{planCourses.some((item) => item.courseId === selected.course_id) ? t.courseInPlan : t.addSchedule}</button>}
               {selected && courseInstructors.length > 1 && <div className="mt-4"><p className="text-xs font-medium text-[#68716e]">{t.instructorPick} <span className="font-normal text-[#8a918e]">· {excludedInstructors.length ? `${keptInstructors.length}/${courseInstructors.length}` : t.allInstructors}</span></p><div className="mt-2 flex flex-wrap gap-2">{courseInstructors.map((name) => { const kept = !excludedInstructors.includes(name); return <button key={name} type="button" onClick={() => toggleInstructor(name)} disabled={Boolean(selectedPlan?.pinnedSectionId)} aria-pressed={kept} className={`rounded-full border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${kept ? "border-[#536d64] bg-[#edf3ef] font-medium text-[#24312d]" : "border-[#e0ddd5] bg-white text-[#9aa19d] line-through"}`}>{kept ? "✓ " : ""}{name}</button>; })}</div><p className="mt-2 text-[11px] text-[#8a918e]">{selectedPlan?.pinnedSectionId ? t.pinnedInstructorHint : t.instructorHint}</p></div>}</div>
             {!selected && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm leading-6 text-[#717975]">{results.length ? t.pickCourse : t.noResults}</p>}{loadingDetail && <p className="py-8 text-sm text-[#737b77]">{t.loading}</p>}
             {selected && !loadingDetail && !sections.length && !error && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm text-[#717975]">{language === "en" ? "No sections listed for this term." : "本学期没有列出班次。"}</p>}
