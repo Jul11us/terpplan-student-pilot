@@ -4,6 +4,11 @@ const TESTUDO_TERM = "202701";
 const TESTUDO_TERMS = [TESTUDO_TERM];
 const DEFAULT_TERM = TESTUDO_TERM;
 
+// Terms read from Testudo pages; other terms come from umd.io.
+export function isTestudoTerm(term: string) {
+  return TESTUDO_TERMS.includes(term);
+}
+
 export type UmdMeeting = {
   days?: string | null;
   start_time?: string | null;
@@ -52,7 +57,7 @@ export async function availableTerms(): Promise<string[]> {
   return [...new Set([...payload.map(String).filter((term) => /^\d{6}$/.test(term)), ...TESTUDO_TERMS])].sort().reverse();
 }
 
-function htmlText(value: string) {
+export function htmlText(value: string) {
   return value
     .replace(/<br\s*\/?\s*>/gi, " ")
     .replace(/<[^>]*>/g, " ")
@@ -68,14 +73,14 @@ function htmlText(value: string) {
     .trim();
 }
 
-function classTexts(source: string, className: string, tag: "span" | "div" = "span") {
+export function classTexts(source: string, className: string, tag: "span" | "div" = "span") {
   const escaped = className.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const classAttribute = `\\bclass=["'](?:[^"']*\\s)?${escaped}(?:\\s[^"']*)?["']`;
   const matcher = new RegExp(`<${tag}\\b(?=[^>]*${classAttribute})[^>]*>([\\s\\S]*?)<\\/${tag}>`, "gi");
   return Array.from(source.matchAll(matcher), (match) => htmlText(match[1] ?? "")).filter(Boolean);
 }
 
-function firstClassText(source: string, className: string, tag: "span" | "div" = "span") {
+export function firstClassText(source: string, className: string, tag: "span" | "div" = "span") {
   return classTexts(source, className, tag)[0] ?? "";
 }
 
@@ -84,7 +89,7 @@ function numberClassText(source: string, className: string) {
   return value && /^\d+$/.test(value) ? Number(value) : null;
 }
 
-async function testudoHtml(path: string) {
+export async function testudoHtml(path: string) {
   const response = await fetch(`${TESTUDO}${path}`, {
     headers: { accept: "text/html" },
     signal: AbortSignal.timeout(10_000),
@@ -149,20 +154,10 @@ function umdioRequirements(course: Record<string, unknown>): CourseRequirement[]
   });
 }
 
-function parseTestudoCourse(html: string, courseId: string) {
-  const escapedId = courseId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  if (!new RegExp(`<div\\s+id=["']${escapedId}["']\\s+class=["']course["']`, "i").test(html)) return null;
-
-  const name = firstClassText(html, "course-title");
-  if (!name) return null;
-  const department = firstClassText(html, "course-prefix-name") || courseId.slice(0, 4);
-  const creditsText = firstClassText(html, "course-min-credits");
-  const credits = creditsText && Number.isFinite(Number(creditsText)) ? Number(creditsText) : null;
-  // Variable-credit courses (e.g. 1-3) also list a maximum; fixed-credit courses leave it out.
-  const maxCreditsText = firstClassText(html, "course-max-credits");
-  const maxCredits = maxCreditsText && Number.isFinite(Number(maxCreditsText)) && Number(maxCreditsText) > (credits ?? 0) ? Number(maxCreditsText) : null;
+// Section blocks share one markup on course pages and on the multi-course sections page.
+export function parseTestudoSections(html: string, courseId: string): UmdSection[] {
   const sectionStarts = Array.from(html.matchAll(/<div\s+class=["']section(?:\s+[^"']*)?["'][^>]*>/gi));
-  const sections = sectionStarts.flatMap((start, index): UmdSection[] => {
+  return sectionStarts.flatMap((start, index): UmdSection[] => {
     const sectionHtml = html.slice(start.index ?? 0, sectionStarts[index + 1]?.index ?? html.length);
     const number = /<input\b[^>]*\bname=["']sectionId["'][^>]*\bvalue=["']([^"']+)["']/i.exec(sectionHtml)?.[1]
       ?? firstClassText(sectionHtml, "section-id");
@@ -191,6 +186,21 @@ function parseTestudoCourse(html: string, courseId: string) {
       meetings,
     }];
   });
+}
+
+function parseTestudoCourse(html: string, courseId: string) {
+  const escapedId = courseId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (!new RegExp(`<div\\s+id=["']${escapedId}["']\\s+class=["']course["']`, "i").test(html)) return null;
+
+  const name = firstClassText(html, "course-title");
+  if (!name) return null;
+  const department = firstClassText(html, "course-prefix-name") || courseId.slice(0, 4);
+  const creditsText = firstClassText(html, "course-min-credits");
+  const credits = creditsText && Number.isFinite(Number(creditsText)) ? Number(creditsText) : null;
+  // Variable-credit courses (e.g. 1-3) also list a maximum; fixed-credit courses leave it out.
+  const maxCreditsText = firstClassText(html, "course-max-credits");
+  const maxCredits = maxCreditsText && Number.isFinite(Number(maxCreditsText)) && Number(maxCreditsText) > (credits ?? 0) ? Number(maxCreditsText) : null;
+  const sections = parseTestudoSections(html, courseId);
 
   return {
     course: { course_id: courseId, name, department, credits, max_credits: maxCredits, ...parseTestudoRequirements(html) },

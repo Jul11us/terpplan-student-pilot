@@ -28,6 +28,7 @@ const copy = {
     ],
     confirm: "Seat counts can lag. Confirm every section in Testudo when you register.",
     copyFailed: "Copy failed. Select the text and copy it manually.",
+    missing: "Not in this checklist because they could not be placed:",
   },
   zh: {
     title: "选课清单",
@@ -42,13 +43,14 @@ const copy = {
     ],
     confirm: "余位数据可能有延迟，注册时请在 Testudo 中确认每个班次。",
     copyFailed: "复制失败，请手动选中文字复制。",
+    missing: "这些课没能排进方案，所以不在清单里：",
   },
 } as const;
 
 const sectionNumber = (section: ChecklistSection) => section.section_id.slice(section.course_id.length + 1) || section.section_id;
 const isFull = (section: ChecklistSection) => section.open_seats !== null && section.open_seats !== undefined && section.open_seats !== "" && Number(section.open_seats) === 0;
 
-export default function RegistrationChecklist({ option, others, language }: { option: ChecklistOption; others: ChecklistOption[]; language: Language }) {
+export default function RegistrationChecklist({ option, others, missingCourseIds = [], language }: { option: ChecklistOption; others: ChecklistOption[]; missingCourseIds?: string[]; language: Language }) {
   const t = copy[language];
   const [copied, setCopied] = useState("");
   const [failed, setFailed] = useState(false);
@@ -75,6 +77,7 @@ export default function RegistrationChecklist({ option, others, language }: { op
       <div><h4 className="font-semibold">{t.title}</h4><p className="mt-1 text-xs leading-5 text-[#59635f]">{t.intro}</p></div>
       <button type="button" onClick={() => void write("all", allText)} className="rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c]">{copied === "all" ? `✓ ${t.copied}` : t.copyAll}</button>
     </div>
+    {missingCourseIds.length > 0 && <p role="alert" className="mt-3 rounded-lg border border-[#e7c6bf] bg-[#fff0ec] px-3 py-2 text-xs font-medium text-[#8c352c]">{t.missing} {missingCourseIds.join(", ")}</p>}
     <div className="mt-3 overflow-hidden rounded-lg border border-[#dfe7e1] bg-white">
       <div className="grid grid-cols-[1fr_auto_auto] gap-3 border-b border-[#eef2ef] px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#737b77]"><span /><span>{t.course}</span><span>{t.section}</span></div>
       {option.selectedSections.map((section) => <div key={section.section_id} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-b border-[#eef2ef] px-3 py-2 last:border-b-0">

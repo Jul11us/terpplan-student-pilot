@@ -18,6 +18,7 @@ const copy = {
     pilot: "UNIVERSITY OF MARYLAND · STUDENT PILOT", title: "Shared schedule", home: "Plan your own schedule",
     loading: "Loading current course details…", invalid: "This schedule link is incomplete or invalid.", failed: "Course details could not be loaded. Please try again shortly.",
     missing: "These sections are no longer listed for this term:", partial: "This timetable is incomplete until those sections are checked in Testudo.",
+    notPlaced: "The person who shared this could not fit these courses, so they are not in this schedule:",
     calendar: "Weekly timetable", sections: "Sections in this schedule", seats: "seats open", full: "Full", unknown: "Seats unknown", readAt: "Seat data read",
     note: "This link stores the term and section numbers. Times, rooms and seats are read again when the link opens. Confirm details in Testudo before registering.",
     lecture: "Lecture", discussion: "Discussion", lab: "Lab", timeTba: "Time TBA", instructor: "Instructor",
@@ -26,6 +27,7 @@ const copy = {
     pilot: "马里兰大学 · 学生试用", title: "分享的课表", home: "规划自己的课表",
     loading: "正在读取最新课程资料…", invalid: "这个课表链接不完整或无效。", failed: "暂时无法读取课程资料，请稍后重试。",
     missing: "本学期已找不到这些班次：", partial: "请到 Testudo 核对这些班次；下方课表目前不完整。",
+    notPlaced: "分享者有这些课没能排进来，所以不在这个课表里：",
     calendar: "每周课表", sections: "课表中的班次", seats: "个空位", full: "已满", unknown: "余位未知", readAt: "余位数据读取于",
     note: "链接只保存学期和班次号。打开时会重新读取时间、教室和余位；注册前请到 Testudo 核实。",
     lecture: "讲课", discussion: "讨论课", lab: "实验课", timeTba: "时间待定", instructor: "教师",
@@ -119,8 +121,9 @@ export default function SharedSchedulePage() {
       {status === "invalid" && <p role="alert" className="mt-8 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] p-5 text-sm text-[#8c352c]">{t.invalid}</p>}
       {status === "failed" && <p role="alert" className="mt-8 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] p-5 text-sm text-[#8c352c]">{t.failed}</p>}
       {status === "ready" && shared && <>
+        {shared.missingCourseIds.length > 0 && <div role="alert" className="mt-7 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] p-4 text-sm text-[#8c352c]"><strong>{t.notPlaced} {shared.missingCourseIds.join(", ")}</strong></div>}
         {missing.length > 0 && <div role="alert" className="mt-7 rounded-xl border border-[#ead8b5] bg-[#fff8e8] p-4 text-sm text-[#745424]"><strong>{t.missing} {missing.join(", ")}</strong><p className="mt-1">{t.partial}</p></div>}
-        {sections.length > 0 && <section className="mt-8 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-8"><h2 className="mb-4 font-serif text-2xl">{t.calendar}</h2><CalendarExport sections={sections} term={shared.term} termName={termName(shared.term, "en")} language={language} /><WeeklyCalendar sections={sections} language={language} /></section>}
+        {sections.length > 0 && <section className="mt-8 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-8"><h2 className="mb-4 font-serif text-2xl">{t.calendar}</h2><CalendarExport sections={sections} term={shared.term} termName={termName(shared.term, "en")} language={language} incomplete={missing.length > 0 || shared.missingCourseIds.length > 0} /><WeeklyCalendar sections={sections} language={language} /></section>}
         {sections.length > 0 && <section className="mt-6 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-8"><h2 className="font-serif text-2xl">{t.sections}</h2><div className="mt-5 grid gap-3 md:grid-cols-2">{sections.map((section) => <article key={section.section_id} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap justify-between gap-3"><div><h3 className="font-semibold">{section.course_id} · {section.course_title}</h3><p className="mt-1 text-sm text-[#536d64]">{section.section_id}</p></div><span className="h-fit rounded-full bg-[#edf3ef] px-2.5 py-1 text-xs font-medium text-[#315c43]">{seatLabel(section.open_seats, language)}</span></div>{section.instructors?.length ? <p className="mt-3 text-xs text-[#626c67]">{t.instructor}: {section.instructors.join(", ")}</p> : null}<div className="mt-3 space-y-1 text-xs leading-5 text-[#626c67]">{section.meetings?.length ? section.meetings.map((meeting, index) => <p key={index}>{meetingText(meeting, language)}</p>) : <p>{t.timeTba}</p>}</div>{formatSeatReadTime(section.seatCheckedAt, language) && <p className="mt-3 text-[11px] text-[#858d89]">{t.readAt}: {formatSeatReadTime(section.seatCheckedAt, language)}</p>}</article>)}</div></section>}
       </>}
     </div>

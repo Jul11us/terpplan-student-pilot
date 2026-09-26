@@ -1,4 +1,4 @@
-import { DEFAULT_TERM, type CatalogItem, umdJson } from "@/lib/umd";
+import { courseIdIsValid, DEFAULT_TERM, getCourse, type CatalogItem, umdJson } from "@/lib/umd";
 import spring2027Catalog from "@/data/202701-catalog.json";
 
 type CacheEntry = { expiresAt: number; courses: CatalogItem[] };
@@ -20,6 +20,20 @@ export async function GET(request: Request) {
         return haystack.includes(query) || compactCourseId.includes(compactQuery);
       })
       .slice(0, 40);
+    // The bundled catalog is a snapshot. For a full course code it does not list, ask Testudo directly,
+    // so a newly added course is found instead of being reported as "not offered".
+    const exactId = compactQuery.toUpperCase();
+    if (!results.length && courseIdIsValid(exactId)) {
+      try {
+        const detail = await getCourse(exactId, term);
+        const course = detail?.course as { name?: unknown; department?: unknown } | undefined;
+        if (course && typeof course.name === "string") {
+          return Response.json({ results: [{ course_id: exactId, name: course.name, department: typeof course.department === "string" ? course.department : exactId.slice(0, 4) }], term });
+        }
+      } catch {
+        // Fall through to the empty result; the page then says the course is not offered this term.
+      }
+    }
     return Response.json({ results, term });
   }
 

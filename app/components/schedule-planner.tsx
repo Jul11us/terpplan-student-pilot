@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { ReferenceSchedule } from "@/app/components/gened-finder";
 import RegistrationChecklist from "@/app/components/registration-checklist";
 import { buildIcs, type IcsMeeting } from "@/lib/ics";
 import { roomLabel } from "@/lib/room";
 import { TERM_CALENDARS } from "@/lib/term-calendar";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { formatSeatReadTime } from "@/lib/seat-time";
+import { planKey } from "@/lib/plan-key";
 import { sharePath } from "@/lib/shared-schedule";
 
 type Language = "en" | "zh";
@@ -60,6 +62,10 @@ const copy = {
     exportUnavailable: "Calendar export is not available for this term yet.",
     exportSkipped: "Left out (time TBA):",
     exportNote: "Regular class weeks only, without holidays or final exams. Confirm times and rooms in Testudo.",
+    incompleteTag: "Missing", incompleteTitle: "This schedule is incomplete",
+    incompleteBody: "These courses could not be placed and are not in this schedule, its share link, calendar file, or registration checklist:",
+    staleOptions: "Your preferences changed since these options were generated. Generate again to apply them.",
+    pinnedNote: "Sections you required are kept even when they are full or Freshman Connection.",
     onlyInstructors: "Only", minutes: "min", credits: "credits", lecture: "Lecture", discussion: "Discussion", lab: "Lab",
     // Short forms for the narrow timetable blocks.
     lectureShort: "LEC", discussionShort: "DIS", labShort: "LAB",
@@ -87,6 +93,10 @@ const copy = {
     exportUnavailable: "这个学期的校历还没配置，暂时无法导出。",
     exportSkipped: "未导出（时间待定）：",
     exportNote: "只包含正常上课周，已去掉假期，不含期末考试。请以 Testudo 的时间和教室为准。",
+    incompleteTag: "缺少", incompleteTitle: "这个方案不完整",
+    incompleteBody: "下面这些课没能排进来，不在这个方案里，也不会出现在分享链接、日历文件和选课清单中：",
+    staleOptions: "排课偏好在生成这些方案后改过了。请重新生成，新的偏好才会生效。",
+    pinnedNote: "你指定的班次即使已满或属于 FC，也会保留在方案里。",
     onlyInstructors: "只排", minutes: "分钟", credits: "学分", lecture: "讲课", discussion: "讨论课", lab: "实验课",
     lectureShort: "讲课", discussionShort: "讨论课", labShort: "实验课",
     select: "查看此方案", calendar: "每周课表", unknown: "需要确认的时间", noUnknown: "所有班次均列出了上课时间。",
@@ -107,6 +117,8 @@ type Props = {
   language: Language;
   onRemove: (courseId: string) => void;
   onBack: () => void;
+  // Reports the option being viewed so the Gen Ed finder can check conflicts against it.
+  onChosenChange?: (schedule: ReferenceSchedule) => void;
 };
 
 export function dayNames(raw: string | null | undefined) {
@@ -254,7 +266,7 @@ export function WeeklyCalendar({ sections, language }: { sections: ScheduledSect
   </div>;
 }
 
-export function CalendarExport({ sections, term, termName, language }: { sections: ScheduledSection[]; term: string; termName: string; language: Language }) {
+export function CalendarExport({ sections, term, termName, language, incomplete }: { sections: ScheduledSection[]; term: string; termName: string; language: Language; incomplete: boolean }) {
   const t = copy[language];
   const calendar = TERM_CALENDARS[term];
   const [skipped, setSkipped] = useState<string[]>([]);
@@ -281,7 +293,7 @@ export function CalendarExport({ sections, term, termName, language }: { section
       if (!section.meetings?.length) tba.push(section.section_id);
     }
     setSkipped([...new Set(tba)]);
-    const ics = buildIcs(meetings, calendar, `TerpPlan · ${termName}`);
+    const ics = buildIcs(meetings, calendar, `TerpPlan · ${termName}${incomplete ? (language === "zh" ? "（不完整）" : " (incomplete)") : ""}`);
     const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar;charset=utf-8" }));
     const link = document.createElement("a");
     link.href = url;
@@ -300,9 +312,9 @@ export function CalendarExport({ sections, term, termName, language }: { section
   </div>;
 }
 
-export default function SchedulePlanner({ courses, term, termName, language, onRemove, onBack }: Props) {
+export default function SchedulePlanner({ courses, term, termName, language, onRemove, onBack, onChosenChange }: Props) {
   const t = copy[language];
-  const [generated, setGenerated] = useState<{ requestKey: string; options: ScheduleOption[]; warnings: PlanWarning[] }>({ requestKey: "", options: [], warnings: [] });
+  const [generated, setGenerated] = useState<{ requestKey: string; prefsKey: string; options: ScheduleOption[]; warnings: PlanWarning[] }>({ requestKey: "", prefsKey: "", options: [], warnings: [] });
   const [selectedOption, setSelectedOption] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -321,10 +333,10 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
   useEffect(() => {
     writeSavedState({ preferences: { excludedDays, earliestStart, windowStart, windowEnd, strictTime, openSeatsOnly, includeFreshmanConnection } });
   }, [excludedDays, earliestStart, windowStart, windowEnd, strictTime, openSeatsOnly, includeFreshmanConnection]);
-  const courseKey = useMemo(() => courses.map((course) => [course.courseId, course.instructors?.join("+"), course.pinnedSectionId, course.excludedSectionIds?.join("+")].join(":" )).join("|"), [courses]);
-
   // Results belong to the course list and term they were generated for; hide them once either changes.
-  const requestKey = courseKey + "@" + term;
+  const requestKey = useMemo(() => planKey(courses, term), [courses, term]);
+  // Preferences only mark results as out of date: the options stay visible with a notice to regenerate.
+  const prefsKey = JSON.stringify([earliestStart, [...excludedDays].sort(), windowStart, windowEnd, strictTime, openSeatsOnly, includeFreshmanConnection]);
   const options = generated.requestKey === requestKey ? generated.options : [];
   const warnings = generated.requestKey === requestKey ? generated.warnings : [];
 
@@ -351,22 +363,30 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
       });
       const payload = await response.json() as { error?: string; options?: ScheduleOption[]; warnings?: PlanWarning[] };
       if (!response.ok) throw new Error(payload.error || t.loadError);
-      setGenerated({ requestKey, options: payload.options ?? [], warnings: payload.warnings ?? [] });
+      setGenerated({ requestKey, prefsKey, options: payload.options ?? [], warnings: payload.warnings ?? [] });
       setSelectedOption(0);
       setShareUrl("");
       setShareCopied(false);
     } catch {
       setError(t.loadError);
-      setGenerated({ requestKey, options: [], warnings: [] });
+      setGenerated({ requestKey, prefsKey, options: [], warnings: [] });
     } finally {
       setLoading(false);
     }
   };
 
   const chosen = options[selectedOption];
+  const prefsChanged = options.length > 0 && generated.prefsKey !== prefsKey;
+  // Courses in the plan that an option could not place; an option missing any is incomplete.
+  const missingFrom = (option: ScheduleOption) => courses.map((course) => course.courseId).filter((courseId) => !option.selectedSections.some((section) => section.course_id === courseId));
+  const chosenMissing = chosen ? missingFrom(chosen) : [];
+  useEffect(() => {
+    if (!chosen || !onChosenChange) return;
+    onChosenChange({ term, planKey: requestKey, sectionIds: chosen.selectedSections.map((section) => section.section_id), meetings: chosen.selectedSections.flatMap((section) => section.meetings ?? []) });
+  }, [chosen, term, requestKey, onChosenChange]);
   const shareSchedule = async () => {
     if (!chosen) return;
-    const url = window.location.origin + sharePath(term, chosen.selectedSections.map((section) => section.section_id), language);
+    const url = window.location.origin + sharePath(term, chosen.selectedSections.map((section) => section.section_id), language, chosenMissing);
     setShareUrl(url);
     try {
       await navigator.clipboard.writeText(url);
@@ -394,6 +414,7 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
         <label className="mt-4 inline-flex items-center gap-2 text-xs text-[#68716e]"><input type="checkbox" checked={openSeatsOnly} onChange={(event) => setOpenSeatsOnly(event.target.checked)} />{t.openOnly}</label>
         <label className="mt-2 flex items-center gap-2 text-xs text-[#68716e]"><input type="checkbox" checked={includeFreshmanConnection} onChange={(event) => setIncludeFreshmanConnection(event.target.checked)} />{t.includeFc}</label>
         <p className="mt-3 text-xs leading-5 text-[#858d89]">{t.windowHint}</p>
+        {courses.some((course) => course.pinnedSectionId) && <p className="mt-1 text-xs leading-5 text-[#858d89]">{t.pinnedNote}</p>}
       </div>
       {error && <p role="alert" className="mt-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]">{error}</p>}
       <div className="mt-5 flex justify-end"><button onClick={() => void generate()} disabled={loading} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1d302c] disabled:opacity-60">{loading ? t.generating : t.generate}</button></div>
@@ -402,17 +423,20 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
     {courses.length > 0 && options.length === 0 && !loading && !error && warnings.length > 0 && <p className="mt-4 text-sm text-[#68716e]">{t.noOptions}</p>}
     {options.length > 0 && <div className="mt-8">
       <h3 className="font-serif text-2xl">{t.options}</h3>
+      {prefsChanged && <p role="status" className="mt-3 rounded-xl border border-[#ead8b5] bg-[#fff8e8] px-4 py-3 text-sm text-[#745424]">{t.staleOptions}</p>}
       <div className="mt-4 grid gap-3 lg:grid-cols-3">{options.map((option, index) => <button type="button" key={option.selectedSections.map((section) => section.section_id).join("|")} onClick={() => { setSelectedOption(index); setShareUrl(""); setShareCopied(false); }} aria-pressed={selectedOption === index} className={`rounded-xl border p-4 text-left transition ${selectedOption === index ? "border-[#536d64] bg-[#edf3ef] ring-2 ring-[#536d64]/15" : "border-[#e3e0d8] bg-white hover:border-[#b9c5be]"}`}>
         <span className="flex items-center justify-between"><strong>{t.option} {index + 1}</strong><span className="text-xs text-[#737b77]">{t.score} {option.score.toFixed(2)}</span></span>
         <span className="mt-3 block text-xs leading-5 text-[#626c67]">{option.selectedSections.map((section) => section.section_id).join(" · ")}</span>
+        {missingFrom(option).length ? <span className="mt-2 mr-1 inline-block rounded-full bg-[#8f4538] px-2 py-0.5 text-[11px] font-semibold text-white">{t.incompleteTag}: {missingFrom(option).join(", ")}</span> : null}
         {option.fullSectionIds?.length ? <span className="mt-2 inline-block rounded-full bg-[#f5e9e5] px-2 py-0.5 text-[11px] font-semibold text-[#8f4538]">{t.fullIn}: {option.fullSectionIds.join(", ")}</span> : null}
         <span className="mt-3 block text-xs text-[#737b77]">{t.rating}: {option.professorRating === null ? "—" : option.professorRating.toFixed(2) + " / 5"} · {t.gaps}: {option.gapMinutes} {t.minutes}</span>
         <span className="mt-1 block text-xs text-[#737b77]">{t.days}: {option.campusDays.map((day) => t.weekdays[DAYS.indexOf(day as (typeof DAYS)[number])] ?? day).join(", ") || "—"}{option.earliestStart ? " · " + t.firstClass + " " + option.earliestStart : ""}</span>
         {option.timeFitPercent !== null && <span className="mt-1 block text-xs text-[#737b77]">{t.fit}: {Math.round(option.timeFitPercent)}%</span>}
       </button>)}</div>
       {chosen && <div className="mt-6">
+        {chosenMissing.length > 0 && <div role="alert" className="mb-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]"><p className="font-semibold">{t.incompleteTitle}</p><p className="mt-1 text-xs leading-5">{t.incompleteBody} <strong>{chosenMissing.join(", ")}</strong></p></div>}
         <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h4 className="font-semibold">{t.calendar}</h4><p className="mt-1 text-xs text-[#737b77]">{chosen.selectedSections.map((section) => section.section_id).join(" · ")}</p></div><span className="text-xs text-[#737b77]">{t.rating}: {chosen.professorRating === null ? "—" : chosen.professorRating.toFixed(2) + " / 5"}{chosen.totalCredits ? " · " + chosen.totalCredits + " " + t.credits : ""}</span></div>
-        <CalendarExport key={chosen.selectedSections.map((section) => section.section_id).join("|")} sections={chosen.selectedSections} term={term} termName={termName} language={language} />
+        <CalendarExport key={chosen.selectedSections.map((section) => section.section_id).join("|")} sections={chosen.selectedSections} term={term} termName={termName} language={language} incomplete={chosenMissing.length > 0} />
         <div className="mb-3 rounded-xl border border-[#e3e0d8] bg-white p-3 sm:p-4">
           <div className="flex flex-wrap items-center gap-3"><button type="button" onClick={() => void shareSchedule()} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]">{shareCopied ? t.shareCopied : t.shareSchedule}</button><p className="min-w-0 flex-1 text-[11px] leading-5 text-[#737b77]">{t.shareHint}</p></div>
           {shareUrl && <div className="mt-3"><label htmlFor="share-schedule-url" className="text-[11px] font-medium text-[#68716e]">{shareCopied ? t.shareReady : t.shareCopyFailed}</label><input id="share-schedule-url" readOnly value={shareUrl} onFocus={(event) => event.target.select()} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-[#fbfaf8] px-3 py-2 text-xs text-[#273c38]" /></div>}
@@ -428,7 +452,7 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
         {section.instructorRatings.length > 0 && <p className="mt-2 text-xs text-[#737b77]">{section.instructorRatings.map((item) => item.name + (item.averageRating === null ? "" : " · " + item.averageRating.toFixed(2) + " / 5")).join(" · ")}</p>}
         </div><div className="text-right"><span className={`inline-block rounded-full px-2.5 py-1 text-xs ${seatCount(section.open_seats) === 0 ? "bg-[#f5e9e5] font-semibold text-[#8f4538]" : "bg-[#f1efe9] text-[#68716e]"}`}>{seatText(section.open_seats, t)}</span>{formatSeatReadTime(section.seatCheckedAt, language) && <p className="mt-1 text-[11px] text-[#858d89]">{t.seatReadAt}: {formatSeatReadTime(section.seatCheckedAt, language)}</p>}</div></div></article>)}</div>
         <p className="mt-3 text-xs leading-5 text-[#858d89]">{t.seatReadHint}</p>
-        <RegistrationChecklist option={chosen} others={options.filter((option) => option !== chosen)} language={language} />
+        <RegistrationChecklist option={chosen} others={options.filter((option) => option !== chosen)} missingCourseIds={chosenMissing} language={language} />
       </div>}
     </div>}
   </section>;

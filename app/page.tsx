@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import AboutDialog from "@/app/components/about-dialog";
 import CourseRequirements, { type CourseRequirement } from "@/app/components/course-requirements";
+import GenEdFinder, { type ReferenceSchedule } from "@/app/components/gened-finder";
+import { planKey } from "@/lib/plan-key";
 import SchedulePlanner from "@/app/components/schedule-planner";
 import SeatEmailToggle from "@/app/components/seat-email-toggle";
 import SectionProfessors from "@/app/components/section-professors";
@@ -53,7 +55,7 @@ const copy = {
     subtitle: "Find a course, build a schedule, and keep an eye on open seats.", find: "Find a course",
     schedule: "Build a schedule", watch: "Watch seats", search: "Search course code or title",
     searchHint: "e.g. CMSC131 or Calculus", term: "Term", results: "Course matches", select: "View sections",
-    noResults: "No matches yet. Search by a course code or title.", notOffered: "{course} is not offered in {term}. It may be offered in another term — try switching the term above.", sections: "Sections", addSchedule: "Add this course to plan", courseInPlan: "Course in plan", instructorPick: "Instructors to keep", instructorHint: "Tap a name to leave out that instructor's sections.", keepOne: "Keep at least one instructor.", allInstructors: "All",
+    searchMode: "Search courses", genEdMode: "Find by Gen Ed", noResults: "No matches yet. Search by a course code or title.", notOffered: "{course} is not offered in {term}. It may be offered in another term — try switching the term above.", sections: "Sections", addSchedule: "Add this course to plan", courseInPlan: "Course in plan", instructorPick: "Instructors to keep", instructorHint: "Tap a name to leave out that instructor's sections.", keepOne: "Keep at least one instructor.", allInstructors: "All",
     addWatch: "Watch this section", scheduleTitle: "Your schedule", emptySchedule: "Add courses from search to generate schedule options.",
     watchesTitle: "Seat watches", emptyWatches: "Watch a section to see it here.", refresh: "Check now", remove: "Remove",
     added: "Course added to plan", watched: "Seat watch saved", conflict: "Time conflict", noConflict: "No time conflicts found", planLimit: "A plan can include up to 10 courses.",
@@ -72,7 +74,7 @@ const copy = {
   zh: {
     eyebrow: "马里兰大学 · 学生试用", title: "规划下一学期。", subtitle: "找课程、排进课表，并关注空余名额。",
     find: "找课程", schedule: "排课", watch: "关注余位", search: "搜索课程编号或名称", searchHint: "例如 CMSC131 或 Calculus",
-    term: "学期", results: "匹配课程", select: "查看班次", noResults: "暂无匹配结果。请按课程编号或名称搜索。", notOffered: "{term}没有开设 {course}。这门课可能在其他学期开设，可以在上方切换学期查看。",
+    term: "学期", results: "匹配课程", select: "查看班次", searchMode: "搜索课程", genEdMode: "按 Gen Ed 查找", noResults: "暂无匹配结果。请按课程编号或名称搜索。", notOffered: "{term}没有开设 {course}。这门课可能在其他学期开设，可以在上方切换学期查看。",
     sections: "可选班次", addSchedule: "将整门课程加入排课", courseInPlan: "课程已加入", instructorPick: "保留哪些老师", instructorHint: "点老师名字即可排除他的班次。", keepOne: "至少保留一位老师。", allInstructors: "全部", addWatch: "关注这个班次", scheduleTitle: "我的课表",
     emptySchedule: "请从找课中添加课程，再生成排课方案。", watchesTitle: "余位关注", emptyWatches: "关注一个班次后会显示在这里。",
     refresh: "立即检查", remove: "移除", added: "已将课程加入排课", watched: "已保存余位关注", conflict: "时间冲突",
@@ -164,6 +166,10 @@ export default function Home() {
   const [terms, setTerms] = useState<string[]>([]);
   const [termUnavailable, setTermUnavailable] = useState(false);
   const [query, setQuery] = useState("");
+  const [findMode, setFindMode] = useState<"search" | "gened">("search");
+  // Last schedule option viewed in the planner, kept per term, for Gen Ed conflict checks.
+  const [referenceSchedule, setReferenceSchedule] = useState<ReferenceSchedule | null>(null);
+  const rememberSchedule = useCallback((schedule: ReferenceSchedule) => setReferenceSchedule(schedule), []);
   const [results, setResults] = useState<Course[]>([]);
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<Course | null>(null);
@@ -308,6 +314,7 @@ export default function Home() {
   // A course code clicked inside a prerequisite or restriction: search it in this term and open it if offered.
   // If it is not offered, the current course stays open and the search list shows the "not offered this term" note.
   const jumpToCourse = async (courseId: string) => {
+    setFindMode("search");
     setQuery(courseId);
     document.getElementById("course-search")?.scrollIntoView({ behavior: "smooth", block: "start" });
     try {
@@ -478,13 +485,15 @@ export default function Home() {
 
         {step === "find" && <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(330px,.85fr)]">
           <div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-7"><div className="mb-5 flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">01 · {t.find}</p><h2 className="mt-2 font-serif text-2xl">{t.results}</h2></div><label className="grid gap-1 text-xs text-[#737b77]">{t.term}<select value={term} onChange={(event) => switchTerm(event.target.value)} className="min-w-36 rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]">{(terms.length ? terms : [term]).map((item) => <option key={item} value={item}>{termLabel(item, language)}</option>)}</select></label></div>
+            <div role="tablist" className="mb-4 inline-flex rounded-xl border border-[#e0ddd5] bg-[#f2f0eb] p-1 text-xs font-medium">{(["search", "gened"] as const).map((mode) => <button key={mode} type="button" role="tab" aria-selected={findMode === mode} onClick={() => setFindMode(mode)} className={`rounded-lg px-3 py-1.5 ${findMode === mode ? "bg-white text-[#202728] shadow-sm" : "text-[#68716e] hover:text-[#202728]"}`}>{mode === "search" ? t.searchMode : t.genEdMode}</button>)}</div>
+            {findMode === "gened" ? <GenEdFinder term={term} language={language} reference={referenceSchedule?.planKey === planKey(planCourses, term) ? referenceSchedule : null} referenceStale={referenceSchedule?.term === term && referenceSchedule.planKey !== planKey(planCourses, term)} planCourseIds={planCourses.map((course) => course.courseId)} onOpenCourse={(course) => void openCourse(course)} /> : <>
             <label id="course-search" className="block scroll-mt-6"><span className="sr-only">{t.search}</span><div className="flex items-center gap-3 rounded-xl border border-[#d9d6ce] bg-white px-4 py-3 focus-within:border-[#a34a39] focus-within:ring-2 focus-within:ring-[#a34a39]/10"><span aria-hidden="true" className="text-lg text-[#8a928e]">⌕</span><input value={query} onChange={(event) => { setQuery(event.target.value); if (event.target.value.trim().length < 2) setResults([]); }} placeholder={t.searchHint} className="w-full bg-transparent text-sm outline-none placeholder:text-[#a0a6a2]" /></div></label>
             <div className="mt-4 divide-y divide-[#ece9e2]">{searching && <p className="py-5 text-sm text-[#737b77]">{t.loading}</p>}{!searching && query.trim().length >= 2 && !results.length && !error && <p className="py-5 text-sm leading-6 text-[#737b77]">{/^[a-z]{4}\s?\d{3}[a-z]?$/i.test(query.trim())
                 // A full course code with no match usually means the course is not offered this term, not a typo.
                 ? t.notOffered.replace("{course}", query.trim().replace(/\s+/g, "").toUpperCase()).replace("{term}", termLabel(term, language))
                 : t.noResults}</p>}
               {results.map((course) => <button key={course.course_id} onClick={() => void openCourse(course)} className={`flex w-full items-center justify-between gap-4 py-4 text-left hover:bg-[#f6f4ef] ${selected?.course_id === course.course_id ? "text-[#9a372f]" : ""}`}><span><span className="block text-sm font-semibold">{course.course_id}<span className="ml-2 font-normal text-[#606966]">{course.name}</span></span><span className="mt-1 block text-xs text-[#89908c]">{course.department ?? course.course_id.slice(0, 4)}</span></span><span className="shrink-0 text-xs font-medium text-[#a34a39]">{t.select} →</span></button>)}
-            </div>
+            </div></>}
           </div>
           <div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-7"><div className="mb-5"><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{selected ? `${selected.course_id} · ${termLabel(term, language)}` : `02 · ${t.sections}`}</p><h2 className="mt-2 font-serif text-2xl">{selected?.name ?? t.sections}</h2>{selected && courseCredits && <p className="mt-1 text-sm font-medium text-[#48534f]">{courseCredits} {courseCredits === "1" ? t.credit : t.creditsUnit}</p>}{selected && courseInfo && <CourseRequirements requirements={courseInfo.requirements} description={courseInfo.description} language={language} currentCourseId={selected.course_id} onCourseClick={(courseId) => void jumpToCourse(courseId)} />}{selected && sections.length > 0 && <button onClick={() => addToSchedule(selected)} disabled={planCourses.some((item) => item.courseId === selected.course_id)} className="mt-4 rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:cursor-default disabled:opacity-60">{planCourses.some((item) => item.courseId === selected.course_id) ? t.courseInPlan : t.addSchedule}</button>}
               {selected && courseInstructors.length > 1 && <div className="mt-4"><p className="text-xs font-medium text-[#68716e]">{t.instructorPick} <span className="font-normal text-[#8a918e]">· {excludedInstructors.length ? `${keptInstructors.length}/${courseInstructors.length}` : t.allInstructors}</span></p><div className="mt-2 flex flex-wrap gap-2">{courseInstructors.map((name) => { const kept = !excludedInstructors.includes(name); return <button key={name} type="button" onClick={() => toggleInstructor(name)} disabled={Boolean(selectedPlan?.pinnedSectionId)} aria-pressed={kept} className={`rounded-full border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${kept ? "border-[#536d64] bg-[#edf3ef] font-medium text-[#24312d]" : "border-[#e0ddd5] bg-white text-[#9aa19d] line-through"}`}>{kept ? "✓ " : ""}{name}</button>; })}</div><p className="mt-2 text-[11px] text-[#8a918e]">{selectedPlan?.pinnedSectionId ? t.pinnedInstructorHint : t.instructorHint}</p></div>}</div>
@@ -520,7 +529,7 @@ export default function Home() {
           </div>
         </section>}
 
-        {step === "schedule" && <SchedulePlanner courses={planCourses} term={term} termName={termLabel(term, "en")} language={language} onRemove={(courseId) => setPlanCourses((current) => current.filter((course) => course.courseId !== courseId))} onBack={() => setStep("find")} />}
+        {step === "schedule" && <SchedulePlanner onChosenChange={rememberSchedule} courses={planCourses} term={term} termName={termLabel(term, "en")} language={language} onRemove={(courseId) => setPlanCourses((current) => current.filter((course) => course.courseId !== courseId))} onBack={() => setStep("find")} />}
 
         {step === "watch" && <section className="mx-auto max-w-4xl rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-8"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">03 · {t.watch}</p><h2 className="mt-2 font-serif text-3xl">{t.watchesTitle}</h2></div><button onClick={() => void refreshWatches()} disabled={checking || !watches.length} className="rounded-lg bg-[#273c38] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{checking ? t.checking : t.refresh}</button></div>
           {authenticated === false && <div className="mt-6 rounded-xl border border-[#e3dfd6] bg-white p-5"><p className="text-sm font-medium">{t.signIn}</p><label className="mt-4 grid gap-1.5 text-xs font-medium text-[#68716e]">{t.email}<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm text-[#202728] outline-none focus:border-[#a34a39]" /></label>{codeSent && <label className="mt-3 grid gap-1.5 text-xs font-medium text-[#68716e]">{t.emailCode}<input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={emailCode} onChange={(event) => setEmailCode(event.target.value.replace(/\D/g, "").slice(0, 6))} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm tracking-[.2em] text-[#202728] outline-none focus:border-[#a34a39]" /></label>}<p className="mt-2 text-xs leading-5 text-[#858d89]">{t.emailPrivacy}</p><div className="mt-4 flex flex-wrap gap-2">{!codeSent ? <button onClick={() => void requestEmailCode()} disabled={authBusy || !email.trim()} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.sendCode}</button> : <><button onClick={() => void verifyEmailCode()} disabled={authBusy || emailCode.length !== 6} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.verifyCode}</button><button onClick={() => void requestEmailCode()} disabled={authBusy} className="rounded-lg border border-[#dedbd3] px-4 py-2.5 text-sm font-medium text-[#68716e] disabled:opacity-50">{t.sendCode}</button></>}</div></div>}
