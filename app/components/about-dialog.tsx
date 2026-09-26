@@ -20,6 +20,7 @@ const copy = {
     privacyTitle: "Your privacy",
     privacy: [
       "Your plan and schedule preferences are saved only in this browser.",
+      "If you share a schedule, its link contains the term and section numbers, and anyone with the link can view that schedule. No name, email, or seat watches are included.",
       "Your email is used to send sign-in codes for seat watches. It is stored only if you turn on seat emails, and deleted when you turn them off.",
       "With seat emails on, TerpPlan checks your watched sections about every 10 minutes and emails you once each time a full section opens. Every email has a link to stop them.",
       "Seat watches are removed automatically 150 days after you add them.",
@@ -41,6 +42,7 @@ const copy = {
     privacyTitle: "隐私",
     privacy: [
       "你的排课计划和偏好只保存在当前浏览器里。",
+      "分享方案时，链接里会包含学期和班号，拿到链接的人都能查看这个方案；链接里不含姓名、邮箱或余位关注信息。",
       "邮箱用于发送余位关注的登录验证码；只有开启邮件提醒时才会保存，关闭提醒后即删除。",
       "开启邮件提醒后，TerpPlan 约每 10 分钟检查一次你关注的班次，班次从满员变为有空位时每次发一封邮件，每封邮件都附有停止提醒的链接。",
       "关注的班次会在添加 150 天后自动删除。",
