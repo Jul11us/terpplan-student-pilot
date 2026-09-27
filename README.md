@@ -2,6 +2,21 @@
 
 This is a separate Cloudflare Worker edition for the first student trial. The original Python/FastAPI + Streamlit project and its local databases remain in the parent folder.
 
+## Repository layout
+
+| Path | Purpose |
+| --- | --- |
+| `app/` | Pages, API routes, and page-specific components |
+| `lib/` | Course, audit, schedule, sharing, and alert logic |
+| `db/`, `drizzle/` | D1 schema and migrations |
+| `data/` | Catalog snapshots used by the Site |
+| `public/` | TerpPlan icons and social preview image |
+| `build/`, `scripts/` | Site build and local tooling |
+| `.openai/`, `.github/` | Site configuration and scheduled seat checks |
+| `tests/` | Focused audit and recommendation tests |
+
+Generated output (`dist/`, `.next/`), dependencies (`node_modules/`), and local runtime state are ignored. The separate Site source repository receives the same commit when a new version is published; pushing GitHub alone does not deploy it.
+
 ## Pilot scope
 
 - Search UMD courses and view term sections, meeting times, instructors, and the seat counts reported by umd.io. Instructor averages and on-demand, course-aware review excerpts come from PlanetTerp and link back to the source; unverified name matches are not shown as ratings.
