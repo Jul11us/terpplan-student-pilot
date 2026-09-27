@@ -21,14 +21,15 @@ export async function GET(request: Request) {
   const cacheKey = new Request(`${url.origin}/api/gened?term=${term}&code=${code}`);
   try {
     const hit = await cache?.match(cacheKey);
-    if (hit) return hit;
+    // The header shows whether the shared cache is working on this host.
+    if (hit) return new Response(hit.body, { status: hit.status, headers: { ...Object.fromEntries(hit.headers), "X-TerpPlan-Cache": "hit" } });
   } catch {
     // Cache unavailable: build the list below.
   }
 
   try {
     const { courses, seatCheckedAt } = await getGenEdCourses(term, code);
-    const response = Response.json({ term, code, courses, seatCheckedAt }, { headers: { "Cache-Control": `public, max-age=0, s-maxage=${EDGE_CACHE_SECONDS}` } });
+    const response = Response.json({ term, code, courses, seatCheckedAt }, { headers: { "Cache-Control": `public, max-age=0, s-maxage=${EDGE_CACHE_SECONDS}`, "X-TerpPlan-Cache": cache ? "miss" : "none" } });
     try {
       await cache?.put(cacheKey, response.clone());
     } catch {
