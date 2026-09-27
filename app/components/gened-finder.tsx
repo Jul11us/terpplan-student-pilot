@@ -12,13 +12,26 @@ type GenEdCourse = { course_id: string; name: string; credits: string | null; ge
 // Historical averages are looked up for at most this many listed courses (in requests of up to 30).
 const GPA_LOOKUP_LIMIT = 90;
 
+// Honors College courses (HNUH, HONR) and honors versions of a course (e.g. AAAS100H) usually admit only
+// honors students, and the Gen Ed listing does not always say so. Hidden by default, like FC sections.
+// A trailing H can also just be one topic in a lettered series (ARHU318B, 318C, ... 318H); such a course
+// counts as honors only when its title says so.
+function isHonorsCourse(course: GenEdCourse, list: GenEdCourse[]) {
+  const id = course.course_id;
+  if (/^(HNUH|HONR)/.test(id)) return true;
+  if (!/\d{3}H$/.test(id)) return false;
+  if (/honor/i.test(course.name)) return true;
+  const base = id.slice(0, -1);
+  return !list.some((other) => other.course_id !== id && other.course_id.startsWith(base) && /\d{3}[A-GI-Z]$/.test(other.course_id));
+}
+
 // The schedule option the student last viewed in the planner, used to check time conflicts.
 // planKey ties it to the plan it was generated from, so an edited plan is not checked against old results.
 export type ReferenceSchedule = { term: string; planKey: string; sectionIds: string[]; meetings: MeetingTime[] };
 
 const copy = {
   en: {
-    lighter: "Lighter-load options", noPrereq: "No prerequisites or enrollment restrictions", lowerLevel: "Only 100–200 level (introductory)",
+    hideHonors: "Hide Honors courses (HNUH, HONR, and numbers ending in H)", lighter: "Lighter-load options", noPrereq: "No prerequisites or enrollment restrictions", lowerLevel: "Only 100–200 level (introductory)",
     sortGpa: "Sort by historical average GPA", sortDefault: "Default order", gpaLoading: "Loading historical averages…", gpaError: "Historical averages could not be loaded.",
     gpaNote: `Historical average GPA comes from PlanetTerp. It averages every past term and instructor, so it is not a promise about this term. Looked up for the first ${GPA_LOOKUP_LIMIT} courses listed.`,
     avgGpa: "Hist. avg GPA",
@@ -33,7 +46,7 @@ const copy = {
     fcNote: "Freshman Connection (FC) sections are not counted.", view: "View sections →", quickAdd: "Add", inPlanShort: "In plan",
   },
   zh: {
-    lighter: "想轻松一点？", noPrereq: "无先修要求和选课限制", lowerLevel: "只看 100–200 级入门课",
+    hideHonors: "不显示荣誉课程（HNUH、HONR、课号以 H 结尾）", lighter: "想轻松一点？", noPrereq: "无先修要求和选课限制", lowerLevel: "只看 100–200 级入门课",
     sortGpa: "按历史平均 GPA 排序", sortDefault: "恢复默认排序", gpaLoading: "正在读取历史平均 GPA…", gpaError: "暂时无法读取历史平均 GPA。",
     gpaNote: `历史平均 GPA 来自 PlanetTerp，是这门课过去所有学期、所有老师的平均，不代表这学期的给分。只查询列表中前 ${GPA_LOOKUP_LIMIT} 门课。`,
     avgGpa: "历史平均 GPA",
@@ -73,6 +86,7 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
   const requested = useRef(new Set<string>());
   const [fitsOnly, setFitsOnly] = useState(true);
   const [openOnly, setOpenOnly] = useState(true);
+  const [hideHonors, setHideHonors] = useState(true);
   const [noPrereq, setNoPrereq] = useState(false);
   const [lowerLevel, setLowerLevel] = useState(false);
   const [sortByGpa, setSortByGpa] = useState(false);
@@ -118,7 +132,8 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
   const referenceForTerm = reference?.term === term ? reference : null;
 
   const baseRows = useMemo(() => (current?.courses ?? []).filter((course) =>
-    (!noPrereq || (!course.hasPrerequisite && !course.hasRestriction))
+    (!hideHonors || !isHonorsCourse(course, current?.courses ?? []))
+    && (!noPrereq || (!course.hasPrerequisite && !course.hasRestriction))
     // Course numbers start at the 5th character (AAAS100 -> 1); 100/200 are introductory levels.
     && (!lowerLevel || /^[12]$/.test(course.course_id.charAt(4)))).map((course) => {
     const usable = course.sections.filter((section) => !/-FC[A-Z0-9]*$/i.test(section.section_id ?? ""))
@@ -130,7 +145,7 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
     // How many of the selected categories this one course would satisfy at once.
     const matched = codes.filter((code) => course.genEd.includes(code)).length;
     return { course, matched, fitting: fitting.length, online: fitting.filter((section) => isOnlineOnly(section.meetings ?? [])).length, tba: tba.length };
-  }).sort((a, b) => Number(b.fitting > 0) - Number(a.fitting > 0) || b.matched - a.matched || Number(b.tba > 0) - Number(a.tba > 0) || a.course.course_id.localeCompare(b.course.course_id)), [current, openOnly, fitsOnly, referenceForTerm, codes, noPrereq, lowerLevel]);
+  }).sort((a, b) => Number(b.fitting > 0) - Number(a.fitting > 0) || b.matched - a.matched || Number(b.tba > 0) - Number(a.tba > 0) || a.course.course_id.localeCompare(b.course.course_id)), [current, openOnly, fitsOnly, referenceForTerm, codes, hideHonors, noPrereq, lowerLevel]);
   const baseShown = useMemo(() => baseRows.filter((row) => row.fitting > 0 || row.tba > 0 || (!fitsOnly && !openOnly)), [baseRows, fitsOnly, openOnly]);
   // Averages are fetched for the default-order list, so re-sorting by them never triggers more lookups.
   const gpaIds = useMemo(() => baseShown.slice(0, GPA_LOOKUP_LIMIT).map((row) => row.course.course_id), [baseShown]);
@@ -164,6 +179,7 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
     <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-[#68716e]">
       <label className="inline-flex items-center gap-2"><input type="checkbox" checked={fitsOnly} onChange={(event) => setFitsOnly(event.target.checked)} />{t.fitsOnly}</label>
       <label className="inline-flex items-center gap-2"><input type="checkbox" checked={openOnly} onChange={(event) => setOpenOnly(event.target.checked)} />{t.openOnly}</label>
+      <label className="inline-flex items-center gap-2"><input type="checkbox" checked={hideHonors} onChange={(event) => setHideHonors(event.target.checked)} />{t.hideHonors}</label>
     </div>
     <div className="mt-3 rounded-lg border border-[#e3e0d8] bg-[#f6f4ef] p-3 text-xs text-[#68716e]">
       <p className="font-semibold text-[#48534f]">{t.lighter}</p>
