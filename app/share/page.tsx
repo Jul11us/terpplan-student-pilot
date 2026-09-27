@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CalendarExport, WeeklyCalendar, dayNames, displayClock, minutes, type ScheduledSection } from "@/app/components/schedule-planner";
 import { roomLabel } from "@/lib/room";
+import { isAsyncOnline } from "@/lib/meeting-time";
 import { formatSeatReadTime } from "@/lib/seat-time";
 import { parseSharedSchedule, type SharedSchedule } from "@/lib/shared-schedule";
 
@@ -21,7 +22,7 @@ const copy = {
     notPlaced: "The person who shared this could not fit these courses, so they are not in this schedule:",
     calendar: "Weekly timetable", sections: "Sections in this schedule", seats: "seats open", full: "Full", unknown: "Seats unknown", readAt: "Seat data read",
     note: "This link stores the term and section numbers. Times, rooms and seats are read again when the link opens. Confirm details in Testudo before registering.",
-    lecture: "Lecture", discussion: "Discussion", lab: "Lab", timeTba: "Time TBA", instructor: "Instructor",
+    lecture: "Lecture", discussion: "Discussion", lab: "Lab", timeTba: "Time TBA", onlineNoTime: "Online · no set time", instructor: "Instructor",
   },
   zh: {
     pilot: "马里兰大学 · 学生试用", title: "分享的课表", home: "规划自己的课表",
@@ -30,7 +31,7 @@ const copy = {
     notPlaced: "分享者有这些课没能排进来，所以不在这个课表里：",
     calendar: "每周课表", sections: "课表中的班次", seats: "个空位", full: "已满", unknown: "余位未知", readAt: "余位数据读取于",
     note: "链接只保存学期和班次号。打开时会重新读取时间、教室和余位；注册前请到 Testudo 核实。",
-    lecture: "讲课", discussion: "讨论课", lab: "实验课", timeTba: "时间待定", instructor: "教师",
+    lecture: "讲课", discussion: "讨论课", lab: "实验课", timeTba: "时间待定", onlineNoTime: "线上 · 无固定时间", instructor: "教师",
   },
 } as const;
 
@@ -48,6 +49,7 @@ function meetingText(meeting: NonNullable<ScheduledSection["meetings"]>[number],
   const start = minutes(meeting.start_time);
   const end = minutes(meeting.end_time);
   const translatedDays = language === "zh" ? days.map((day) => ({ Mon: "周一", Tue: "周二", Wed: "周三", Thu: "周四", Fri: "周五", Sat: "周六", Sun: "周日" })[day as "Mon"]) : days;
+  if (isAsyncOnline(meeting)) return `${label} · ${t.onlineNoTime}`;
   const time = days.length && start !== null && end !== null && end > start
     ? `${translatedDays.join(" ")} · ${displayClock(start)}–${displayClock(end)}` : t.timeTba;
   return `${label} · ${time} · ${roomLabel(meeting.building, meeting.room, language)}`;

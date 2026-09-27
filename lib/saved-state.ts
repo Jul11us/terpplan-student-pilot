@@ -2,7 +2,7 @@
 // Nothing here is sent to the server. Storage can be missing or blocked (private windows,
 // cleared site data), so every access is wrapped and the page works without it.
 
-const STORAGE_KEY = "terpplan:v1";
+export const STORAGE_KEY = "terpplan:v1";
 
 export type SavedPlanCourse = {
   courseId: string;

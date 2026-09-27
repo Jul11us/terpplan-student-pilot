@@ -1,6 +1,17 @@
 // Small, dependency-free time helpers that can run in the browser.
 
-export type MeetingTime = { days?: string | null; start_time?: string | null; end_time?: string | null };
+export type MeetingTime = { days?: string | null; start_time?: string | null; end_time?: string | null; building?: string | null; room?: string | null };
+
+// Asynchronous online work: Testudo lists it as an ONLINE meeting with no day or time ("Class time/details on ELMS").
+// It occupies no fixed slot, so it is neither "time TBA" nor a possible conflict.
+export function isAsyncOnline(meeting: MeetingTime) {
+  return !meeting.start_time && !meeting.days && [meeting.building, meeting.room].some((value) => /online/i.test(value ?? ""));
+}
+
+// Every meeting is asynchronous online work: the section can be taken alongside anything.
+export function isOnlineOnly(meetings: MeetingTime[]) {
+  return meetings.length > 0 && meetings.every(isAsyncOnline);
+}
 
 const DAY_TOKENS: Array<[string, string]> = [["TH", "Thu"], ["TU", "Tue"], ["SA", "Sat"], ["SU", "Sun"], ["M", "Mon"], ["W", "Wed"], ["F", "Fri"], ["T", "Tue"]];
 
@@ -28,6 +39,7 @@ export function meetingMinutes(raw: string | null | undefined): number | null {
 // A section whose day or time is missing (TBA) cannot be checked for conflicts.
 export function hasUnknownTime(meetings: MeetingTime[]) {
   return !meetings.length || meetings.some((meeting) => {
+    if (isAsyncOnline(meeting)) return false;
     const start = meetingMinutes(meeting.start_time), end = meetingMinutes(meeting.end_time);
     return start === null || end === null || end <= start || !meetingDays(meeting.days).length;
   });

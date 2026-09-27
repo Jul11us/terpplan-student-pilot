@@ -8,6 +8,7 @@ import { roomLabel } from "@/lib/room";
 import { TERM_CALENDARS } from "@/lib/term-calendar";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { formatSeatReadTime } from "@/lib/seat-time";
+import { isAsyncOnline } from "@/lib/meeting-time";
 import { planKey } from "@/lib/plan-key";
 import { sharePath } from "@/lib/shared-schedule";
 
@@ -62,6 +63,7 @@ const copy = {
     exportUnavailable: "Calendar export is not available for this term yet.",
     exportSkipped: "Left out (time TBA):",
     exportNote: "Regular class weeks only, without holidays or final exams. Confirm times and rooms in Testudo.",
+    onlineAsync: "Online, no set time (not shown on the grid):", onlineNoTime: "Online · no set time",
     incompleteTag: "Missing", incompleteTitle: "This schedule is incomplete",
     incompleteBody: "These courses could not be placed and are not in this schedule, its share link, calendar file, or registration checklist:",
     staleOptions: "Your preferences changed since these options were generated. Generate again to apply them.",
@@ -93,6 +95,7 @@ const copy = {
     exportUnavailable: "这个学期的校历还没配置，暂时无法导出。",
     exportSkipped: "未导出（时间待定）：",
     exportNote: "只包含正常上课周，已去掉假期，不含期末考试。请以 Testudo 的时间和教室为准。",
+    onlineAsync: "线上、无固定时间（不显示在课表格子里）：", onlineNoTime: "线上 · 无固定时间",
     incompleteTag: "缺少", incompleteTitle: "这个方案不完整",
     incompleteBody: "下面这些课没能排进来，不在这个方案里，也不会出现在分享链接、日历文件和选课清单中：",
     staleOptions: "排课偏好在生成这些方案后改过了。请重新生成，新的偏好才会生效。",
@@ -225,6 +228,7 @@ export function WeeklyCalendar({ sections, language }: { sections: ScheduledSect
   const pixelsPerMinute = 1;
   const height = (lastMinute - firstMinute) * pixelsPerMinute;
   const unknown = new Set<string>();
+  const online = new Set<string>();
   for (const section of sections) if (!section.meetings?.length) unknown.add(section.section_id);
   const colors = new Map([...new Set(sections.map((section) => section.course_id))].map((courseId, index) => [courseId, COLORS[index % COLORS.length]]));
   const columnClass = "relative border-l border-[#e6e4de] bg-[linear-gradient(to_bottom,transparent_59px,#e7e4dc_60px)] bg-[length:100%_60px]";
@@ -240,6 +244,7 @@ export function WeeklyCalendar({ sections, language }: { sections: ScheduledSect
           const start = minutes(meeting.start_time);
           const end = minutes(meeting.end_time);
           const meetingDays = dayNames(meeting.days);
+          if (isAsyncOnline(meeting)) { online.add(section.section_id); return []; }
           if (start === null || end === null || end <= start || !meetingDays.length) {
             unknown.add(section.section_id);
             return [];
@@ -263,6 +268,7 @@ export function WeeklyCalendar({ sections, language }: { sections: ScheduledSect
       {[...colors].map(([courseId, color]) => <span key={courseId} className="inline-flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: color }} />{courseId}</span>)}
     </div>
     {unknown.size > 0 ? <p className="border-t border-[#e6e4de] bg-[#fff8e8] px-4 py-3 text-xs text-[#745424]">{t.warning} {t.unknown}: {[...unknown].join(", ")}</p> : <p className="border-t border-[#e6e4de] px-4 py-3 text-xs text-[#737b77]">{t.noUnknown}</p>}
+    {online.size > 0 && <p className="border-t border-[#e6e4de] px-4 py-3 text-xs text-[#536d64]">{t.onlineAsync} {[...online].join(", ")}</p>}
   </div>;
 }
 
@@ -278,6 +284,8 @@ export function CalendarExport({ sections, term, termName, language, incomplete 
     for (const section of sections) {
       (section.meetings ?? []).forEach((meeting, index) => {
         const start = minutes(meeting.start_time), end = minutes(meeting.end_time), days = dayNames(meeting.days);
+        // Asynchronous online work has no slot to put on a calendar and is not missing information.
+        if (isAsyncOnline(meeting)) return;
         if (start === null || end === null || end <= start || !days.length) { tba.push(section.section_id); return; }
         const kind = meetingType(meeting.classtype);
         meetings.push({
@@ -447,6 +455,7 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
           const kind = meetingType(meeting.classtype);
           const type = kind ? t[kind] : null;
           const days = dayNames(meeting.days).map((day) => t.weekdays[DAYS.indexOf(day as (typeof DAYS)[number])] ?? day);
+          if (isAsyncOnline(meeting)) return (type ? type + " · " : "") + t.onlineNoTime;
           return start === null || end === null || !days.length ? (language === "zh" ? "时间待定" : "Time TBA") : (type ? type + " · " : "") + days.join(" ") + " " + displayClock(start) + "–" + displayClock(end) + " · " + roomLabel(meeting.building, meeting.room, language);
         }).join(" · ") : language === "zh" ? " · 时间待定" : " · Time TBA"}</p>
         {section.instructorRatings.length > 0 && <p className="mt-2 text-xs text-[#737b77]">{section.instructorRatings.map((item) => item.name + (item.averageRating === null ? "" : " · " + item.averageRating.toFixed(2) + " / 5")).join(" · ")}</p>}

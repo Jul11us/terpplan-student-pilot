@@ -1,3 +1,4 @@
+import { isAsyncOnline } from "@/lib/meeting-time";
 import { isInstructorTba, normalizeProfessorName, type ProfessorSummary } from "@/lib/planetterp";
 
 export type PlanMeeting = {
@@ -165,7 +166,8 @@ function hasKnownTime(meeting: PlanMeeting) {
 }
 
 function hasUnknownTime(section: PlanSection) {
-  return !section.meetings?.length || section.meetings.some((meeting) => !hasKnownTime(meeting));
+  // Asynchronous online work has no time on purpose; it is not an unconfirmed meeting.
+  return !section.meetings?.length || section.meetings.some((meeting) => !hasKnownTime(meeting) && !isAsyncOnline(meeting));
 }
 
 function overlaps(a: PlanMeeting, b: PlanMeeting) {
@@ -209,6 +211,7 @@ function parsePrefs(preferences: PlanPreferences) {
 function conflictsWithTimePreferences(section: PlanSection, preference: ReturnType<typeof parsePrefs>) {
   const meetings = section.meetings ?? [];
   for (const meeting of meetings) {
+    if (isAsyncOnline(meeting)) continue;
     const days = dayNames(meeting.days);
     if (days.some((day) => preference.excludedDays.has(day))) return true;
     const start = minutes(meeting.start_time);
@@ -238,7 +241,7 @@ function summarize(sections: ScheduledSection[], preferences: ReturnType<typeof 
   const unknownSectionIds = sections.filter(hasUnknownTime).map((section) => section.section_id);
   const fullSectionIds = sections.filter(isFull).map((section) => section.section_id);
   let unknownCount = sections.reduce((sum, section) => {
-    const meetingCount = section.meetings?.length ? section.meetings.filter((meeting) => !hasKnownTime(meeting)).length : 1;
+    const meetingCount = section.meetings?.length ? section.meetings.filter((meeting) => !hasKnownTime(meeting) && !isAsyncOnline(meeting)).length : 1;
     const missingRatings = section.instructorRatings.filter((rating) => !rating.matched || rating.averageRating === null).length;
     return sum + meetingCount + missingRatings;
   }, 0);

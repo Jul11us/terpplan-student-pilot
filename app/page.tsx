@@ -4,13 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import AboutDialog from "@/app/components/about-dialog";
 import CourseRequirements, { type CourseRequirement } from "@/app/components/course-requirements";
 import GenEdFinder, { type ReferenceSchedule } from "@/app/components/gened-finder";
+import { isAsyncOnline } from "@/lib/meeting-time";
 import { planKey } from "@/lib/plan-key";
 import SchedulePlanner from "@/app/components/schedule-planner";
 import SeatEmailToggle from "@/app/components/seat-email-toggle";
 import SectionProfessors from "@/app/components/section-professors";
 import type { ProfessorSummary } from "@/lib/planetterp";
 import { roomLabel } from "@/lib/room";
-import { readSavedState, writeSavedState } from "@/lib/saved-state";
+import { readSavedState, STORAGE_KEY, writeSavedState } from "@/lib/saved-state";
 import { formatSeatReadTime } from "@/lib/seat-time";
 
 type Course = { course_id: string; name: string; department?: string };
@@ -135,6 +136,7 @@ const zhDays: Record<string, string> = { Mon: "周一", Tue: "周二", Wed: "周
 
 function displayTime(meeting: Meeting, language: "en" | "zh") {
   const start = minutes(meeting.start_time), end = minutes(meeting.end_time), days = dayNames(meeting.days);
+  if (isAsyncOnline(meeting)) return language === "en" ? "Online · no set time" : "线上 · 无固定时间";
   if (start === null || end === null || !days.length || end <= start) return language === "en" ? "Time TBA" : "时间待定";
   const clock = (value: number) => {
     const hour = Math.floor(value / 60), minute = value % 60;
@@ -188,6 +190,8 @@ export default function Home() {
   // Plans saved in this browser, one per term; kept in a ref so switching terms can restore them.
   const savedPlansRef = useRef<Record<string, PlanCourse[]>>({});
   const [restored, setRestored] = useState(false);
+  const termRef = useRef("");
+  const applyingOtherTabRef = useRef(false);
   const [watches, setWatches] = useState<Watch[]>([]);
   const [alerts, setAlerts] = useState<string[]>([]);
   // Store the message key, not the text, so it re-renders in the new language after a switch.
@@ -248,11 +252,28 @@ export default function Home() {
   }, [loadWatches, t.error]);
 
   // Save after every change, but only once the saved state has been restored so it is not overwritten.
+  // Only this term's plan comes from this tab; other terms are taken from storage, which another tab may have updated.
   useEffect(() => {
     if (!restored) return;
-    savedPlansRef.current = { ...savedPlansRef.current, [term]: planCourses };
+    if (applyingOtherTabRef.current) { applyingOtherTabRef.current = false; return; }
+    savedPlansRef.current = { ...readSavedState().plans, [term]: planCourses };
     writeSavedState({ language, term, plans: savedPlansRef.current });
   }, [restored, language, term, planCourses]);
+
+  // Another TerpPlan tab changed the saved plans: show its version here instead of overwriting it later.
+  // The update is not written back, so two tabs on different terms do not keep rewriting each other.
+  useEffect(() => { termRef.current = term; }, [term]);
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== STORAGE_KEY) return;
+      const saved = readSavedState();
+      savedPlansRef.current = saved.plans;
+      applyingOtherTabRef.current = true;
+      setPlanCourses(saved.plans[termRef.current] ?? []);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   useEffect(() => {
     const text = query.trim();
@@ -486,7 +507,9 @@ export default function Home() {
         {step === "find" && <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(330px,.85fr)]">
           <div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-7"><div className="mb-5 flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">01 · {t.find}</p><h2 className="mt-2 font-serif text-2xl">{t.results}</h2></div><label className="grid gap-1 text-xs text-[#737b77]">{t.term}<select value={term} onChange={(event) => switchTerm(event.target.value)} className="min-w-36 rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]">{(terms.length ? terms : [term]).map((item) => <option key={item} value={item}>{termLabel(item, language)}</option>)}</select></label></div>
             <div role="tablist" className="mb-4 inline-flex rounded-xl border border-[#e0ddd5] bg-[#f2f0eb] p-1 text-xs font-medium">{(["search", "gened"] as const).map((mode) => <button key={mode} type="button" role="tab" aria-selected={findMode === mode} onClick={() => setFindMode(mode)} className={`rounded-lg px-3 py-1.5 ${findMode === mode ? "bg-white text-[#202728] shadow-sm" : "text-[#68716e] hover:text-[#202728]"}`}>{mode === "search" ? t.searchMode : t.genEdMode}</button>)}</div>
-            {findMode === "gened" ? <GenEdFinder term={term} language={language} reference={referenceSchedule?.planKey === planKey(planCourses, term) ? referenceSchedule : null} referenceStale={referenceSchedule?.term === term && referenceSchedule.planKey !== planKey(planCourses, term)} planCourseIds={planCourses.map((course) => course.courseId)} onOpenCourse={(course) => void openCourse(course)} /> : <>
+            {/* Kept mounted while hidden so the chosen category and loaded list survive switching modes. */}
+            <div hidden={findMode !== "gened"}><GenEdFinder term={term} language={language} reference={referenceSchedule?.planKey === planKey(planCourses, term) ? referenceSchedule : null} referenceStale={referenceSchedule?.term === term && referenceSchedule.planKey !== planKey(planCourses, term)} planCourseIds={planCourses.map((course) => course.courseId)} onOpenCourse={(course) => void openCourse(course)} /></div>
+            {findMode === "search" && <>
             <label id="course-search" className="block scroll-mt-6"><span className="sr-only">{t.search}</span><div className="flex items-center gap-3 rounded-xl border border-[#d9d6ce] bg-white px-4 py-3 focus-within:border-[#a34a39] focus-within:ring-2 focus-within:ring-[#a34a39]/10"><span aria-hidden="true" className="text-lg text-[#8a928e]">⌕</span><input value={query} onChange={(event) => { setQuery(event.target.value); if (event.target.value.trim().length < 2) setResults([]); }} placeholder={t.searchHint} className="w-full bg-transparent text-sm outline-none placeholder:text-[#a0a6a2]" /></div></label>
             <div className="mt-4 divide-y divide-[#ece9e2]">{searching && <p className="py-5 text-sm text-[#737b77]">{t.loading}</p>}{!searching && query.trim().length >= 2 && !results.length && !error && <p className="py-5 text-sm leading-6 text-[#737b77]">{/^[a-z]{4}\s?\d{3}[a-z]?$/i.test(query.trim())
                 // A full course code with no match usually means the course is not offered this term, not a typo.

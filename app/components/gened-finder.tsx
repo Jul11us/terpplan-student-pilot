@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { GEN_ED_CATEGORIES } from "@/lib/gened-categories";
-import { hasUnknownTime, meetingsConflict, type MeetingTime } from "@/lib/meeting-time";
+import { hasUnknownTime, isOnlineOnly, meetingsConflict, type MeetingTime } from "@/lib/meeting-time";
 import { formatSeatReadTime } from "@/lib/seat-time";
 
 type Language = "en" | "zh";
@@ -19,7 +19,7 @@ const copy = {
     fitsOnly: "Only sections that fit my schedule", openOnly: "Only sections with open seats",
     against: "Checking against your schedule:", noReference: "Generate a schedule in step 02 to check time conflicts. Until then, every section counts as fitting.",
     fitting: (n: number) => n === 1 ? "1 section fits" : `${n} sections fit`, none: "No section fits",
-    tba: (n: number) => `+ ${n} time TBA`, staleReference: "Your plan changed since the last generated schedule. Generate it again in step 02 to check conflicts; until then conflicts are not checked.", inPlan: "In your plan",
+    tba: (n: number) => `+ ${n} time TBA`, online: (n: number) => `incl. ${n} online, no set time`, staleReference: "Your plan changed since the last generated schedule. Generate it again in step 02 to check conflicts; until then conflicts are not checked.", inPlan: "In your plan",
     credits: "cr", empty: "No courses match these filters.", count: (shown: number, total: number) => `${shown} of ${total} courses`,
     fcNote: "Freshman Connection (FC) sections are not counted.", view: "View sections →",
   },
@@ -28,7 +28,7 @@ const copy = {
     fitsOnly: "只看和我的课表不冲突的班", openOnly: "只看有空位的班",
     against: "对照的课表：", noReference: "先在「02 排课」生成方案，才能检查时间冲突；在那之前所有班都算不冲突。",
     fitting: (n: number) => `${n} 个班可选`, none: "没有合适的班",
-    tba: (n: number) => `另有 ${n} 个时间待定`, staleReference: "排课计划在上次生成方案后改过了。请回「02 排课」重新生成，才能检查冲突；在那之前暂不检查冲突。", inPlan: "已在排课中",
+    tba: (n: number) => `另有 ${n} 个时间待定`, online: (n: number) => `含 ${n} 个线上班（无固定时间）`, staleReference: "排课计划在上次生成方案后改过了。请回「02 排课」重新生成，才能检查冲突；在那之前暂不检查冲突。", inPlan: "已在排课中",
     credits: "学分", empty: "没有符合筛选条件的课程。", count: (shown: number, total: number) => `显示 ${shown} / ${total} 门课`,
     fcNote: "不计入 Freshman Connection（FC）班。", view: "查看班次 →",
   },
@@ -77,7 +77,7 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
     const tba = usable.filter((section) => hasUnknownTime(section.meetings ?? []));
     const fitting = usable.filter((section) => !hasUnknownTime(section.meetings ?? [])
       && (!fitsOnly || !referenceForTerm || !meetingsConflict(section.meetings ?? [], referenceForTerm.meetings)));
-    return { course, fitting: fitting.length, tba: tba.length };
+    return { course, fitting: fitting.length, online: fitting.filter((section) => isOnlineOnly(section.meetings ?? [])).length, tba: tba.length };
   }).sort((a, b) => Number(b.fitting > 0) - Number(a.fitting > 0) || Number(b.tba > 0) - Number(a.tba > 0) || a.course.course_id.localeCompare(b.course.course_id)), [current, openOnly, fitsOnly, referenceForTerm]);
   const shown = rows.filter((row) => row.fitting > 0 || row.tba > 0 || (!fitsOnly && !openOnly));
 
@@ -99,7 +99,7 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
     {current && <>
       <p className="mt-4 text-[11px] text-[#858d89]">{t.count(shown.length, rows.length)}{current.seatCheckedAt ? ` · ${formatSeatReadTime(current.seatCheckedAt, language)}` : ""}</p>
       {!shown.length && <p className="py-5 text-sm text-[#737b77]">{t.empty}</p>}
-      <div className="mt-1 divide-y divide-[#ece9e2]">{shown.map(({ course, fitting, tba }) => <button key={course.course_id} type="button" onClick={() => onOpenCourse({ course_id: course.course_id, name: course.name })} className="flex w-full items-start justify-between gap-4 py-3.5 text-left hover:bg-[#f6f4ef]">
+      <div className="mt-1 divide-y divide-[#ece9e2]">{shown.map(({ course, fitting, online, tba }) => <button key={course.course_id} type="button" onClick={() => onOpenCourse({ course_id: course.course_id, name: course.name })} className="flex w-full items-start justify-between gap-4 py-3.5 text-left hover:bg-[#f6f4ef]">
         <span className="min-w-0">
           <span className="block text-sm font-semibold">{course.course_id}<span className="ml-2 font-normal text-[#606966]">{course.name}</span></span>
           <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-[#89908c]">
@@ -109,7 +109,7 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
           </span>
         </span>
         <span className="shrink-0 text-right text-xs">
-          <span className={`block font-semibold ${fitting ? "text-[#367047]" : "text-[#8f4538]"}`}>{fitting ? t.fitting(fitting) : t.none}</span>{tba > 0 && <span className="block text-[11px] text-[#8a918e]">{t.tba(tba)}</span>}
+          <span className={`block font-semibold ${fitting ? "text-[#367047]" : "text-[#8f4538]"}`}>{fitting ? t.fitting(fitting) : t.none}</span>{online > 0 && <span className="block text-[11px] text-[#536d64]">{t.online(online)}</span>}{tba > 0 && <span className="block text-[11px] text-[#8a918e]">{t.tba(tba)}</span>}
           <span className="mt-1 block text-[#a34a39]">{t.view}</span>
         </span>
       </button>)}</div>
