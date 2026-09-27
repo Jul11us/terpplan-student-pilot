@@ -12,11 +12,15 @@ export type AuditResult = {
   status: "complete" | "in_progress" | "unknown";
   requirements: AuditRequirement[];
   completedCourseIds: string[];
+  inProgressCourseIds: string[];
 };
 
 const GEN_ED_CODES = new Set<string>(GEN_ED_CATEGORIES.map((item) => item.code));
 const COURSE_ID = /^[A-Z]{2,6}\d{3}[A-Z]{0,2}$/;
 const COURSE_ROW = /^(?:Fa|Sp|Wi|Su|S1|S2)\d{2}\s+([A-Z]{2,6}\d{3}[A-Z0-9]{0,2})\s+[\d.]+\s+(\S+)/i;
+// Unknown, failing, withdrawn, and incomplete grades must never hide a retake.
+// D grades can require a retake for some programs, so only clear passes are hidden.
+const CLEAR_PASS = /^(?:[ABC][+-]?|P|S|CR)$/;
 const SECTION = /^\[[\w/]+\]/;
 const NEEDS = /^NEEDS:\s*(.+)$/i;
 const SELECT = /^SELECT FROM:\s*(.*)$/i;
@@ -61,9 +65,14 @@ export function parseDegreeAudit(text: string): AuditResult {
   const status = text.includes("ALL REQUIREMENTS IDENTIFIED BELOW HAVE BEEN MET") ? "complete"
     : text.includes("AT LEAST ONE REQUIREMENT HAS NOT BEEN SATISFIED") ? "in_progress" : "unknown";
   const completed = new Set<string>();
+  const inProgress = new Set<string>();
   for (const line of lines) {
     const row = line.match(COURSE_ROW);
-    if (row && row[2].toUpperCase() !== "IP") completed.add(row[1].toUpperCase());
+    if (!row) continue;
+    const courseId = row[1].toUpperCase();
+    const grade = row[2].toUpperCase();
+    if (grade === "IP") inProgress.add(courseId);
+    else if (CLEAR_PASS.test(grade)) completed.add(courseId);
   }
 
   const requirements: AuditRequirement[] = [];
@@ -92,5 +101,5 @@ export function parseDegreeAudit(text: string): AuditResult {
       genEdCode,
     });
   }
-  return { status, requirements, completedCourseIds: [...completed] };
+  return { status, requirements, completedCourseIds: [...completed], inProgressCourseIds: [...inProgress] };
 }

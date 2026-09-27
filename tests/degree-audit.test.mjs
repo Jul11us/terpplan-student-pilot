@@ -21,7 +21,21 @@ Fa25 CMSC131 4.0 A Introduction to Computer Science`);
   assert.deepEqual(result.requirements[0].courseIds, ["HIST110", "HIST200", "ENGL201"]);
   assert.deepEqual(result.requirements[1].courseIds, ["CMSC426", "CMSC460", "AMSC460"]);
   assert.deepEqual(result.completedCourseIds, ["CMSC131"]);
+  assert.deepEqual(result.inProgressCourseIds, []);
   assert.equal(JSON.stringify(result).includes("Doe"), false);
+});
+
+test("failed and withdrawn attempts remain eligible while in-progress courses are identified", () => {
+  const result = parseDegreeAudit(`Fa25 CMSC132 4.0 F Programming II
+Sp26 MATH141 4.0 W Calculus II
+Su26 HIST110 3.0 WF History
+Fa26 ENGL101 3.0 IP Academic Writing
+Sp25 CMSC131 4.0 B+ Programming I
+Fa25 STAT400 3.0 P Statistics
+Fa25 CHEM131 4.0 D Chemistry
+Fa25 PHYS161 3.0 I Physics`);
+  assert.deepEqual(result.completedCourseIds, ["CMSC131", "STAT400"]);
+  assert.deepEqual(result.inProgressCourseIds, ["ENGL101"]);
 });
 
 test("keeps generic unmet requirements visible without inventing course options", () => {

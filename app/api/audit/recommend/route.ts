@@ -52,7 +52,6 @@ export async function POST(request: Request) {
         item.averageGpa = await historicalAverageGpa(item.courseId);
       }
     }));
-    visible.sort(compareAuditCandidates);
     return Response.json({ term, candidates: visible, totalCandidates: candidates.length });
   } catch {
     return Response.json({ error: "Course recommendations are temporarily unavailable." }, { status: 503 });

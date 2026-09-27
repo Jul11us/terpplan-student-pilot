@@ -34,10 +34,13 @@ export function summarizeAuditCandidate(courseId: string, title: string, credits
 
 export function compareAuditCandidates(left: AuditCandidate, right: AuditCandidate) {
   return Number(right.openSections > 0) - Number(left.openSections > 0)
-    || Number(right.sections > 0) - Number(left.sections > 0)
-    || (right.averageGpa ?? -1) - (left.averageGpa ?? -1)
     || right.openSeats - left.openSeats
     || left.courseId.localeCompare(right.courseId);
+}
+
+export function compareAuditCandidatesByGpa(left: AuditCandidate, right: AuditCandidate) {
+  return (right.averageGpa ?? -1) - (left.averageGpa ?? -1)
+    || compareAuditCandidates(left, right);
 }
 
 const gradeCache = new Map<string, { expiresAt: number; value: number | null }>();
