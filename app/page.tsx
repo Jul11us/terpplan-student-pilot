@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import AboutDialog from "@/app/components/about-dialog";
 import CourseRequirements, { type CourseRequirement } from "@/app/components/course-requirements";
@@ -481,7 +482,7 @@ export default function Home() {
     <main className="min-h-screen bg-[#f5f3ef] text-[#202728]">
       <header className="border-b border-[#dedbd3] bg-[#fbfaf8]"><div className="mx-auto flex max-w-[1320px] items-center justify-between px-5 py-4 sm:px-8">
         <div className="flex items-center gap-2"><a href="#top" className="flex items-center gap-3 font-semibold tracking-tight"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#bd302f] font-serif text-lg text-white">T</span><span>TerpPlan</span><span className="hidden rounded-full border border-[#e5c9bd] px-2 py-1 text-[10px] font-semibold uppercase tracking-[.12em] text-[#8d4333] sm:inline">Student pilot</span></a>
-          <button onClick={() => setAboutOpen(true)} className="ml-1 rounded-lg px-2.5 py-2 text-xs font-medium text-[#59635f] hover:bg-[#eeece6]">{language === "en" ? "About" : "关于"}</button></div>
+          <Link href="/audit" className="ml-1 rounded-lg px-2.5 py-2 text-xs font-medium text-[#53635e] hover:bg-[#eeece6]">{language === "en" ? "Check degree audit" : "查看学位审计"}</Link><button onClick={() => setAboutOpen(true)} className="rounded-lg px-2.5 py-2 text-xs font-medium text-[#59635f] hover:bg-[#eeece6]">{language === "en" ? "About" : "关于"}</button></div>
         <div className="flex items-center gap-3"><span className="hidden text-xs text-[#707674] sm:inline">{t.eyebrow}</span><button onClick={() => setLanguage(language === "en" ? "zh" : "en")} className="rounded-lg border border-[#dcd9d0] px-3 py-2 text-xs font-medium hover:bg-white">{language === "en" ? "中文" : "English"}</button></div>
       </div></header>
       {aboutOpen && <AboutDialog language={language} onClose={closeAbout} />}
