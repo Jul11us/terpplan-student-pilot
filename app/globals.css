@@ -135,3 +135,41 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Compare sections in aligned columns when the detail panel has room. */
+.course-detail-panel {
+  container-type: inline-size;
+  container-name: course-detail;
+}
+
+.section-comparison-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+  overflow-wrap: anywhere;
+}
+
+.section-comparison-heading {
+  display: none;
+  padding: 0.75rem 1rem;
+  color: #626c67;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.course-finder button:focus-visible,
+.course-finder select:focus-visible {
+  outline: 2px solid #a34a39;
+  outline-offset: 3px;
+}
+
+@container course-detail (min-width: 600px) {
+  .section-comparison-grid {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(110px, 0.65fr);
+  }
+
+  .section-comparison-heading {
+    display: grid;
+  }
+}

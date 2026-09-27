@@ -83,7 +83,7 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
 
   return <div>
     <label className="grid gap-1.5 text-xs font-medium text-[#68716e]">{t.category}
-      <select value={code} onChange={(event) => setCode(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm text-[#202728]">
+      <select value={code} onChange={(event) => setCode(event.target.value)} className="min-w-0 w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm text-[#202728]">
         <option value="">{t.choose}</option>
         {GEN_ED_CATEGORIES.map((item) => <option key={item.code} value={item.code}>{item.code} · {item[language]}</option>)}
       </select>
@@ -99,16 +99,16 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
     {current && <>
       <p className="mt-4 text-[11px] text-[#858d89]">{t.count(shown.length, rows.length)}{current.seatCheckedAt ? ` · ${formatSeatReadTime(current.seatCheckedAt, language)}` : ""}</p>
       {!shown.length && <p className="py-5 text-sm text-[#737b77]">{t.empty}</p>}
-      <div className="mt-1 divide-y divide-[#ece9e2]">{shown.map(({ course, fitting, online, tba }) => <button key={course.course_id} type="button" onClick={() => onOpenCourse({ course_id: course.course_id, name: course.name })} className="flex w-full items-start justify-between gap-4 py-3.5 text-left hover:bg-[#f6f4ef]">
+      <div className="mt-1 divide-y divide-[#ece9e2]">{shown.map(({ course, fitting, online, tba }) => <button key={course.course_id} type="button" onClick={() => onOpenCourse({ course_id: course.course_id, name: course.name })} className="flex w-full flex-col items-start gap-2 py-3.5 text-left hover:bg-[#f6f4ef]">
         <span className="min-w-0">
-          <span className="block text-sm font-semibold">{course.course_id}<span className="ml-2 font-normal text-[#606966]">{course.name}</span></span>
+          <span className="block text-sm font-semibold">{course.course_id}<span className="mt-1 block font-normal leading-5 text-[#606966]">{course.name}</span></span>
           <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-[#89908c]">
             {course.credits && <span>{course.credits} {t.credits}</span>}
             {course.genEd.map((tag) => <span key={tag} className={`rounded px-1.5 py-0.5 font-semibold ${tag === code ? "bg-[#273c38] text-white" : "bg-[#eeece6] text-[#59635f]"}`}>{tag}</span>)}
             {planCourseIds.includes(course.course_id) && <span className="rounded bg-[#edf3ef] px-1.5 py-0.5 font-semibold text-[#315c43]">{t.inPlan}</span>}
           </span>
         </span>
-        <span className="shrink-0 text-right text-xs">
+        <span className="text-xs">
           <span className={`block font-semibold ${fitting ? "text-[#367047]" : "text-[#8f4538]"}`}>{fitting ? t.fitting(fitting) : t.none}</span>{online > 0 && <span className="block text-[11px] text-[#536d64]">{t.online(online)}</span>}{tba > 0 && <span className="block text-[11px] text-[#8a918e]">{t.tba(tba)}</span>}
           <span className="mt-1 block text-[#a34a39]">{t.view}</span>
         </span>

@@ -9,6 +9,7 @@ type Props = {
   ratings: Record<string, ProfessorSummary>;
   language: "en" | "zh";
   ratingsLoading: boolean;
+  compact?: boolean;
 };
 
 const labels = {
@@ -50,7 +51,7 @@ function keyFor(name: string) {
   return name.trim().replace(/\s+/g, " ").toLocaleLowerCase("en-US");
 }
 
-export default function SectionProfessors({ names, courseId, ratings, language, ratingsLoading }: Props) {
+export default function SectionProfessors({ names, courseId, ratings, language, ratingsLoading, compact = false }: Props) {
   const t = labels[language];
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
@@ -92,7 +93,7 @@ export default function SectionProfessors({ names, courseId, ratings, language, 
 
   if (!uniqueNames.length) return null;
   return (
-    <div className="mt-3 space-y-3 border-t border-[#ece9e2] pt-3">
+    <div className={compact ? "space-y-3" : "mt-3 space-y-3 border-t border-[#ece9e2] pt-3"}>
       {uniqueNames.map((name) => {
         const key = keyFor(name) + "|" + courseId;
         const rating = ratings[keyFor(name)];
@@ -101,8 +102,8 @@ export default function SectionProfessors({ names, courseId, ratings, language, 
         const isTba = /^(TBA|T\.B\.A\.?|TO BE ANNOUNCED|TO BE ARRANGED)$/i.test(name.trim());
         return (
           <div key={name} className="text-xs">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="font-medium text-[#525d59]">{name}</span>
+            <div className={compact ? "flex flex-col items-start gap-1.5" : "flex flex-wrap items-center gap-x-2 gap-y-1"}>
+              <span className={`font-medium text-[#525d59] ${compact ? "text-sm" : ""}`}>{name}</span>
               {isTba ? null : rating?.averageRating !== null && rating?.averageRating !== undefined ? (
                 <span className="rounded-full bg-[#f5efe2] px-2 py-1 text-[#795f2d]">
                   {t.average}: {rating.averageRating.toFixed(2)} / 5
