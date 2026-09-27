@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReferenceSchedule } from "@/app/components/gened-finder";
 import RegistrationChecklist from "@/app/components/registration-checklist";
 import { buildIcs, type IcsMeeting } from "@/lib/ics";
@@ -66,6 +66,7 @@ const copy = {
     onlineAsync: "Online, no set time (not shown on the grid):", onlineNoTime: "Online · no set time",
     incompleteTag: "Missing", incompleteTitle: "This schedule is incomplete",
     incompleteBody: "These courses could not be placed and are not in this schedule, its share link, calendar file, or registration checklist:",
+    updating: "Updating options for your latest changes…", autoNote: "Options update automatically when you change courses or preferences.",
     staleOptions: "Your preferences changed since these options were generated. Generate again to apply them.",
     pinnedNote: "Sections you required are kept even when they are full or Freshman Connection.",
     onlyInstructors: "Only", minutes: "min", credits: "credits", lecture: "Lecture", discussion: "Discussion", lab: "Lab",
@@ -98,6 +99,7 @@ const copy = {
     onlineAsync: "线上、无固定时间（不显示在课表格子里）：", onlineNoTime: "线上 · 无固定时间",
     incompleteTag: "缺少", incompleteTitle: "这个方案不完整",
     incompleteBody: "下面这些课没能排进来，不在这个方案里，也不会出现在分享链接、日历文件和选课清单中：",
+    updating: "正在根据最新的改动更新方案…", autoNote: "修改课程或排课偏好后，方案会自动更新。",
     staleOptions: "排课偏好在生成这些方案后改过了。请重新生成，新的偏好才会生效。",
     pinnedNote: "你指定的班次即使已满或属于 FC，也会保留在方案里。",
     onlyInstructors: "只排", minutes: "分钟", credits: "学分", lecture: "讲课", discussion: "讨论课", lab: "实验课",
@@ -348,12 +350,16 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
   const options = generated.requestKey === requestKey ? generated.options : [];
   const warnings = generated.requestKey === requestKey ? generated.warnings : [];
 
+  const windowValid = !((windowStart || windowEnd || strictTime) && (!windowStart || !windowEnd || windowStart >= windowEnd));
+  // Each run gets a number; a slower, older response is ignored so it cannot replace newer options.
+  const generationSeq = useRef(0);
   const generate = async () => {
     if (!courses.length) return;
-    if ((windowStart || windowEnd || strictTime) && (!windowStart || !windowEnd || windowStart >= windowEnd)) {
+    if (!windowValid) {
       setError(t.invalidWindow);
       return;
     }
+    const seq = ++generationSeq.current;
     setLoading(true);
     setError("");
     setGenerated((current) => ({ ...current, warnings: [] }));
@@ -370,18 +376,31 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
         }),
       });
       const payload = await response.json() as { error?: string; options?: ScheduleOption[]; warnings?: PlanWarning[] };
+      if (seq !== generationSeq.current) return;
       if (!response.ok) throw new Error(payload.error || t.loadError);
       setGenerated({ requestKey, prefsKey, options: payload.options ?? [], warnings: payload.warnings ?? [] });
       setSelectedOption(0);
       setShareUrl("");
       setShareCopied(false);
     } catch {
+      if (seq !== generationSeq.current) return;
       setError(t.loadError);
       setGenerated({ requestKey, prefsKey, options: [], warnings: [] });
     } finally {
-      setLoading(false);
+      if (seq === generationSeq.current) setLoading(false);
     }
   };
+
+  // Regenerate on its own shortly after the plan or preferences change (this panel stays mounted while hidden,
+  // so edits made in course search update the options too). A failed run is recorded, so it does not retry in a loop.
+  const upToDate = generated.requestKey === requestKey && generated.prefsKey === prefsKey;
+  const generateRef = useRef(generate);
+  useEffect(() => { generateRef.current = generate; });
+  useEffect(() => {
+    if (!courses.length || upToDate || !windowValid) return;
+    const timer = window.setTimeout(() => void generateRef.current(), 600);
+    return () => window.clearTimeout(timer);
+  }, [courses.length, upToDate, windowValid, requestKey, prefsKey]);
 
   const chosen = options[selectedOption];
   const prefsChanged = options.length > 0 && generated.prefsKey !== prefsKey;
@@ -425,13 +444,14 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
         {courses.some((course) => course.pinnedSectionId) && <p className="mt-1 text-xs leading-5 text-[#858d89]">{t.pinnedNote}</p>}
       </div>
       {error && <p role="alert" className="mt-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]">{error}</p>}
-      <div className="mt-5 flex justify-end"><button onClick={() => void generate()} disabled={loading} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1d302c] disabled:opacity-60">{loading ? t.generating : t.generate}</button></div>
+      <div className="mt-5 flex flex-wrap items-center justify-end gap-3"><p className="text-xs text-[#858d89]">{t.autoNote}</p><button onClick={() => void generate()} disabled={loading} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1d302c] disabled:opacity-60">{loading ? t.generating : t.generate}</button></div>
     </>}
     {warnings.length > 0 && <ul className="mt-5 space-y-2 rounded-xl border border-[#ead8b5] bg-[#fff8e8] p-4 text-sm text-[#745424]">{warnings.map((warning, index) => <li key={index}>{warningText(warning, language)}</li>)}</ul>}
     {courses.length > 0 && options.length === 0 && !loading && !error && warnings.length > 0 && <p className="mt-4 text-sm text-[#68716e]">{t.noOptions}</p>}
     {options.length > 0 && <div className="mt-8">
       <h3 className="font-serif text-2xl">{t.options}</h3>
-      {prefsChanged && <p role="status" className="mt-3 rounded-xl border border-[#ead8b5] bg-[#fff8e8] px-4 py-3 text-sm text-[#745424]">{t.staleOptions}</p>}
+      {prefsChanged && windowValid && <p role="status" className="mt-3 rounded-xl border border-[#d9e3dc] bg-[#f4f8f5] px-4 py-3 text-sm text-[#315c43]">{t.updating}</p>}
+      {prefsChanged && !windowValid && <p role="status" className="mt-3 rounded-xl border border-[#ead8b5] bg-[#fff8e8] px-4 py-3 text-sm text-[#745424]">{t.staleOptions}</p>}
       <div className="mt-4 grid gap-3 lg:grid-cols-3">{options.map((option, index) => <button type="button" key={option.selectedSections.map((section) => section.section_id).join("|")} onClick={() => { setSelectedOption(index); setShareUrl(""); setShareCopied(false); }} aria-pressed={selectedOption === index} className={`rounded-xl border p-4 text-left transition ${selectedOption === index ? "border-[#536d64] bg-[#edf3ef] ring-2 ring-[#536d64]/15" : "border-[#e3e0d8] bg-white hover:border-[#b9c5be]"}`}>
         <span className="flex items-center justify-between"><strong>{t.option} {index + 1}</strong><span className="text-xs text-[#737b77]">{t.score} {option.score.toFixed(2)}</span></span>
         <span className="mt-3 block text-xs leading-5 text-[#626c67]">{option.selectedSections.map((section) => section.section_id).join(" · ")}</span>
