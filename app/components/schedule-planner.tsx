@@ -234,8 +234,30 @@ export function WeeklyCalendar({ sections, language }: { sections: ScheduledSect
   for (const section of sections) if (!section.meetings?.length) unknown.add(section.section_id);
   const colors = new Map([...new Set(sections.map((section) => section.course_id))].map((courseId, index) => [courseId, COLORS[index % COLORS.length]]));
   const columnClass = "relative border-l border-[#e6e4de] bg-[linear-gradient(to_bottom,transparent_59px,#e7e4dc_60px)] bg-[length:100%_60px]";
+  // Phones show the week as a list by day; the 900px grid would need sideways scrolling there.
+  const byDay = DAYS.map((day, dayIndex) => ({
+    day,
+    label: t.weekdays[dayIndex],
+    items: sections.flatMap((section) => (section.meetings ?? []).flatMap((meeting, index) => {
+      const start = minutes(meeting.start_time), end = minutes(meeting.end_time);
+      if (isAsyncOnline(meeting) || start === null || end === null || end <= start || !dayNames(meeting.days).includes(day)) return [];
+      const kind = meetingType(meeting.classtype);
+      return [{ key: `${section.section_id}-${index}`, section, start, end, type: kind ? t[kind] : null, room: roomLabel(meeting.building, meeting.room, language) }];
+    })).sort((a, b) => a.start - b.start),
+  })).filter((entry) => entry.items.length);
   return <div className="overflow-x-auto rounded-xl border border-[#e0ddd5] bg-white">
-    <div className="grid min-w-[900px] grid-cols-[58px_repeat(7,minmax(0,1fr))]">
+    <div className="divide-y divide-[#ece9e2] sm:hidden">{byDay.map((entry) => <div key={entry.day} className="px-4 py-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-[#59635f]">{entry.label}</p>
+      <div className="mt-2 space-y-2">{entry.items.map((item) => <div key={item.key} className="flex gap-3 rounded-lg border border-[#ece9e2] p-2.5">
+        <span aria-hidden="true" className="w-1 shrink-0 rounded-full" style={{ backgroundColor: colors.get(item.section.course_id) }} />
+        <span className="min-w-0 text-xs leading-5">
+          <strong className="block text-[#24312d]">{displayClock(item.start)}–{displayClock(item.end)}</strong>
+          <span className="block text-[#48534f]">{item.section.section_id}{item.type ? ` · ${item.type}` : ""}</span>
+          <span className="block text-[#737b77]">{item.room}</span>
+        </span>
+      </div>)}</div>
+    </div>)}</div>
+    <div className="hidden min-w-[900px] grid-cols-[58px_repeat(7,minmax(0,1fr))] sm:grid">
       <div className="sticky top-0 z-10 bg-white p-3 text-center text-[11px] text-[#8a918e]">ET</div>
       {DAYS.map((day, index) => <div key={day} className="sticky top-0 z-10 border-l border-[#e6e4de] bg-white p-3 text-center text-xs font-semibold text-[#59635f]">{t.weekdays[index]}</div>)}
       <div className="relative" style={{ height }}>

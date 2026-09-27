@@ -200,6 +200,25 @@ export default function Home() {
   const [alerts, setAlerts] = useState<string[]>([]);
   // Store the message key, not the text, so it re-renders in the new language after a switch.
   const [message, setMessage] = useState<"" | "added" | "watched" | "codeSent">("");
+  // Success notes clear themselves; errors stay until the next action.
+  useEffect(() => {
+    if (!message) return;
+    const timer = window.setTimeout(() => setMessage(""), 4000);
+    return () => window.clearTimeout(timer);
+  }, [message]);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) return;
+      event.preventDefault();
+      setStep("find");
+      setFindMode("search");
+      window.setTimeout(() => document.querySelector<HTMLInputElement>("#course-search input:not([type=hidden])")?.focus(), 0);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [aboutOpen, setAboutOpen] = useState(false);
   const closeAbout = useCallback(() => setAboutOpen(false), []);
   const [error, setError] = useState("");
@@ -350,7 +369,7 @@ export default function Home() {
   const jumpToCourse = async (courseId: string) => {
     setFindMode("search");
     setQuery(courseId);
-    document.getElementById("course-search")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => document.getElementById("course-search")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
     try {
       const response = await fetch(`/api/search?q=${encodeURIComponent(courseId)}&term=${encodeURIComponent(term)}`);
       const payload = await response.json() as SearchPayload;
@@ -516,10 +535,10 @@ export default function Home() {
         {step === "find" && restored && <section aria-label={t.selectedCourses} className="mb-5 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] px-4 py-3 sm:px-5">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <p className="shrink-0 text-xs font-semibold text-[#48534f]">{t.selectedCourses} <span className="ml-1 rounded-md bg-[#ece9e2] px-1.5 py-0.5 text-[11px] text-[#68716e]">{planCourses.length}/10</span></p>
-            <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+            <div className="flex min-w-0 basis-full flex-wrap gap-2 sm:basis-auto sm:flex-1">
               {planCourses.length ? planCourses.map((course) => <span key={course.courseId} title={`${course.courseId} · ${course.courseTitle}`} className="rounded-lg border border-[#cddbd1] bg-[#edf3ef] px-2.5 py-1.5 text-xs font-semibold text-[#315c43]">{course.courseId}</span>) : <p className="text-xs text-[#8a918e]">{t.noSelectedCourses}</p>}
             </div>
-            <Link href="/audit" className="shrink-0 text-xs font-medium text-[#a34a39] hover:underline">{language === "en" ? "Not sure what you still need? Check your degree audit →" : "不确定还缺哪些课？查看学位审计 →"}</Link>
+            <Link href="/audit" className="basis-full text-xs font-medium text-[#a34a39] hover:underline sm:shrink-0 sm:basis-auto">{language === "en" ? "Not sure what you still need? Check your degree audit →" : "不确定还缺哪些课？查看学位审计 →"}</Link>
           </div>
         </section>}
 
@@ -533,7 +552,7 @@ export default function Home() {
             {/* Kept mounted while hidden so the chosen category and loaded list survive switching modes. */}
             <div hidden={findMode !== "gened"}><GenEdFinder key={genEdPreset?.key ?? 0} initialCodes={genEdPreset?.codes} fromAudit={Boolean(genEdPreset)} onAddCourse={(course) => quickAdd(course)} term={term} language={language} reference={referenceSchedule?.planKey === planKey(planCourses, term) ? referenceSchedule : null} referenceStale={referenceSchedule?.term === term && referenceSchedule.planKey !== planKey(planCourses, term)} planCourseIds={planCourses.map((course) => course.courseId)} onOpenCourse={(course) => void openCourse(course)} /></div>
             {findMode === "search" && <>
-            <label id="course-search" className="block scroll-mt-6"><span className="sr-only">{t.search}</span><div className="flex items-center gap-3 rounded-xl border border-[#d9d6ce] bg-white px-4 py-3 focus-within:border-[#a34a39] focus-within:ring-2 focus-within:ring-[#a34a39]/10"><span aria-hidden="true" className="text-lg text-[#8a928e]">⌕</span><input value={query} onChange={(event) => { setQuery(event.target.value); if (event.target.value.trim().length < 2) setResults([]); }} placeholder={t.searchHint} className="w-full bg-transparent text-sm outline-none placeholder:text-[#a0a6a2]" /></div></label>
+            <label id="course-search" className="block scroll-mt-6"><span className="sr-only">{t.search}</span><div className="flex items-center gap-3 rounded-xl border border-[#d9d6ce] bg-white px-4 py-3 focus-within:border-[#a34a39] focus-within:ring-2 focus-within:ring-[#a34a39]/10"><span aria-hidden="true" className="text-lg text-[#8a928e]">⌕</span><input value={query} onChange={(event) => { setQuery(event.target.value); if (event.target.value.trim().length < 2) setResults([]); }} placeholder={t.searchHint} className="w-full bg-transparent text-sm outline-none placeholder:text-[#a0a6a2]" /><kbd title={language === "en" ? "Press / to search" : "按 / 快速搜索"} className="hidden rounded border border-[#dedbd3] px-1.5 text-[11px] text-[#8a918e] sm:inline">/</kbd></div></label>
             <div className="mt-4 divide-y divide-[#ece9e2]">{searching && <p className="py-5 text-sm text-[#737b77]">{t.loading}</p>}{!searching && query.trim().length >= 2 && !results.length && !error && <p className="py-5 text-sm leading-6 text-[#737b77]">{/^[a-z]{4}\s?\d{3}[a-z]?$/i.test(query.trim())
                 // A full course code with no match usually means the course is not offered this term, not a typo.
                 ? t.notOffered.replace("{course}", query.trim().replace(/\s+/g, "").toUpperCase()).replace("{term}", termLabel(term, language))
