@@ -1,5 +1,5 @@
 import { GEN_ED_CATEGORIES } from "@/lib/gened-categories";
-import { classTexts, firstClassText, parseTestudoSections, testudoHtml, type UmdSection } from "@/lib/umd";
+import { classTexts, firstClassText, htmlText, parseTestudoSections, testudoHtml, type UmdSection } from "@/lib/umd";
 
 // Gen Ed lists always come from Testudo, for every term: it lists a whole category on one page and
 // returns sections for many courses per request, while umd.io needs many slow calls for the same data.
@@ -15,6 +15,8 @@ export type GenEdCourse = {
   // True when the course lists a prerequisite/corequisite or an enrollment restriction.
   hasPrerequisite: boolean;
   hasRestriction: boolean;
+  // Only students in a named program (Honors, Scholars, a Living-Learning program, ...) may enroll.
+  programOnly: boolean;
   sections: UmdSection[];
 };
 
@@ -47,6 +49,17 @@ const slimSection = (section: UmdSection): UmdSection => ({
   meetings: (section.meetings ?? []).map((meeting) => ({ days: meeting.days, start_time: meeting.start_time, end_time: meeting.end_time, classtype: meeting.classtype, building: meeting.building, room: meeting.room })),
 });
 
+// "Must not be in X" leaves nearly everyone eligible, so it is not treated as a restriction.
+function restrictionFlags(block: string) {
+  const match = /<strong>\s*Restriction:?\s*<\/strong>([\s\S]*?)<\/div>/i.exec(block);
+  const text = match ? htmlText(match[1] ?? "") : "";
+  const limiting = Boolean(text) && !/^must not\b/i.test(text);
+  return {
+    hasRestriction: limiting,
+    programOnly: limiting && /\b(honors|scholars|living[- ]learning|freshman connection)\b/i.test(text),
+  };
+}
+
 async function testudoGenEd(term: string, code: GenEdCode): Promise<GenEdCourse[]> {
   const html = await testudoHtml(`/gen-ed/${encodeURIComponent(term)}/${code}`);
   const blocks = html.split(/<div id="(?=[A-Z]{4}\d{3}[A-Z]?" class="course")/).slice(1);
@@ -61,7 +74,7 @@ async function testudoGenEd(term: string, code: GenEdCode): Promise<GenEdCourse[
       genEd: [...new Set(classTexts(block, "course-subcategory").filter((tag) => /^[A-Z]{4}$/.test(tag)))],
       // Testudo writes these as "<strong>Prerequisite:</strong> ..." in the course text block.
       hasPrerequisite: /<strong>\s*(?:Prerequisite|Corequisite)/i.test(block),
-      hasRestriction: /<strong>\s*Restriction/i.test(block),
+      ...restrictionFlags(block),
       sections: [] as UmdSection[],
     };
   });

@@ -7,7 +7,7 @@ import { formatSeatReadTime } from "@/lib/seat-time";
 
 type Language = "en" | "zh";
 type GenEdSection = { section_id?: string; open_seats?: string | number | null; meetings?: MeetingTime[] };
-type GenEdCourse = { course_id: string; name: string; credits: string | null; genEd: string[]; hasPrerequisite?: boolean; hasRestriction?: boolean; sections: GenEdSection[] };
+type GenEdCourse = { course_id: string; name: string; credits: string | null; genEd: string[]; hasPrerequisite?: boolean; hasRestriction?: boolean; programOnly?: boolean; sections: GenEdSection[] };
 
 // Historical averages are looked up for at most this many listed courses (in requests of up to 30).
 const GPA_LOOKUP_LIMIT = 90;
@@ -31,7 +31,7 @@ export type ReferenceSchedule = { term: string; planKey: string; sectionIds: str
 
 const copy = {
   en: {
-    hideHonors: "Hide Honors courses (HNUH, HONR, and numbers ending in H)", lighter: "Lighter-load options", noPrereq: "No prerequisites or enrollment restrictions", lowerLevel: "Only 100–200 level (introductory)",
+    hideHonors: "Hide Honors and program-only courses (Honors College, Scholars, Living-Learning, …)", lighter: "Lighter-load options", noPrereq: "No prerequisites or enrollment restrictions", lowerLevel: "Only 100–200 level (introductory)",
     sortGpa: "Sort by historical average GPA", sortDefault: "Default order", gpaLoading: "Loading historical averages…", gpaError: "Historical averages could not be loaded.",
     gpaNote: `Historical average GPA comes from PlanetTerp. It averages every past term and instructor, so it is not a promise about this term. Looked up for the first ${GPA_LOOKUP_LIMIT} courses listed.`,
     avgGpa: "Hist. avg GPA",
@@ -46,7 +46,7 @@ const copy = {
     fcNote: "Freshman Connection (FC) sections are not counted.", view: "View sections →", quickAdd: "Add", inPlanShort: "In plan",
   },
   zh: {
-    hideHonors: "不显示荣誉课程（HNUH、HONR、课号以 H 结尾）", lighter: "想轻松一点？", noPrereq: "无先修要求和选课限制", lowerLevel: "只看 100–200 级入门课",
+    hideHonors: "不显示荣誉课程和项目专属课程（荣誉学院、Scholars、Living-Learning 等）", lighter: "想轻松一点？", noPrereq: "无先修要求和选课限制", lowerLevel: "只看 100–200 级入门课",
     sortGpa: "按历史平均 GPA 排序", sortDefault: "恢复默认排序", gpaLoading: "正在读取历史平均 GPA…", gpaError: "暂时无法读取历史平均 GPA。",
     gpaNote: `历史平均 GPA 来自 PlanetTerp，是这门课过去所有学期、所有老师的平均，不代表这学期的给分。只查询列表中前 ${GPA_LOOKUP_LIMIT} 门课。`,
     avgGpa: "历史平均 GPA",
@@ -132,7 +132,7 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
   const referenceForTerm = reference?.term === term ? reference : null;
 
   const baseRows = useMemo(() => (current?.courses ?? []).filter((course) =>
-    (!hideHonors || !isHonorsCourse(course, current?.courses ?? []))
+    (!hideHonors || (!isHonorsCourse(course, current?.courses ?? []) && !course.programOnly))
     && (!noPrereq || (!course.hasPrerequisite && !course.hasRestriction))
     // Course numbers start at the 5th character (AAAS100 -> 1); 100/200 are introductory levels.
     && (!lowerLevel || /^[12]$/.test(course.course_id.charAt(4)))).map((course) => {
