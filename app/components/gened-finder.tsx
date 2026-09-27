@@ -15,22 +15,24 @@ export type ReferenceSchedule = { term: string; planKey: string; sectionIds: str
 
 const copy = {
   en: {
+    counts: (n: number) => `Counts for ${n}`, fromAudit: (codes: string) => `Selected from your degree audit: ${codes}. Courses that count for more of them are listed first.`,
     category: "Gen Ed categories · pick one or more", choose: "Pick one or more categories above.", clear: "Clear",
     matchAll: "Only courses that count for every selected category (one course, several requirements)", loading: "Loading courses…", error: "Gen Ed courses could not be loaded. Try again shortly.",
     fitsOnly: "Only sections that fit my schedule", openOnly: "Only sections with open seats",
     against: "Checking against your schedule:", noReference: "Generate a schedule in step 02 to check time conflicts. Until then, every section counts as fitting.",
     fitting: (n: number) => n === 1 ? "1 section fits" : `${n} sections fit`, none: "No section fits",
-    tba: (n: number) => `+ ${n} time TBA`, online: (n: number) => `incl. ${n} online, no set time`, staleReference: "Your plan changed since the last generated schedule. Generate it again in step 02 to check conflicts; until then conflicts are not checked.", inPlan: "In your plan",
+    tba: (n: number) => `+ ${n} time TBA`, online: (n: number) => `incl. ${n} online, no set time`, staleReference: "Updating your schedule for the latest change; conflicts are checked again in a moment. If this stays, check your preferences in step 02.", inPlan: "In your plan",
     credits: "cr", empty: "No courses match these filters.", count: (shown: number, total: number) => `${shown} of ${total} courses`,
     fcNote: "Freshman Connection (FC) sections are not counted.", view: "View sections →", quickAdd: "Add", inPlanShort: "In plan",
   },
   zh: {
+    counts: (n: number) => `抵 ${n} 项`, fromAudit: (codes: string) => `已按学位审计选好：${codes}。能同时抵多项要求的课排在前面。`,
     category: "Gen Ed 类别 · 可多选", choose: "在上方选择一个或多个类别。", clear: "清除",
     matchAll: "只看同时满足所有所选类别的课（一门课抵多项要求）", loading: "正在读取课程…", error: "暂时无法读取 Gen Ed 课程，请稍后再试。",
     fitsOnly: "只看和我的课表不冲突的班", openOnly: "只看有空位的班",
     against: "对照的课表：", noReference: "先在「02 排课」生成方案，才能检查时间冲突；在那之前所有班都算不冲突。",
     fitting: (n: number) => `${n} 个班可选`, none: "没有合适的班",
-    tba: (n: number) => `另有 ${n} 个时间待定`, online: (n: number) => `含 ${n} 个线上班（无固定时间）`, staleReference: "排课计划在上次生成方案后改过了。请回「02 排课」重新生成，才能检查冲突；在那之前暂不检查冲突。", inPlan: "已在排课中",
+    tba: (n: number) => `另有 ${n} 个时间待定`, online: (n: number) => `含 ${n} 个线上班（无固定时间）`, staleReference: "正在根据最新改动更新方案，稍后会重新检查冲突。如果一直显示这句，请到「02 排课」检查排课偏好。", inPlan: "已在排课中",
     credits: "学分", empty: "没有符合筛选条件的课程。", count: (shown: number, total: number) => `显示 ${shown} / ${total} 门课`,
     fcNote: "不计入 Freshman Connection（FC）班。", view: "查看班次 →", quickAdd: "加入", inPlanShort: "已加入",
   },
@@ -38,7 +40,7 @@ const copy = {
 
 const count = (value: unknown) => typeof value === "number" ? value : typeof value === "string" && /^\d+$/.test(value) ? Number(value) : null;
 
-export default function GenEdFinder({ term, language, reference, referenceStale, planCourseIds, onOpenCourse, onAddCourse }: {
+export default function GenEdFinder({ term, language, reference, referenceStale, planCourseIds, onOpenCourse, onAddCourse, initialCodes = [], fromAudit = false }: {
   term: string;
   language: Language;
   // Only passed when it matches the current plan; referenceStale says an older one was dropped.
@@ -47,9 +49,12 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
   planCourseIds: string[];
   onOpenCourse: (course: { course_id: string; name: string }) => void;
   onAddCourse: (course: { course_id: string; name: string }) => void;
+  // Categories chosen elsewhere (the degree audit page); the parent remounts this finder when they change.
+  initialCodes?: string[];
+  fromAudit?: boolean;
 }) {
   const t = copy[language];
-  const [codes, setCodes] = useState<string[]>([]);
+  const [codes, setCodes] = useState<string[]>(initialCodes);
   const [matchAll, setMatchAll] = useState(false);
   // Loaded category lists, keyed by term|code, so adding or removing a category never reloads the others.
   const [lists, setLists] = useState<Record<string, { courses: GenEdCourse[]; seatCheckedAt: string | null }>>({});
@@ -101,11 +106,14 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
     const tba = usable.filter((section) => hasUnknownTime(section.meetings ?? []));
     const fitting = usable.filter((section) => !hasUnknownTime(section.meetings ?? [])
       && (!fitsOnly || !referenceForTerm || !meetingsConflict(section.meetings ?? [], referenceForTerm.meetings)));
-    return { course, fitting: fitting.length, online: fitting.filter((section) => isOnlineOnly(section.meetings ?? [])).length, tba: tba.length };
-  }).sort((a, b) => Number(b.fitting > 0) - Number(a.fitting > 0) || Number(b.tba > 0) - Number(a.tba > 0) || a.course.course_id.localeCompare(b.course.course_id)), [current, openOnly, fitsOnly, referenceForTerm]);
+    // How many of the selected categories this one course would satisfy at once.
+    const matched = codes.filter((code) => course.genEd.includes(code)).length;
+    return { course, matched, fitting: fitting.length, online: fitting.filter((section) => isOnlineOnly(section.meetings ?? [])).length, tba: tba.length };
+  }).sort((a, b) => Number(b.fitting > 0) - Number(a.fitting > 0) || b.matched - a.matched || Number(b.tba > 0) - Number(a.tba > 0) || a.course.course_id.localeCompare(b.course.course_id)), [current, openOnly, fitsOnly, referenceForTerm, codes]);
   const shown = rows.filter((row) => row.fitting > 0 || row.tba > 0 || (!fitsOnly && !openOnly));
 
   return <div>
+    {fromAudit && initialCodes.length > 0 && <p className="mb-3 rounded-lg bg-[#edf3ef] px-3 py-2 text-xs leading-5 text-[#315c43]">{t.fromAudit(initialCodes.join(", "))}</p>}
     <div className="flex items-center justify-between gap-3"><p className="text-xs font-medium text-[#68716e]">{t.category}</p>{codes.length > 0 && <button type="button" onClick={() => setCodes([])} className="text-[11px] font-medium text-[#8b5148] hover:underline">{t.clear}</button>}</div>
     <div className="mt-2 flex flex-wrap gap-1.5">{GEN_ED_CATEGORIES.map((item) => {
       const on = codes.includes(item.code);
@@ -116,7 +124,7 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
       <label className="inline-flex items-center gap-2"><input type="checkbox" checked={fitsOnly} onChange={(event) => setFitsOnly(event.target.checked)} />{t.fitsOnly}</label>
       <label className="inline-flex items-center gap-2"><input type="checkbox" checked={openOnly} onChange={(event) => setOpenOnly(event.target.checked)} />{t.openOnly}</label>
     </div>
-    <p className="mt-2 text-[11px] leading-5 text-[#858d89]">{referenceStale && !referenceForTerm ? <span className="font-medium text-[#8c352c]">{t.staleReference}</span> : referenceForTerm ? <>{t.against} <span className="font-medium text-[#48534f]">{referenceForTerm.sectionIds.join(" · ")}</span></> : t.noReference} {t.fcNote}</p>
+    <p className="mt-2 text-[11px] leading-5 text-[#858d89]">{referenceStale && !referenceForTerm ? <span className="font-medium text-[#745424]">{t.staleReference}</span> : referenceForTerm ? <>{t.against} <span className="font-medium text-[#48534f]">{referenceForTerm.sectionIds.join(" · ")}</span></> : t.noReference} {t.fcNote}</p>
 
     {loading && <p className="py-5 text-sm text-[#737b77]">{t.loading}</p>}
     {!codes.length && <p className="py-5 text-sm text-[#737b77]">{t.choose}</p>}
@@ -124,11 +132,12 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
     {current && <>
       <p className="mt-4 text-[11px] text-[#858d89]">{t.count(shown.length, rows.length)}{current.seatCheckedAt ? ` · ${formatSeatReadTime(current.seatCheckedAt, language)}` : ""}</p>
       {!shown.length && <p className="py-5 text-sm text-[#737b77]">{t.empty}</p>}
-      <div className="mt-1 divide-y divide-[#ece9e2]">{shown.map(({ course, fitting, online, tba }) => { const inPlan = planCourseIds.includes(course.course_id); const courseId = course.course_id; const onAdd = () => onAddCourse({ course_id: course.course_id, name: course.name }); return <div key={course.course_id} className="flex items-start gap-2 pr-1"><button type="button" onClick={() => onOpenCourse({ course_id: course.course_id, name: course.name })} className="flex min-w-0 flex-1 flex-col items-start gap-2 py-3.5 text-left hover:bg-[#f6f4ef]">
+      <div className="mt-1 divide-y divide-[#ece9e2]">{shown.map(({ course, matched, fitting, online, tba }) => { const inPlan = planCourseIds.includes(course.course_id); const courseId = course.course_id; const onAdd = () => onAddCourse({ course_id: course.course_id, name: course.name }); return <div key={course.course_id} className="flex items-start gap-2 pr-1"><button type="button" onClick={() => onOpenCourse({ course_id: course.course_id, name: course.name })} className="flex min-w-0 flex-1 flex-col items-start gap-2 py-3.5 text-left hover:bg-[#f6f4ef]">
         <span className="min-w-0">
           <span className="block text-sm font-semibold">{course.course_id}<span className="mt-1 block font-normal leading-5 text-[#606966]">{course.name}</span></span>
           <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-[#89908c]">
             {course.credits && <span>{course.credits} {t.credits}</span>}
+            {codes.length > 1 && matched > 1 && <span className="rounded bg-[#a34a39] px-1.5 py-0.5 font-semibold text-white">{t.counts(matched)}</span>}
             {course.genEd.map((tag) => <span key={tag} className={`rounded px-1.5 py-0.5 font-semibold ${codes.includes(tag) ? "bg-[#273c38] text-white" : "bg-[#eeece6] text-[#59635f]"}`}>{tag}</span>)}
             
           </span>

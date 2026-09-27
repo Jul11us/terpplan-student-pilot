@@ -16,6 +16,9 @@ const copy = {
     pilot: "UMD · Student pilot", title: "Find what your audit says you still need.", intro: "Upload a uAchieve degree audit PDF. Review the extracted requirements, then explore courses offered this term.", home: "Back to planner", privacy: "Your PDF and extracted audit text stay in this browser. TerpPlan sends only the selected requirement's course codes or Gen Ed category to look up classes. Nothing from this audit is saved to your account.",
     upload: "Choose degree audit PDF", size: "PDF · up to 12 MB · up to 60 pages", reading: "Reading PDF in your browser…", badFile: "Choose a PDF under 12 MB and 60 pages.", badPdf: "This PDF could not be read. Export a text-based audit PDF from uAchieve and try again.", noText: "No readable text was found. A scanned PDF needs text recognition before it can be used here.", noNeeds: "No unmet requirements were found. Check that this is a uAchieve degree audit PDF.", complete: "This audit says all identified requirements are met.", unknown: "The audit format was not fully recognized. Review every result against your official audit.",
     chooseFile: "Choose PDF", noFile: "No file chosen",
+    genEdMissing: (codes: string) => `Your audit still needs these Gen Ed categories: ${codes}`, genEdOpen: "Find courses for them together →",
+    genEdOpenOne: "Find this category in course search (checks your schedule) →",
+    genEdHint: "Opens Gen Ed search with them selected. It checks time conflicts with your plan and lists courses that count for several first. Only the category codes are passed along.",
     actionable: "Requirements you can search courses for", others: (n: number) => `${n} other requirements (credit totals, GPA, residency…) · not tied to specific courses`,
     summary: (a: number, o: number, p: number) => `${a} to search · ${o} other · ${p} in progress`,
     kind: { credits: "Credit requirement", gpa: "GPA requirement", courses: "Course count requirement", other: "Other requirement" },
@@ -27,6 +30,9 @@ const copy = {
     pilot: "马里兰大学 · 学生试用", title: "看看学位审计还缺哪些课。", intro: "上传 uAchieve 的 degree audit PDF，先核对识别出的未完成要求，再查看本学期开设的课程。", home: "返回排课", privacy: "PDF 和解析出的审计文字只在你的浏览器里处理。TerpPlan 只发送你选中的课程编号或 Gen Ed 类别来查询班次；这些审计信息不会保存到账号。",
     upload: "选择 degree audit PDF", size: "PDF · 不超过 12 MB · 不超过 60 页", reading: "正在浏览器中读取 PDF…", badFile: "请选择不超过 12 MB、60 页的 PDF。", badPdf: "无法读取这个 PDF。请从 uAchieve 导出含文字的审计 PDF 后重试。", noText: "没有找到可读取的文字。扫描版 PDF 需要先做文字识别。", noNeeds: "没有识别出未完成要求。请确认上传的是 uAchieve 的 degree audit PDF。", complete: "这份审计显示已满足所有列出的要求。", unknown: "未完全识别这份审计的格式。请对照官方报告逐项核对。",
     chooseFile: "选择 PDF", noFile: "未选择文件",
+    genEdMissing: (codes: string) => `审计显示还缺这些 Gen Ed：${codes}`, genEdOpen: "到找课页一起查找 →",
+    genEdOpenOne: "到找课页查找这个类别（会检查课表冲突）→",
+    genEdHint: "会打开 Gen Ed 查找并选好这些类别，检查和你课表的时间冲突，能同时抵多项要求的课排在前面。只会带上类别代码。",
     actionable: "可以直接找课的要求", others: (n: number) => `另有 ${n} 项其他要求（总学分、GPA、住校等）· 不对应具体课程`,
     summary: (a: number, o: number, p: number) => `${a} 项可找课 · ${o} 项其他要求 · ${p} 门正在修`,
     kind: { credits: "学分要求", gpa: "GPA 要求", courses: "课程数量要求", other: "其他要求" },
@@ -208,7 +214,13 @@ export default function AuditPage() {
             <span className="mt-1 block text-xs leading-5 text-[#68716e]">{t.need}: {requirement.need}</span>
             {plain ? <span className="mt-1 block truncate text-[11px] text-[#8a918e]">{requirement.title}</span> : <span className="mt-1 block text-[11px] font-medium text-[#536d64]">{requirement.courseIds.length ? `${requirement.courseIds.length} ${t.listed}` : requirement.genEdCode}</span>}
           </button>;
+          const missingGenEds = [...new Set(audit.requirements.map((requirement) => requirement.genEdCode).filter((code): code is string => Boolean(code)))];
           return <>
+            {missingGenEds.length > 0 && <div className="mt-4 rounded-xl border border-[#cddbd1] bg-[#f4f8f5] p-3">
+              <p className="text-sm font-semibold text-[#273c38]">{t.genEdMissing(missingGenEds.join(", "))}</p>
+              <Link href={`/?gened=${missingGenEds.join(",")}`} className="mt-2 inline-block rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c]">{t.genEdOpen}</Link>
+              <p className="mt-2 text-[11px] leading-5 text-[#68716e]">{t.genEdHint}</p>
+            </div>}
             <p className="mt-4 text-xs font-medium text-[#48534f]">{t.summary(actionable.length, others.length, audit.inProgressCourseIds.length)}</p>
             {actionable.length > 0 ? <>
               <h3 className="mt-4 text-xs font-semibold uppercase tracking-[.1em] text-[#9a5040]">{t.actionable}</h3>
@@ -228,6 +240,7 @@ export default function AuditPage() {
           <button type="button" onClick={() => setManualId(selected.id)} className="mt-3 text-xs font-medium text-[#536d64] underline underline-offset-2">{t.manual}</button>
         </div> : selected ? <><label className="mt-4 block text-xs font-medium text-[#68716e]">{t.editTitle}<input value={selected.title} onChange={(event) => { const next = event.target.value; setAudit((current) => current ? { ...current, requirements: current.requirements.map((item) => item.id === selectedId ? { ...item, title: next } : item) } : current); }} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm" /></label><p className="mt-2 text-xs text-[#68716e]">{t.need}: {selected.need}</p><div className="mt-5 grid gap-3 sm:grid-cols-2"><label className="text-xs font-medium text-[#68716e]">{t.term}<select value={term} onChange={(event) => { const next = event.target.value; setTerm(next); setPlanIds((readSavedState().plans[next] ?? []).map((course) => course.courseId)); resetResults(); }} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm">{(terms.length ? terms : [term]).map((value) => <option key={value} value={value}>{titleForTerm(value, language)}</option>)}</select></label><label className="text-xs font-medium text-[#68716e]">{t.category}<select value={category} onChange={(event) => { const next = event.target.value; setCategory(next); setAudit((current) => current ? { ...current, requirements: current.requirements.map((item) => item.id === selectedId ? { ...item, genEdCode: next || null } : item) } : current); resetResults(); }} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm"><option value="">{t.chooseCategory}</option>{GEN_ED_CATEGORIES.map((item) => <option key={item.code} value={item.code}>{item.code} · {item[language]}</option>)}</select></label></div>
         <label className="mt-4 block text-xs font-medium text-[#68716e]">{t.edit}<textarea value={courseText} onChange={(event) => { const next = event.target.value; setCourseText(next); setAudit((current) => current ? { ...current, requirements: current.requirements.map((item) => item.id === selectedId ? { ...item, courseIds: parseCourseIds(next) } : item) } : current); resetResults(); }} rows={2} placeholder="CMSC132, MATH141" className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm" /></label><div className="mt-4 flex flex-wrap gap-4 text-xs"><label className="flex items-center gap-2"><input type="radio" checked={mode === "list"} onChange={() => { setMode("list"); resetResults(); }} />{t.useList}</label><label className="flex items-center gap-2"><input type="radio" checked={mode === "category"} onChange={() => { setMode("category"); resetResults(); }} />{t.useCategory}</label></div>
+        {selected.genEdCode && <Link href={`/?gened=${selected.genEdCode}`} className="mt-4 block text-xs font-medium text-[#536d64] underline underline-offset-2">{t.genEdOpenOne}</Link>}
         <button onClick={() => void findCourses()} disabled={loading || (mode === "list" ? !parseCourseIds(courseText).length : !category)} className="mt-5 rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{loading ? t.loading : t.find}</button>{!selected.courseIds.length && !selected.genEdCode && <p className="mt-3 text-xs text-[#8a918e]">{t.nonCourse}</p>}
         {candidates && <>
           <div className="mt-7 flex flex-wrap items-center justify-between gap-3">
