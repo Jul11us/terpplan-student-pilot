@@ -12,6 +12,9 @@ export type GenEdCourse = {
   name: string;
   credits: string | null;
   genEd: string[];
+  // True when the course lists a prerequisite/corequisite or an enrollment restriction.
+  hasPrerequisite: boolean;
+  hasRestriction: boolean;
   sections: UmdSection[];
 };
 
@@ -56,6 +59,9 @@ async function testudoGenEd(term: string, code: GenEdCode): Promise<GenEdCourse[
       name: firstClassText(block, "course-title") || courseId,
       credits: min ? (max && max !== min ? `${min}–${max}` : min) : null,
       genEd: [...new Set(classTexts(block, "course-subcategory").filter((tag) => /^[A-Z]{4}$/.test(tag)))],
+      // Testudo writes these as "<strong>Prerequisite:</strong> ..." in the course text block.
+      hasPrerequisite: /<strong>\s*(?:Prerequisite|Corequisite)/i.test(block),
+      hasRestriction: /<strong>\s*Restriction/i.test(block),
       sections: [] as UmdSection[],
     };
   });
