@@ -13,12 +13,13 @@ const facts = {
 };
 
 const minor = {
-  slug: "test--a-minor", name: "A Minor", kind: "minor", url: "https://example.edu", total: 15, intro: null, apply: null,
+  slug: "test--a-minor", name: "A Minor", kind: "minor", url: "https://example.edu", intro: null, apply: null,
+  blocks: [{ title: "", role: "always", total: 15 }],
   items: [
-    { kind: "course", section: "", label: "AAAA100", credits: 3, options: [["AAAA100"]] },
-    { kind: "course", section: "", label: "AAAA200", credits: 3, options: [["AAAA200"]] },
-    { kind: "choose", section: "", label: "Select two of the following:", count: 2, credits: 6, options: [["AAAA300"], ["AAAA301"], ["AAAA302"]] },
-    { kind: "choose", section: "", label: "Three credits of any AAAA 3xx course", count: null, credits: 3, options: [] },
+    { kind: "course", section: "", label: "AAAA100", credits: 3, options: [["AAAA100"]], block: 0 },
+    { kind: "course", section: "", label: "AAAA200", credits: 3, options: [["AAAA200"]], block: 0 },
+    { kind: "choose", section: "", label: "Select two of the following:", count: 2, credits: 6, options: [["AAAA300"], ["AAAA301"], ["AAAA302"]], block: 0 },
+    { kind: "choose", section: "", label: "Three credits of any AAAA 3xx course", count: null, credits: 3, options: [], block: 0 },
   ],
 };
 
@@ -54,4 +55,34 @@ test("caps overlap with the major at two courses", () => {
   assert.equal(result.overlapExcess, 1);
   // 3 for the last list course, 3 for the open item, 3 to replace the course over the cap.
   assert.equal(result.remainingCredits, 9);
+});
+
+const major = {
+  slug: "test--a-major", name: "A Major", kind: "major", url: "https://example.edu", intro: null, apply: null,
+  blocks: [{ title: "Bachelor of Arts", role: "default", total: 6 }, { title: "Bachelor of Science", role: "choice", total: 9 }],
+  items: [
+    { kind: "course", section: "", label: "AAAA100", credits: 3, options: [["AAAA100"]], block: 0 },
+    { kind: "course", section: "", label: "AAAA301", credits: 3, options: [["AAAA301"]], block: 0 },
+    { kind: "course", section: "", label: "AAAA100", credits: 3, options: [["AAAA100"]], block: 1 },
+    { kind: "course", section: "", label: "AAAA302", credits: 3, options: [["AAAA302"]], block: 1 },
+    { kind: "course", section: "", label: "MATH140", credits: 4, options: [["MATH140"]], block: 1 },
+  ],
+};
+
+test("uses only the chosen catalog tables and keeps item indexes stable", () => {
+  const ba = evaluateProgram(major, facts, new Map(), { overlapCap: null });
+  assert.deepEqual(ba.items.map((item) => item.index), [0, 1]);
+  assert.equal(ba.remainingCredits, 6);
+  const bs = evaluateProgram(major, facts, new Map(), { overlapCap: null, blocks: new Set([1]) });
+  assert.deepEqual(bs.items.map((item) => item.index), [2, 3, 4]);
+  assert.equal(bs.remainingCredits, 10);
+});
+
+test("a second major has no overlap cap and reports shared and unique credits", () => {
+  const result = evaluateProgram(major, facts, new Map([["AAAA100", "done"]]), { overlapCap: null, majorCodes: new Set(["AAAA100", "AAAA301"]) });
+  assert.deepEqual(result.overlap, ["AAAA100"]);
+  assert.equal(result.overlapExcess, 0);
+  // AAAA301 is still to take and the first major lists it too.
+  assert.equal(result.sharedRemainingCredits, 3);
+  assert.equal(result.uniqueCredits, 0);
 });

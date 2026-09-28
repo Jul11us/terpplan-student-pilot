@@ -1,4 +1,4 @@
-// Compares a student's courses with a minor's catalog requirements (data/umd-programs.json).
+// Compares a student's courses with a minor's or major's catalog requirements (data/umd-programs.json).
 // Everything here is an estimate: the catalog also has rules written only as prose.
 
 export type ProgramItem = {
@@ -9,18 +9,26 @@ export type ProgramItem = {
   count?: number | null;
   // Each option is a bundle that must be taken together, usually a single course.
   options: string[][];
+  // Index of the catalog table (block) the item came from.
+  block: number;
 };
+
+// One catalog table and the heading above it. "always" tables apply to everyone; "choice" tables are
+// alternatives (a track, B.A. vs B.S.) the student picks; "default" marks the first when all are choices.
+export type ProgramBlock = { title: string; role: "always" | "choice" | "default"; total: number | null };
 
 export type Program = {
   slug: string;
   name: string;
   kind: "minor" | "major";
   url: string;
-  total: number | null;
   intro: string | null;
   apply: string | null;
+  blocks: ProgramBlock[];
   items: ProgramItem[];
 };
+
+export const defaultBlocks = (program: Program) => new Set(program.blocks.flatMap((block, index) => block.role === "choice" ? [] : [index]));
 
 // n: title, c: credits, p: prerequisite text, pg: prerequisites as AND of OR-groups.
 export type CourseFact = { n: string; c: number; p?: string; pg?: string[][] };
@@ -36,6 +44,8 @@ const STATUS_RANK: Record<CourseStatus, number> = { done: 0, inProgress: 1, plan
 
 export type ItemProgress = {
   item: ProgramItem;
+  // Position in program.items, stable while blocks are switched on and off.
+  index: number;
   // No course list in the catalog: the student has to check this one against the catalog text.
   open: boolean;
   // Options the student already has (or plans), with their weakest status.
@@ -53,9 +63,16 @@ export type ProgramProgress = {
   remainingCredits: number;
   remainingCourses: number;
   creditsByStatus: Record<CourseStatus, number>;
-  // Courses counted for the minor that also appear in the major's requirement lists.
+  // Courses counted for this program that also appear in the other program's requirement lists.
   overlap: string[];
   overlapExcess: number;
+  // Credits of the courses still to take that the other program also lists.
+  sharedRemainingCredits: number;
+  // Credits the catalog's stated total has beyond what its tables list (rules written only as text);
+  // already included in remainingCredits.
+  unlistedCredits: number;
+  // Credits (counted or still to take) that the other program does not list.
+  uniqueCredits: number;
   // Catalog lists fewer credits in tables than the stated total: some rules are prose only.
   partial: boolean;
   // Prerequisites the plan needs that do not count toward the minor.
@@ -121,11 +138,22 @@ function missingPrerequisites(code: string, facts: Record<string, CourseFact>, s
   }
 }
 
-// manualDone holds indexes of open items (no course list) the student marked as finished.
-export function evaluateProgram(program: Program, facts: Record<string, CourseFact>, student: Map<string, CourseStatus>, { majorCodes = new Set<string>(), manualDone = new Set<number>() }: { majorCodes?: Set<string>; manualDone?: Set<number> } = {}): ProgramProgress {
+type EvaluateOptions = {
+  // Course codes the student's (first) major lists, to find overlap.
+  majorCodes?: Set<string>;
+  // Indexes of open items (no course list) the student marked as finished.
+  manualDone?: Set<number>;
+  // Catalog tables that apply; defaults to the program's default blocks.
+  blocks?: Set<number>;
+  // Most courses that may count for both programs (2 for a minor); null for no limit.
+  overlapCap?: number | null;
+};
+
+export function evaluateProgram(program: Program, facts: Record<string, CourseFact>, student: Map<string, CourseStatus>, { majorCodes = new Set<string>(), manualDone = new Set<number>(), blocks = defaultBlocks(program), overlapCap = MINOR_MAJOR_OVERLAP_COURSES }: EvaluateOptions = {}): ProgramProgress {
   const depth = makeDepth(facts, student);
   const optionDepth = (option: string[]) => Math.max(...option.map(depth));
-  const programList = new Set(programCodes(program));
+  const included = program.items.map((item, index) => ({ item, index })).filter(({ item }) => blocks.has(item.block));
+  const programList = new Set(included.flatMap(({ item }) => item.options.flat()));
   const listed = new Set([...programList, ...majorCodes]);
   // Courses an option would add that neither the minor nor the major lists.
   const extraCourses = (option: string[]) => {
@@ -135,9 +163,9 @@ export function evaluateProgram(program: Program, facts: Record<string, CourseFa
   };
   const used = new Set<string>();
   // Required courses claim the student's courses first, then lists with fewer choices.
-  const order = program.items.map((item, index) => ({ item, index }))
+  const order = [...included]
     .sort((a, b) => Number(a.item.kind === "choose") - Number(b.item.kind === "choose") || a.item.options.length - b.item.options.length || a.index - b.index);
-  const results: ItemProgress[] = new Array(program.items.length);
+  const byIndex = new Map<number, ItemProgress>();
   const creditsByStatus: Record<CourseStatus, number> = { done: 0, inProgress: 0, planned: 0 };
 
   for (const { item, index } of order) {
@@ -145,7 +173,7 @@ export function evaluateProgram(program: Program, facts: Record<string, CourseFa
       const done = manualDone.has(index);
       const credits = item.credits ?? DEFAULT_CREDITS;
       if (done) creditsByStatus.done += credits;
-      results[index] = { item, open: true, met: [], needed: item.count ?? Math.max(1, Math.round(credits / DEFAULT_CREDITS)), complete: done, remainingCredits: done ? 0 : credits, suggestions: [] };
+      byIndex.set(index, { item, index, open: true, met: [], needed: item.count ?? Math.max(1, Math.round(credits / DEFAULT_CREDITS)), complete: done, remainingCredits: done ? 0 : credits, suggestions: [] });
       continue;
     }
     const optionCredits = item.options.map((option) => creditsOf(facts, option));
@@ -176,8 +204,9 @@ export function evaluateProgram(program: Program, facts: Record<string, CourseFa
       .map((option) => ({ option, extra: extraCourses(option), steps: optionDepth(option) }))
       .sort((a, b) => a.extra - b.extra || a.steps - b.steps || Number(a.option.some((code) => majorCodes.has(code))) - Number(b.option.some((code) => majorCodes.has(code))) || creditsOf(facts, a.option) - creditsOf(facts, b.option))
       .map((entry) => entry.option);
-    results[index] = { item, open: false, met, needed, complete, remainingCredits, suggestions };
+    byIndex.set(index, { item, index, open: false, met, needed, complete, remainingCredits, suggestions });
   }
+  const results = included.map(({ index }) => byIndex.get(index)!);
 
   // The plan used for workload: every unfinished item filled with its easiest options.
   const planned = new Set<string>();
@@ -191,17 +220,23 @@ export function evaluateProgram(program: Program, facts: Record<string, CourseFa
   }
   const plannedAll = new Set([...planned, ...results.flatMap((result) => result.met.filter((entry) => entry.status === "planned").flatMap((entry) => entry.option))]);
   const hidden = new Set<string>();
-  const preferred = new Set([...plannedAll, ...program.items.flatMap((item) => item.options.flat()), ...majorCodes]);
+  const preferred = new Set([...plannedAll, ...programList, ...majorCodes]);
   plannedAll.forEach((code) => missingPrerequisites(code, facts, student, depth, preferred, hidden));
   const counted = new Set(results.flatMap((result) => result.met.flatMap((entry) => entry.option)));
-  const hiddenPrerequisites = [...hidden].filter((code) => !plannedAll.has(code) && !counted.has(code) && !program.items.some((item) => item.options.some((option) => option.includes(code)))).sort();
+  const hiddenPrerequisites = [...hidden].filter((code) => !plannedAll.has(code) && !counted.has(code) && !programList.has(code)).sort();
   const depthMap: Record<string, number> = {};
-  for (const code of new Set([...plannedAll, ...hidden, ...program.items.flatMap((item) => item.options.flat())])) depthMap[code] = depth(code);
+  for (const code of new Set([...plannedAll, ...hidden, ...programList])) depthMap[code] = depth(code);
 
   const overlap = [...counted].filter((code) => majorCodes.has(code)).sort();
-  const overlapExcess = Math.max(0, overlap.length - MINOR_MAJOR_OVERLAP_COURSES);
+  const overlapExcess = overlapCap === null ? 0 : Math.max(0, overlap.length - overlapCap);
+  const sharedRemainingCredits = creditsOf(facts, [...planned].filter((code) => majorCodes.has(code)));
+  const uniqueCredits = creditsOf(facts, [...new Set([...counted, ...planned])].filter((code) => !majorCodes.has(code)))
+    + results.reduce((sum, result) => sum + (result.open ? result.item.credits ?? DEFAULT_CREDITS : 0), 0);
+  const selectedTotals = program.blocks.filter((_block, index) => blocks.has(index)).map((block) => block.total);
+  const statedTotal = selectedTotals.length && selectedTotals.every((total) => total !== null) ? selectedTotals.reduce((sum, total) => sum! + total!, 0) : null;
   const listedCredits = results.reduce((sum, result) => sum + (result.item.kind === "course" ? result.item.credits ?? creditsOf(facts, result.item.options[0] ?? []) : result.item.credits ?? result.needed * DEFAULT_CREDITS), 0);
-  const remainingCredits = Math.round(results.reduce((sum, result) => sum + result.remainingCredits, 0) + overlapExcess * DEFAULT_CREDITS);
+  const unlistedCredits = statedTotal !== null && listedCredits < statedTotal - 2 ? statedTotal - listedCredits : 0;
+  const remainingCredits = Math.round(results.reduce((sum, result) => sum + result.remainingCredits, 0) + overlapExcess * DEFAULT_CREDITS + unlistedCredits);
 
   return {
     items: results,
@@ -211,7 +246,10 @@ export function evaluateProgram(program: Program, facts: Record<string, CourseFa
     creditsByStatus,
     overlap,
     overlapExcess,
-    partial: !program.items.length || results.some((result) => result.open) || (program.total !== null && listedCredits < program.total - 2),
+    sharedRemainingCredits,
+    uniqueCredits,
+    unlistedCredits,
+    partial: !results.length || results.some((result) => result.open) || (statedTotal !== null && listedCredits < statedTotal - 2),
     hiddenPrerequisites,
     hiddenPrerequisiteCredits: creditsOf(facts, hiddenPrerequisites),
     minSemesters: Math.max(0, ...[...plannedAll].map(depth)),

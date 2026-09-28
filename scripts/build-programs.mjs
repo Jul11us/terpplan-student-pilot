@@ -48,14 +48,48 @@ function choiceCount(label) {
 }
 
 const CHOICE_LABEL = /select|choose|one of|two of|three of|of the following|from the following|electives?\b|courses? from/i;
+// Wording that always starts a new list, even right after another one.
+const STRONG_CHOICE = /select|choose|one of|two of|three of|of the following|from the following/i;
 
-// Turns catalog course-list tables into requirement items:
+// Which catalog tables apply by default. A program often lists alternatives in separate tables under
+// headings ("Bachelor of Science", "Data Science Specialization", "Track 2"); the student picks those.
+const ALWAYS_BLOCK = /all speciali|all students|required of all|all tracks/i;
+const CHOICE_BLOCK = /track|speciali[sz]ation|concentration|option\b|bachelor of|\bB\.[AS]\.|degree|field|emphasis|suggested|sample|recommended/i;
+const CORE_BLOCK = /^$|required|core|prerequisite|requirements?:?$|foundation|first & second|prior study|benchmark|pre-professional|professional courses|elective|additional/i;
+
+function blockRole(title, kind) {
+  if (ALWAYS_BLOCK.test(title)) return "always";
+  if (CHOICE_BLOCK.test(title)) return "choice";
+  if (CORE_BLOCK.test(title)) return "always";
+  // Minors rarely offer alternatives; an unexplained heading in a major usually names one.
+  return kind === "minor" ? "always" : "choice";
+}
+
+// Splits the requirements tab into blocks, one per course-list table, titled by the heading above it.
+function parseBlocks(html, kind) {
+  const blocks = [];
+  const items = [];
+  let heading = "";
+  for (const match of html.matchAll(/<(h[2-5])[^>]*>([\s\S]*?)<\/\1>|<table class="sc_courselist"[\s\S]*?<\/table>/g)) {
+    if (match[1]) { heading = text(match[2]); continue; }
+    const parsed = parseTable(match[0]);
+    if (!parsed.items.length) continue;
+    const block = blocks.length;
+    blocks.push({ title: heading, role: blockRole(heading, kind), total: parsed.total });
+    items.push(...parsed.items.map((item) => ({ ...item, block })));
+  }
+  // With only alternatives (B.A. or B.S.), the first one is the default.
+  if (blocks.length && !blocks.some((block) => block.role === "always")) blocks[0].role = "default";
+  return { blocks, items };
+}
+
+// Turns one catalog course-list table into requirement items:
 //   course: one required course; any listed option (a bundle like "GEOL100 & GEOL110") satisfies it.
 //   choose: pick `count` options (or `credits` worth) from the list.
-function parseTables(html) {
+function parseTable(table) {
   const items = [];
   let total = null;
-  for (const table of html.match(/<table class="sc_courselist"[\s\S]*?<\/table>/g) ?? []) {
+  {
     let section = "";
     let group = null; // the choose item that indented rows are added to
     for (const [, rowClass, row] of table.matchAll(/<tr class="([^"]*)"[^>]*>([\s\S]*?)<\/tr>/g)) {
@@ -74,7 +108,7 @@ function parseTables(html) {
         const label = text(comment[1]);
         if (!label || /^or$/i.test(label)) continue;
         // A note inside a list that has not started yet ("A third course from the pairs above") keeps the list open.
-        if (group && !group.options.length && !/areaheader/.test(rowClass)) continue;
+        if (group && !group.options.length && hours === null && !/areaheader/.test(rowClass)) continue;
         // "Maximum 3 credits from the following" adds capped choices to the list above it.
         const previous = items.at(-1);
         if (/^(maximum|at most|up to)\b/i.test(label) && previous?.kind === "choose") {
@@ -82,13 +116,33 @@ function parseTables(html) {
           group.indented = false;
           continue;
         }
+        // Inside an open list, a heading without its own credits is a sub-heading of that list:
+        // "Sequence Two (9 credits)" names one alternative, "Lower Level Electives" or "Minimum 3 credits
+        // from ..." splits the pool of a list that already states its total.
+        const alternativeName = /^(sequence|option|pathway)\s+\w+/i.test(label);
+        const minimumNote = /^(minimum|at least)\b/i.test(label);
+        const plainHeading = !STRONG_CHOICE.test(label);
+        if (group && hours === null && (alternativeName || (group.options.length && (plainHeading || minimumNote)) || (minimumNote && group.credits))) {
+          section = label;
+          group.indented = false;
+          continue;
+        }
         const count = choiceCount(label);
+        const labelCredits = /(\d+)\s*(?:credits?|semester hours)/i.exec(label);
         if (hours !== null || count !== null || CHOICE_LABEL.test(label)) {
-          group = { kind: "choose", section, label, count, credits: hours, options: [] };
+          // "Minimum of 9 credits from the following" states its credits in the label.
+          const credits = hours ?? (labelCredits && /minimum|at least|from|select|choose/i.test(label) ? Number(labelCredits[1]) : null);
+          // "Select eight courses ...; must include:" is a parent of the lists that follow; its own rows are
+          // the named must-take courses, and the lists below already carry the rest of its credits.
+          const parent = /(must include|including):?$/i.test(label);
+          group = { kind: "choose", section, label, count: parent || (labelCredits && count === Number(labelCredits[1])) ? null : count, credits: parent ? null : credits, options: [], header: /areaheader/.test(rowClass) };
           items.push(group);
         } else {
           section = label;
-          group = null;
+          // A plain sub-heading inside a list ("Area 2: Information Processing" under "Select five
+          // courses from these areas") keeps the list open for the course rows below it.
+          // A credit heading ("Lower Level Requirements · 6") stays open over its sub-lists too.
+          if (!group?.options.length && !(group?.header && group.credits)) group = null;
         }
         continue;
       }
@@ -111,7 +165,7 @@ function parseTables(html) {
   }
   // A choice row without a course list ("3 credits of any LING 3xx course") stays as an open item when it
   // states its credits, so the remaining total is not understated; the student checks it off by hand.
-  return { items: items.filter((item) => item.options.length || (item.kind === "choose" && item.credits)).map((item) => { delete item.indented; return item; }), total };
+  return { items: items.filter((item) => item.options.length || (item.kind === "choose" && item.credits)).map((item) => { delete item.indented; delete item.header; return item; }), total };
 }
 
 function courseBlocks(html) {
@@ -154,24 +208,32 @@ async function main() {
     };
     const overviewHtml = tab("textcontainer");
     const region = tab("requirementstextcontainer") || overviewHtml;
-    const { items, total } = parseTables(region);
+    const { blocks, items } = parseBlocks(region, kind);
     const overview = text(overviewHtml.replace(/<table[\s\S]*?<\/table>/g, " "));
     const intro = text(/<p>([\s\S]*?)<\/p>/.exec(region)?.[1] ?? "");
     // Selective programs ask students to apply or meet entrance requirements first.
-    const applySentence = `${overview} ${intro}`.split(/(?<=\.)\s+/).find((sentence) => /\b(selective|apply|application|admitted|admission|limited enrollment|entrance requirements|gateway)\b/i.test(sentence));
+    // "Admission to the Major" is a heading on nearly every major page, so it is not a signal by itself.
+    const gate = /\b(is selective|selective admission|limited enrollment program|to apply(?= please|,|:| for (?:the|admission)| to the (?:minor|major|program))|apply (?:to|for) (?:the|this) (?:minor|major|program)|application (?:to the|for the|form)|admission requirements|admitted to the (?:minor|major|program)|entrance requirements|gateway requirements)\b/gi;
+    const applyText = `${overview} ${intro}`;
+    // "... is not a Limited Enrollment Program" says the opposite.
+    const gateMatch = [...applyText.matchAll(gate)].find((match) => !/\bnot (?:an? )?$/i.test(applyText.slice(Math.max(0, match.index - 12), match.index)));
+    // The sentence around the match; catalog text often lacks periods between headings.
+    const sentenceStart = gateMatch ? applyText.lastIndexOf(". ", gateMatch.index) + 2 : 0;
+    const snippetStart = Math.max(0, sentenceStart, (gateMatch?.index ?? 0) - 120);
+    const applySentence = gateMatch ? applyText.slice(snippetStart, gateMatch.index + 200).replace(snippetStart > sentenceStart ? /^\S*\s+/ : /^/, "").replace(/\s+\S*$/, "").trim() : null;
     programs.push({
       slug: url.replace(/\/$/, "").split("/").slice(-2).join("--").toLowerCase(),
       name, kind, url,
-      total, intro: intro.slice(0, 400) || null,
+      intro: intro.slice(0, 400) || null,
       apply: applySentence ? applySentence.slice(0, 300) : null,
-      items,
+      blocks, items,
     });
   }
 
   // Course facts for every listed course and, a few levels down, their prerequisites.
   const courses = {};
   const fetchedDepartments = new Set();
-  let wanted = new Set(programs.filter((program) => program.kind === "minor").flatMap((program) => program.items.flatMap((item) => item.options.flat())));
+  let wanted = new Set(programs.flatMap((program) => program.items.flatMap((item) => item.options.flat())));
   for (let round = 0; round < 4 && wanted.size; round++) {
     const departments = [...new Set([...wanted].map((code) => code.slice(0, 4)))].filter((department) => !fetchedDepartments.has(department));
     for (const department of departments) {
@@ -184,14 +246,14 @@ async function main() {
     wanted = next;
   }
 
-  // Keep only courses a minor can reach, to keep the snapshot small.
+  // Keep only courses a program can reach, to keep the snapshot small.
   const keep = new Set();
   const visit = (code) => {
     if (keep.has(code) || !courses[code]) return;
     keep.add(code);
     for (const group of courses[code].pg ?? []) group.forEach(visit);
   };
-  programs.filter((program) => program.kind === "minor").forEach((program) => program.items.forEach((item) => item.options.flat().forEach(visit)));
+  programs.forEach((program) => program.items.forEach((item) => item.options.flat().forEach(visit)));
   const snapshot = {
     source: CATALOG,
     builtAt: new Date().toISOString().slice(0, 10),
