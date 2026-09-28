@@ -8,6 +8,7 @@ import { extractDegreeAuditText } from "@/lib/degree-audit-pdf";
 import { GEN_ED_CATEGORIES } from "@/lib/gened-categories";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { compareAuditCandidates, compareAuditCandidatesByGpa, type AuditCandidate } from "@/lib/audit-recommendations";
+import { AUDIT_HANDOFF_KEY } from "@/lib/programs";
 
 type Language = "en" | "zh";
 type CandidateResponse = { candidates?: AuditCandidate[]; totalCandidates?: number; error?: string };
@@ -16,6 +17,7 @@ const copy = {
     pilot: "UMD · Student pilot", title: "Find what your audit says you still need.", intro: "Upload a uAchieve degree audit PDF. Review the extracted requirements, then explore courses offered this term.", home: "Back to planner", privacy: "Your PDF and extracted audit text stay in this browser. TerpPlan sends only the selected requirement's course codes or Gen Ed category to look up classes. Nothing from this audit is saved to your account.",
     upload: "Choose degree audit PDF", size: "PDF · up to 12 MB · up to 60 pages", reading: "Reading PDF in your browser…", badFile: "Choose a PDF under 12 MB and 60 pages.", badPdf: "This PDF could not be read. Export a text-based audit PDF from uAchieve and try again.", noText: "No readable text was found. A scanned PDF needs text recognition before it can be used here.", noNeeds: "No unmet requirements were found. Check that this is a uAchieve degree audit PDF.", complete: "This audit says all identified requirements are met.", unknown: "The audit format was not fully recognized. Review every result against your official audit.",
     chooseFile: "Choose PDF", noFile: "No file chosen",
+    minorLink: "Thinking about a minor? See how your courses count toward one →",
     genEdMissing: (codes: string) => `Your audit still needs these Gen Ed categories: ${codes}`, genEdOpen: "Find courses for them together →",
     genEdOpenOne: "Find this category in course search (checks your schedule) →",
     genEdHint: "Opens Gen Ed search with them selected. It checks time conflicts with your plan and lists courses that count for several first. Only the category codes are passed along.",
@@ -30,6 +32,7 @@ const copy = {
     pilot: "马里兰大学 · 学生试用", title: "看看学位审计还缺哪些课。", intro: "上传 uAchieve 的 degree audit PDF，先核对识别出的未完成要求，再查看本学期开设的课程。", home: "返回排课", privacy: "PDF 和解析出的审计文字只在你的浏览器里处理。TerpPlan 只发送你选中的课程编号或 Gen Ed 类别来查询班次；这些审计信息不会保存到账号。",
     upload: "选择 degree audit PDF", size: "PDF · 不超过 12 MB · 不超过 60 页", reading: "正在浏览器中读取 PDF…", badFile: "请选择不超过 12 MB、60 页的 PDF。", badPdf: "无法读取这个 PDF。请从 uAchieve 导出含文字的审计 PDF 后重试。", noText: "没有找到可读取的文字。扫描版 PDF 需要先做文字识别。", noNeeds: "没有识别出未完成要求。请确认上传的是 uAchieve 的 degree audit PDF。", complete: "这份审计显示已满足所有列出的要求。", unknown: "未完全识别这份审计的格式。请对照官方报告逐项核对。",
     chooseFile: "选择 PDF", noFile: "未选择文件",
+    minorLink: "想修辅修？看看你的课能抵多少 →",
     genEdMissing: (codes: string) => `审计显示还缺这些 Gen Ed：${codes}`, genEdOpen: "到找课页一起查找 →",
     genEdOpenOne: "到找课页查找这个类别（会检查课表冲突）→",
     genEdHint: "会打开 Gen Ed 查找并选好这些类别，检查和你课表的时间冲突，能同时抵多项要求的课排在前面。只会带上类别代码。",
@@ -184,6 +187,13 @@ export default function AuditPage() {
     finally { if (requestId === gradeRequest.current) setLoadingGrades(false); }
   }
 
+  // Hands only the course lists to the minor page, in this tab's sessionStorage.
+  function openMinor() {
+    if (!audit) return;
+    try { window.sessionStorage.setItem(AUDIT_HANDOFF_KEY, JSON.stringify({ completed: audit.completedCourseIds, inProgress: audit.inProgressCourseIds })); } catch { /* storage unavailable */ }
+    router.push("/minor");
+  }
+
   function addToPlan(candidate: AuditCandidate) {
     const saved = readSavedState();
     const current = saved.plans[term] ?? [];
@@ -221,6 +231,7 @@ export default function AuditPage() {
               <Link href={`/?gened=${missingGenEds.join(",")}`} className="mt-2 inline-block rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c]">{t.genEdOpen}</Link>
               <p className="mt-2 text-[11px] leading-5 text-[#68716e]">{t.genEdHint}</p>
             </div>}
+            <button type="button" onClick={openMinor} className="mt-4 block text-left text-xs font-medium text-[#536d64] underline underline-offset-2 hover:text-[#273c38]">{t.minorLink}</button>
             <p className="mt-4 text-xs font-medium text-[#48534f]">{t.summary(actionable.length, others.length, audit.inProgressCourseIds.length)}</p>
             {actionable.length > 0 ? <>
               <h3 className="mt-4 text-xs font-semibold uppercase tracking-[.1em] text-[#9a5040]">{t.actionable}</h3>

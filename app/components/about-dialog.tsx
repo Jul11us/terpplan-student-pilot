@@ -23,6 +23,7 @@ const copy = {
     privacy: [
       "Your plan and schedule preferences are saved only in this browser.",
       "Your degree audit PDF is read only in your browser; the PDF and extracted audit text are not uploaded or saved.",
+      "The minor explorer compares your courses with the catalog inside your browser; your course list is not sent to TerpPlan.",
       "If you share a schedule, its link contains the term and section numbers, and anyone with the link can view that schedule. No name, email, or seat watches are included.",
       "Your email is used to send sign-in codes for seat watches. It is stored only if you turn on seat emails, and deleted when you turn them off.",
       "With seat emails on, TerpPlan checks your watched sections about every 10 minutes and emails you once each time a full section opens. Every email has a link to stop them.",
@@ -48,6 +49,7 @@ const copy = {
     privacy: [
       "你的排课计划和偏好只保存在当前浏览器里。",
       "学位审计 PDF 只在你的浏览器里读取；PDF 和解析出的审计文字不会上传或保存。",
+      "辅修评估在你的浏览器里把你的课程和 catalog 对比，你的课程列表不会发送给 TerpPlan。",
       "分享方案时，链接里会包含学期和班号，拿到链接的人都能查看这个方案；链接里不含姓名、邮箱或余位关注信息。",
       "邮箱用于发送余位关注的登录验证码；只有开启邮件提醒时才会保存，关闭提醒后即删除。",
       "开启邮件提醒后，TerpPlan 约每 10 分钟检查一次你关注的班次，班次从满员变为有空位时每次发一封邮件，每封邮件都附有停止提醒的链接。",
