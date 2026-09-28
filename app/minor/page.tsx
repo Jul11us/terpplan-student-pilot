@@ -14,7 +14,7 @@ type Mode = "minor" | "major";
 type AuditCourses = { completed: string[]; inProgress: string[] };
 
 // Program responses are cached by the browser for an hour; bump this when their shape changes.
-const DATA_VERSION = 2;
+const DATA_VERSION = 3;
 // Choices on this page are remembered per browser.
 const PREFS_KEY = "terpplan:minor";
 
@@ -62,7 +62,9 @@ const copy = {
     dualTitle: "Two bachelor's degrees instead?", dualText: (n: number) => `A dual degree needs at least 150 credits in total and at least 18 credits not used for the other degree. This plan has about ${n} credits your current major does not list.`,
     dualOk: "That meets the 18-credit part.", dualShort: "That is short of 18, so you would need more courses that only count for this degree.",
     overlapNote: "A course is marked when your major's catalog page lists it anywhere, including electives, so this shows possible overlap.",
-    applyTitle: "Selective or needs an application", partialTitle: "Some rules are written only in text",
+    applyTitle: "Selective or needs an application", applyLink: "See the application requirements",
+    gatewayNote: "Selective programs usually set gateway courses with a minimum grade (often B- or higher) and a minimum GPA. This page only checks whether a course is finished, not the grade, so confirm the gateway rules on the program's page.",
+    partialTitle: "Some rules are written only in text",
     partial: "The catalog describes part of this program in prose (for example “any 300-level course in…”). Those parts are listed below as items to check yourself or counted as credits described only in text, so treat the totals as approximate.",
     noTable: "The catalog does not list this program's courses in a table. Read its requirements on the catalog page.",
     requirements: "Requirements", section: "", done: "Done", inProgress: "In progress", planned: "Planned", notStarted: "Not started", openItem: "Check yourself",
@@ -118,7 +120,9 @@ const copy = {
     dualTitle: "想拿两个学士学位？", dualText: (n: number) => `双学位要求总共至少 150 学分，并且至少 18 学分不能用于另一个学位。这个方案里约有 ${n} 学分是你现在的主修没有列出的。`,
     dualOk: "满足 18 学分这一条。", dualShort: "不到 18 学分，还需要多修只算这个学位的课。",
     overlapNote: "只要主修的 catalog 页面列出了这门课（包括选修列表），就会标出来，所以这里显示的是“可能重叠”。",
-    applyTitle: "需要申请或有门槛", partialTitle: "有些要求只写在文字里",
+    applyTitle: "需要申请或有门槛", applyLink: "查看申请要求",
+    gatewayNote: "有门槛的项目通常规定 gateway 课程的最低成绩（常见是 B- 或更高）和最低 GPA。这里只检查课程是否修完，不检查成绩，请到项目页面核对 gateway 要求。",
+    partialTitle: "有些要求只写在文字里",
     partial: "catalog 里这个项目的部分要求是文字描述（例如“任选一门 300 级的某系课程”）。这些部分在下面列为需要你自己核对的项目，或按“只用文字描述的学分”计入，所以总数只是近似值。",
     noTable: "catalog 没有用表格列出这个项目的课程，请到 catalog 页面阅读要求。",
     requirements: "要求明细", section: "", done: "已完成", inProgress: "在修", planned: "计划中", notStarted: "未开始", openItem: "需自行核对",
@@ -443,7 +447,7 @@ export default function ProgramExplorerPage() {
           <a href={current.program.url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-[#a34a39] hover:underline">{t.catalog} ↗</a>
         </div>
         {current.program.intro && <p className="mt-2 text-xs leading-5 text-[#68716e]">{current.program.intro}</p>}
-        {current.program.apply && <div className="mt-4 rounded-xl border border-[#ecd9a8] bg-[#fff8e8] p-3 text-xs leading-5 text-[#745424]"><p className="font-semibold">{t.applyTitle}</p><p className="mt-1">“{current.program.apply}”</p></div>}
+        {current.program.apply && <div className="mt-4 rounded-xl border border-[#ecd9a8] bg-[#fff8e8] p-3 text-xs leading-5 text-[#745424]"><p className="font-semibold">{t.applyTitle}</p><p className="mt-1">“{current.program.apply}”</p><p className="mt-1">{t.gatewayNote}</p>{current.program.applyUrl && <a href={current.program.applyUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block font-medium text-[#8c453b] underline underline-offset-2">{t.applyLink} ↗</a>}</div>}
         {current.program.blocks.length > 1 && <div className="mt-4 rounded-xl border border-[#e3e0d8] bg-white p-3">
           <p className="text-xs font-semibold text-[#48534f]">{t.parts}</p>
           <p className="mt-0.5 text-[11px] text-[#858d89]">{t.partsHint}</p>

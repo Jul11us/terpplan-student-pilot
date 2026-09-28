@@ -24,6 +24,8 @@ export type Program = {
   url: string;
   intro: string | null;
   apply: string | null;
+  // The page the catalog points to for how to apply, when it gives one.
+  applyUrl?: string | null;
   blocks: ProgramBlock[];
   items: ProgramItem[];
 };

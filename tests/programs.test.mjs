@@ -86,3 +86,18 @@ test("a second major has no overlap cap and reports shared and unique credits", 
   assert.equal(result.sharedRemainingCredits, 3);
   assert.equal(result.uniqueCredits, 0);
 });
+
+test("reads catalog prerequisite wording", async () => {
+  const { prerequisiteGroups } = await import("../scripts/prerequisites.mjs");
+  // Placement can replace MATH115, and a course never needs itself.
+  assert.deepEqual(prerequisiteGroups("Minimum grade of C- in MATH115 ; or must have math eligibility of MATH140 ; and math eligibility is based on the Math Placement Test.", "MATH140"), []);
+  assert.deepEqual(prerequisiteGroups("Must have math eligibility of MATH113 or higher; and math eligibility is based on the Math Placement Exam or the successful completion of MATH 003 with appropriate eligibility.", "MATH113"), []);
+  assert.deepEqual(prerequisiteGroups("Must have math eligibility of MATH115 or higher; and math eligibility is based on the Math Placement Exam. Or MATH113 .", "MATH115"), []);
+  // An AP or department exam is an exception; the course stays required, and "and" adds a group.
+  assert.deepEqual(prerequisiteGroups("Minimum grade of C- in CMSC131 ; or must have earned a score of 5 on the A Java AP exam; or must have earned a satisfactory score on the departmental placement exam; and minimum grade of C- in MATH140 .", "CMSC132"),
+    [["CMSC131"], ["MATH140"]]);
+  assert.deepEqual(prerequisiteGroups("Minimum grade of C- in CMSC320 , CMSC330 , and CMSC351 ; and 1 course with a minimum grade of C- from ( MATH240 , MATH341 , MATH461 ).", "CMSC422"),
+    [["CMSC320"], ["CMSC330"], ["CMSC351"], ["MATH240", "MATH341", "MATH461"]]);
+  // "; or C" joins the single choice before it.
+  assert.deepEqual(prerequisiteGroups("BSCI170 ; or BSCI171 .", "BSCI330"), [["BSCI170", "BSCI171"]]);
+});

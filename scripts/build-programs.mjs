@@ -3,6 +3,7 @@
 // Run: node scripts/build-programs.mjs            (set PROGRAM_HTML_CACHE=<dir> to reuse downloaded pages)
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { prerequisiteGroups } from "./prerequisites.mjs";
 
 const CATALOG = "https://academiccatalog.umd.edu";
 const cacheDir = process.env.PROGRAM_HTML_CACHE;
@@ -176,14 +177,7 @@ function courseBlocks(html) {
     if (!head) continue;
     const prereqHtml = /<strong>\s*Prerequisite:?\s*<\/strong>([\s\S]*?)<\/p>/i.exec(block)?.[1] ?? "";
     const prereqText = text(prereqHtml);
-    // Read as AND of OR-groups: "A, B, and C" needs all three; "1 course from (A, B)" or "A or B" needs one.
-    const groups = prereqText
-      .split(/;|\band\b(?![^()]*\))/i)
-      .flatMap((part) => {
-        const codes = [...new Set(Array.from(part.matchAll(/\b([A-Z]{4}\d{3}[A-Z]?)\b/g), (match) => match[1]))];
-        return /\bor\b|\bfrom\b|\bone of\b|\b1 course\b/i.test(part) ? [codes] : codes.map((code) => [code]);
-      })
-      .filter((group) => group.length);
+    const groups = prerequisiteGroups(prereqText, head[1]);
     courses[head[1]] = { n: head[2], c: Number(head[3]), ...(prereqText ? { p: prereqText.slice(0, 240), pg: groups } : {}) };
   }
   return courses;
@@ -220,12 +214,17 @@ async function main() {
     // The sentence around the match; catalog text often lacks periods between headings.
     const sentenceStart = gateMatch ? applyText.lastIndexOf(". ", gateMatch.index) + 2 : 0;
     const snippetStart = Math.max(0, sentenceStart, (gateMatch?.index ?? 0) - 120);
+    // The catalog often says "information on how to apply can be found at <link>"; keep that link.
+    const gateTest = new RegExp(gate.source, "i");
+    const gateParagraph = gateMatch ? (`${overviewHtml} ${region}`.match(/<p[\s>][\s\S]*?<\/p>/g) ?? []).find((paragraph) => gateTest.test(text(paragraph))) : null;
+    const applyUrl = gateParagraph ? /href="(https?:\/\/[^"]+)"/.exec(gateParagraph)?.[1] ?? null : null;
     const applySentence = gateMatch ? applyText.slice(snippetStart, gateMatch.index + 200).replace(snippetStart > sentenceStart ? /^\S*\s+/ : /^/, "").replace(/\s+\S*$/, "").trim() : null;
     programs.push({
       slug: url.replace(/\/$/, "").split("/").slice(-2).join("--").toLowerCase(),
       name, kind, url,
       intro: intro.slice(0, 400) || null,
       apply: applySentence ? applySentence.slice(0, 300) : null,
+      applyUrl,
       blocks, items,
     });
   }
