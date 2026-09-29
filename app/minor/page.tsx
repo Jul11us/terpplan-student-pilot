@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { parseCourseIds, parseDegreeAudit } from "@/lib/degree-audit";
 import { extractDegreeAuditText } from "@/lib/degree-audit-pdf";
-import { AUDIT_HANDOFF_KEY, defaultBlocks, evaluateProgram, MINOR_MAJOR_OVERLAP_COURSES, type CourseFact, type CourseStatus, type ItemProgress, type Program } from "@/lib/programs";
+import { AUDIT_HANDOFF_KEY, defaultBlocks, evaluateProgram, MINOR_MAJOR_OVERLAP_COURSES, unmetPrerequisites, type CourseFact, type CourseStatus, type ItemProgress, type Program } from "@/lib/programs";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 
 type Language = "en" | "zh";
@@ -14,7 +14,7 @@ type Mode = "minor" | "major";
 type AuditCourses = { completed: string[]; inProgress: string[] };
 
 // Program responses are cached by the browser for an hour; bump this when their shape changes.
-const DATA_VERSION = 3;
+const DATA_VERSION = 4;
 // Choices on this page are remembered per browser.
 const PREFS_KEY = "terpplan:minor";
 
@@ -69,7 +69,7 @@ const copy = {
     noTable: "The catalog does not list this program's courses in a table. Read its requirements on the catalog page.",
     requirements: "Requirements", section: "", done: "Done", inProgress: "In progress", planned: "Planned", notStarted: "Not started", openItem: "Check yourself",
     progress: (met: number, needed: number) => `${met} of ${needed}`,
-    creditsItem: (n: number) => `${n} cr`, readyNow: "Prerequisites met", needs: "Needs", inMajor: "In your major", showAll: (n: number) => `Show all ${n} options`, showFewer: "Show fewer",
+    creditsItem: (n: number) => `${n} cr`, readyNow: "Prerequisites met", needs: "Needs", orHigher: " or higher", sameTerm: " (can be same term)", pickOf: (k: number) => `${k} of`, inMajor: "In your major", showAll: (n: number) => `Show all ${n} options`, showFewer: "Show fewer",
     markDone: "I have finished this", options: "Options, easiest first",
     add: "Add to plan", added: "In plan", full: "Plan full", testudo: "Testudo",
     hidden: "Take these first (they do not count toward this program)",
@@ -127,7 +127,7 @@ const copy = {
     noTable: "catalog 没有用表格列出这个项目的课程，请到 catalog 页面阅读要求。",
     requirements: "要求明细", section: "", done: "已完成", inProgress: "在修", planned: "计划中", notStarted: "未开始", openItem: "需自行核对",
     progress: (met: number, needed: number) => `${met} / ${needed}`,
-    creditsItem: (n: number) => `${n} 学分`, readyNow: "先修已满足", needs: "需要先修", inMajor: "主修也列了", showAll: (n: number) => `显示全部 ${n} 个选项`, showFewer: "收起",
+    creditsItem: (n: number) => `${n} 学分`, readyNow: "先修已满足", needs: "需要先修", orHigher: " 或更高", sameTerm: "（可同学期修）", pickOf: (k: number) => `任选 ${k} 门：`, inMajor: "主修也列了", showAll: (n: number) => `显示全部 ${n} 个选项`, showFewer: "收起",
     markDone: "这一项我已经完成", options: "可选课程（按难易排序）",
     add: "加入排课", added: "已在排课中", full: "排课已满", testudo: "Testudo",
     hidden: "需要先修的课（不算进这个项目）",
@@ -332,7 +332,7 @@ export default function ProgramExplorerPage() {
     setBlockChoice((value) => ({ ...value, [current.program.slug]: [...next] }));
   };
   const facts = current?.courses ?? {};
-  const unmetPrereqs = (code: string) => (facts[code]?.pg ?? []).filter((group) => !group.some((alt) => student.has(alt))).map((group) => group.slice(0, 3).join(" / "));
+  const unmetPrereqs = (code: string) => unmetPrerequisites(facts[code], student, { orHigher: t.orHigher, sameTerm: t.sameTerm, of: t.pickOf });
 
   const courseRow = (code: string, statusLabel?: string) => {
     const fact = facts[code];

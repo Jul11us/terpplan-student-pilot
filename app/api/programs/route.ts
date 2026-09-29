@@ -1,5 +1,5 @@
 import snapshot from "@/data/umd-programs.json";
-import { programCodes, type CourseFact, type Program } from "@/lib/programs";
+import { prerequisiteCodes, programCodes, type CourseFact, type Program } from "@/lib/programs";
 
 const data = snapshot as unknown as { source: string; builtAt: string; programs: Program[]; courses: Record<string, CourseFact> };
 const CACHE = { "cache-control": "public, max-age=3600" };
@@ -23,7 +23,7 @@ export function GET(request: Request) {
     const fact = data.courses[code];
     if (!fact || courses[code]) return;
     courses[code] = fact;
-    fact.pg?.forEach((group) => group.forEach(visit));
+    prerequisiteCodes(fact.pr).forEach(visit);
   };
   programCodes(program).forEach(visit);
   return Response.json({ builtAt: data.builtAt, program, courses }, { headers: CACHE });

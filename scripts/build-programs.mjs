@@ -3,7 +3,7 @@
 // Run: node scripts/build-programs.mjs            (set PROGRAM_HTML_CACHE=<dir> to reuse downloaded pages)
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { prerequisiteGroups } from "./prerequisites.mjs";
+import { prerequisiteTree, treeCodes } from "./prerequisites.mjs";
 
 const CATALOG = "https://academiccatalog.umd.edu";
 const cacheDir = process.env.PROGRAM_HTML_CACHE;
@@ -177,8 +177,8 @@ function courseBlocks(html) {
     if (!head) continue;
     const prereqHtml = /<strong>\s*Prerequisite:?\s*<\/strong>([\s\S]*?)<\/p>/i.exec(block)?.[1] ?? "";
     const prereqText = text(prereqHtml);
-    const groups = prerequisiteGroups(prereqText, head[1]);
-    courses[head[1]] = { n: head[2], c: Number(head[3]), ...(prereqText ? { p: prereqText.slice(0, 240), pg: groups } : {}) };
+    const tree = prerequisiteTree(prereqText, head[1]);
+    courses[head[1]] = { n: head[2], c: Number(head[3]), ...(prereqText ? { p: prereqText.slice(0, 240), ...(tree ? { pr: tree } : {}) } : {}) };
   }
   return courses;
 }
@@ -241,7 +241,7 @@ async function main() {
       catch (error) { console.warn(String(error)); }
     }
     const next = new Set();
-    for (const code of wanted) for (const group of courses[code]?.pg ?? []) for (const prereq of group) if (!courses[prereq]) next.add(prereq);
+    for (const code of wanted) for (const prereq of treeCodes(courses[code]?.pr ?? null)) if (!courses[prereq]) next.add(prereq);
     wanted = next;
   }
 
@@ -250,7 +250,7 @@ async function main() {
   const visit = (code) => {
     if (keep.has(code) || !courses[code]) return;
     keep.add(code);
-    for (const group of courses[code].pg ?? []) group.forEach(visit);
+    treeCodes(courses[code].pr ?? null).forEach(visit);
   };
   programs.forEach((program) => program.items.forEach((item) => item.options.flat().forEach(visit)));
   const snapshot = {

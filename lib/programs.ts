@@ -32,8 +32,12 @@ export type Program = {
 
 export const defaultBlocks = (program: Program) => new Set(program.blocks.flatMap((block, index) => block.role === "choice" ? [] : [index]));
 
-// n: title, c: credits, p: prerequisite text, pg: prerequisites as AND of OR-groups.
-export type CourseFact = { n: string; c: number; p?: string; pg?: string[][] };
+// Prerequisites as a logic tree (built by scripts/prerequisites.mjs):
+//   "CMSC131" finish first; "~MATH140" may share the semester; "MATH113+" that course or a higher one
+//   in the same subject; ["&", ...] all; ["|", ...] any one; [k, ...] at least k of them.
+export type PrereqNode = string | ["&" | "|", ...PrereqNode[]] | [number, ...PrereqNode[]];
+// n: title, c: credits, p: prerequisite text (shortened), pr: prerequisite tree.
+export type CourseFact = { n: string; c: number; p?: string; pr?: PrereqNode };
 export type CourseStatus = "done" | "inProgress" | "planned";
 
 // The audit page hands its course lists to the minor page through sessionStorage (this tab only).
@@ -96,10 +100,54 @@ function optionStatus(option: string[], student: Map<string, CourseStatus>, used
   return worst;
 }
 
+type Leaf = { code: string; concurrent: boolean; orHigher: boolean };
+const leafOf = (node: string): Leaf => ({ code: node.replace(/^~/, "").replace(/\+$/, ""), concurrent: node.startsWith("~"), orHigher: node.endsWith("+") });
+const courseNumber = (code: string) => Number(code.slice(4, 7));
+
+// Whether the student has a leaf. "MATH113+" also counts any higher-numbered MATH course.
+function hasLeaf(leaf: Leaf, student: Map<string, CourseStatus>, finishedOnly: boolean) {
+  const counts = (status: CourseStatus | undefined) => status !== undefined && (!finishedOnly || status !== "planned");
+  if (counts(student.get(leaf.code))) return true;
+  if (!leaf.orHigher) return false;
+  for (const [code, status] of student) {
+    if (code.slice(0, 4) === leaf.code.slice(0, 4) && courseNumber(code) >= courseNumber(leaf.code) && counts(status)) return true;
+  }
+  return false;
+}
+
+// Whether a requirement is met; finishedOnly ignores planned courses.
+export function prerequisiteMet(node: PrereqNode, student: Map<string, CourseStatus>, finishedOnly = false): boolean {
+  if (typeof node === "string") return hasLeaf(leafOf(node), student, finishedOnly);
+  const [kind, ...children] = node;
+  const met = children.filter((child) => prerequisiteMet(child, student, finishedOnly)).length;
+  return kind === "&" ? met === children.length : kind === "|" ? met > 0 : met >= kind;
+}
+
+const nodeLeaves = (node: PrereqNode): Leaf[] => typeof node === "string" ? [leafOf(node)] : node.slice(1).flatMap((child) => nodeLeaves(child as PrereqNode));
+
+// Every course a prerequisite tree names.
+export const prerequisiteCodes = (node: PrereqNode | undefined) => node === undefined ? [] : [...new Set(nodeLeaves(node).map((leaf) => leaf.code))];
+
 // Semesters until a course can be finished: 0 when done or in progress, 1 when its prerequisites are met.
 function makeDepth(facts: Record<string, CourseFact>, student: Map<string, CourseStatus>) {
   const memo = new Map<string, number>();
   const visiting = new Set<string>();
+  // Semesters before a requirement is met (a course that may share the semester counts one less).
+  const requirementDepth = (node: PrereqNode): number => {
+    if (prerequisiteMet(node, student, true)) return 0;
+    if (typeof node === "string") {
+      const leaf = leafOf(node);
+      const value = depth(leaf.code);
+      return leaf.concurrent ? value - 1 : value;
+    }
+    const [kind, ...rest] = node;
+    const children = rest as PrereqNode[];
+    if (kind === "&") return Math.max(0, ...children.map(requirementDepth).filter(Number.isFinite));
+    // A choice: an alternative without catalog facts would look deceptively easy, so known ones decide.
+    const known = children.filter((child) => nodeLeaves(child).every((leaf) => facts[leaf.code]));
+    const values = (known.length ? known : children).map(requirementDepth).sort((a, b) => a - b);
+    return kind === "|" ? values[0] ?? 0 : values[Math.min(kind, values.length) - 1] ?? 0;
+  };
   const depth = (code: string): number => {
     const status = student.get(code);
     if (status === "done" || status === "inProgress") return 0;
@@ -108,36 +156,68 @@ function makeDepth(facts: Record<string, CourseFact>, student: Map<string, Cours
     // Catalog prerequisites can loop (CMSC412 and CMSC435 each accept the other); a loop is never the easy path.
     if (visiting.has(code)) return Number.POSITIVE_INFINITY;
     visiting.add(code);
-    let before = 0;
-    for (const group of facts[code]?.pg ?? []) {
-      if (group.some((alt) => student.get(alt) === "done" || student.get(alt) === "inProgress")) continue;
-      // An alternative without catalog facts would look deceptively easy, so known ones decide.
-      const known = group.filter((alt) => facts[alt]);
-      const shallowest = Math.min(...(known.length ? known : group).map(depth));
-      if (Number.isFinite(shallowest)) before = Math.max(before, shallowest);
-    }
+    const requirement = facts[code]?.pr;
+    const before = requirement ? requirementDepth(requirement) : 0;
     visiting.delete(code);
-    const value = before + 1;
+    const value = (Number.isFinite(before) ? before : 0) + 1;
     memo.set(code, value);
     return value;
   };
-  return depth;
+  return { depth, requirementDepth };
 }
 
-// Prerequisites (taking the shallowest alternative) that a course still needs, recursively.
+// Courses (taking the easiest alternative) that a course still needs first, recursively.
 // Alternatives the student already plans for, or that count toward the program, are picked first;
-// then courses whose own prerequisites are known, since an unknown course would look deceptively easy.
-function missingPrerequisites(code: string, facts: Record<string, CourseFact>, student: Map<string, CourseStatus>, depth: (code: string) => number, preferred: Set<string>, into: Set<string>, seen = new Set<string>()) {
+// then ones whose own prerequisites are known, since an unknown course would look deceptively easy.
+function missingPrerequisites(code: string, facts: Record<string, CourseFact>, student: Map<string, CourseStatus>, measure: ReturnType<typeof makeDepth>, preferred: Set<string>, into: Set<string>, seen = new Set<string>()) {
   if (seen.has(code)) return;
   seen.add(code);
-  for (const group of facts[code]?.pg ?? []) {
-    if (group.some((alt) => student.has(alt))) continue;
+  const walk = (node: PrereqNode) => {
+    if (prerequisiteMet(node, student)) return;
+    if (typeof node === "string") {
+      const { code: needed } = leafOf(node);
+      into.add(needed);
+      missingPrerequisites(needed, facts, student, measure, preferred, into, seen);
+      return;
+    }
+    const [kind, ...rest] = node;
+    const children = rest as PrereqNode[];
+    if (kind === "&") { children.forEach(walk); return; }
+    const score = (child: PrereqNode) => {
+      const leaves = nodeLeaves(child);
+      return [Number(!leaves.some((leaf) => preferred.has(leaf.code))), Number(!leaves.every((leaf) => facts[leaf.code])), measure.requirementDepth(child), leaves.length];
+    };
     // Ties keep the catalog's order, which usually lists the standard course first.
-    const pick = [...group].sort((a, b) => Number(preferred.has(b)) - Number(preferred.has(a)) || Number(Boolean(facts[b])) - Number(Boolean(facts[a])) || depth(a) - depth(b))[0];
-    if (!pick) continue;
-    into.add(pick);
-    missingPrerequisites(pick, facts, student, depth, preferred, into, seen);
-  }
+    const compare = (a: { order: number; score: number[] }, b: { order: number; score: number[] }) => {
+      const index = a.score.findIndex((value, position) => value !== b.score[position]);
+      return index === -1 ? a.order - b.order : a.score[index] - b.score[index];
+    };
+    const ranked = children.filter((child) => !prerequisiteMet(child, student))
+      .map((child, order) => ({ child, order, score: score(child) }))
+      .sort(compare);
+    const still = kind === "|" ? 1 : kind - children.filter((child) => prerequisiteMet(child, student)).length;
+    ranked.slice(0, Math.max(0, still)).forEach(({ child }) => walk(child));
+  };
+  const requirement = facts[code]?.pr;
+  if (requirement) walk(requirement);
+}
+
+// Short text for what a course still needs, one entry per unmet part: "CMSC250", "MATH240 / MATH341",
+// "2 of CMSC330 / CMSC351 / ENEE324". Labels come from the page's language.
+export function unmetPrerequisites(fact: CourseFact | undefined, student: Map<string, CourseStatus>, labels: { orHigher: string; sameTerm: string; of: (k: number) => string }): string[] {
+  if (!fact?.pr) return [];
+  const describe = (node: PrereqNode): string => {
+    if (typeof node === "string") {
+      const leaf = leafOf(node);
+      return `${leaf.code}${leaf.orHigher ? labels.orHigher : ""}${leaf.concurrent ? labels.sameTerm : ""}`;
+    }
+    const [kind, ...rest] = node;
+    const parts = (rest as PrereqNode[]).map((child) => typeof child === "string" ? describe(child) : `(${describe(child)})`);
+    const shown = parts.length > 4 ? [...parts.slice(0, 4), "…"] : parts;
+    return kind === "&" ? shown.join(" + ") : kind === "|" ? shown.join(" / ") : `${labels.of(kind)} ${shown.join(" / ")}`;
+  };
+  const top = typeof fact.pr !== "string" && fact.pr[0] === "&" ? fact.pr.slice(1) as PrereqNode[] : [fact.pr];
+  return top.filter((node) => !prerequisiteMet(node, student)).map(describe);
 }
 
 type EvaluateOptions = {
@@ -152,7 +232,8 @@ type EvaluateOptions = {
 };
 
 export function evaluateProgram(program: Program, facts: Record<string, CourseFact>, student: Map<string, CourseStatus>, { majorCodes = new Set<string>(), manualDone = new Set<number>(), blocks = defaultBlocks(program), overlapCap = MINOR_MAJOR_OVERLAP_COURSES }: EvaluateOptions = {}): ProgramProgress {
-  const depth = makeDepth(facts, student);
+  const measure = makeDepth(facts, student);
+  const { depth } = measure;
   const optionDepth = (option: string[]) => Math.max(...option.map(depth));
   const included = program.items.map((item, index) => ({ item, index })).filter(({ item }) => blocks.has(item.block));
   const programList = new Set(included.flatMap(({ item }) => item.options.flat()));
@@ -160,7 +241,7 @@ export function evaluateProgram(program: Program, facts: Record<string, CourseFa
   // Courses an option would add that neither the minor nor the major lists.
   const extraCourses = (option: string[]) => {
     const needed = new Set<string>();
-    option.forEach((code) => missingPrerequisites(code, facts, student, depth, listed, needed));
+    option.forEach((code) => missingPrerequisites(code, facts, student, measure, listed, needed));
     return [...needed].filter((code) => !listed.has(code)).length;
   };
   const used = new Set<string>();
@@ -223,7 +304,7 @@ export function evaluateProgram(program: Program, facts: Record<string, CourseFa
   const plannedAll = new Set([...planned, ...results.flatMap((result) => result.met.filter((entry) => entry.status === "planned").flatMap((entry) => entry.option))]);
   const hidden = new Set<string>();
   const preferred = new Set([...plannedAll, ...programList, ...majorCodes]);
-  plannedAll.forEach((code) => missingPrerequisites(code, facts, student, depth, preferred, hidden));
+  plannedAll.forEach((code) => missingPrerequisites(code, facts, student, measure, preferred, hidden));
   const counted = new Set(results.flatMap((result) => result.met.flatMap((entry) => entry.option)));
   const hiddenPrerequisites = [...hidden].filter((code) => !plannedAll.has(code) && !counted.has(code) && !programList.has(code)).sort();
   const depthMap: Record<string, number> = {};

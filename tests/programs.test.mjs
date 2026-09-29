@@ -4,8 +4,8 @@ import { evaluateProgram } from "../lib/programs.ts";
 
 const facts = {
   AAAA100: { n: "Intro", c: 3 },
-  AAAA200: { n: "Middle", c: 3, pg: [["AAAA100"]] },
-  AAAA300: { n: "Upper", c: 3, pg: [["AAAA200"], ["MATH140", "MATH220"]] },
+  AAAA200: { n: "Middle", c: 3, pr: "AAAA100" },
+  AAAA300: { n: "Upper", c: 3, pr: ["&", "AAAA200", ["|", "MATH140", "MATH220"]] },
   AAAA301: { n: "Upper B", c: 3 },
   AAAA302: { n: "Upper C", c: 3 },
   MATH140: { n: "Calculus I", c: 4 },
@@ -88,16 +88,50 @@ test("a second major has no overlap cap and reports shared and unique credits", 
 });
 
 test("reads catalog prerequisite wording", async () => {
-  const { prerequisiteGroups } = await import("../scripts/prerequisites.mjs");
-  // Placement can replace MATH115, and a course never needs itself.
-  assert.deepEqual(prerequisiteGroups("Minimum grade of C- in MATH115 ; or must have math eligibility of MATH140 ; and math eligibility is based on the Math Placement Test.", "MATH140"), []);
-  assert.deepEqual(prerequisiteGroups("Must have math eligibility of MATH113 or higher; and math eligibility is based on the Math Placement Exam or the successful completion of MATH 003 with appropriate eligibility.", "MATH113"), []);
-  assert.deepEqual(prerequisiteGroups("Must have math eligibility of MATH115 or higher; and math eligibility is based on the Math Placement Exam. Or MATH113 .", "MATH115"), []);
-  // An AP or department exam is an exception; the course stays required, and "and" adds a group.
-  assert.deepEqual(prerequisiteGroups("Minimum grade of C- in CMSC131 ; or must have earned a score of 5 on the A Java AP exam; or must have earned a satisfactory score on the departmental placement exam; and minimum grade of C- in MATH140 .", "CMSC132"),
-    [["CMSC131"], ["MATH140"]]);
-  assert.deepEqual(prerequisiteGroups("Minimum grade of C- in CMSC320 , CMSC330 , and CMSC351 ; and 1 course with a minimum grade of C- from ( MATH240 , MATH341 , MATH461 ).", "CMSC422"),
-    [["CMSC320"], ["CMSC330"], ["CMSC351"], ["MATH240", "MATH341", "MATH461"]]);
-  // "; or C" joins the single choice before it.
-  assert.deepEqual(prerequisiteGroups("BSCI170 ; or BSCI171 .", "BSCI330"), [["BSCI170", "BSCI171"]]);
+  const { prerequisiteTree } = await import("../scripts/prerequisites.mjs");
+  const read = (text, self) => prerequisiteTree(text, self);
+  // Math placement can replace MATH115, and a course never needs itself.
+  assert.equal(read("Minimum grade of C- in MATH115 ; or must have math eligibility of MATH140 ; and math eligibility is based on the Math Placement Test.", "MATH140"), null);
+  assert.equal(read("Must have math eligibility of MATH113 or higher; and math eligibility is based on the Math Placement Exam or the successful completion of MATH 003 with appropriate eligibility.", "MATH113"), null);
+  assert.equal(read("Must have math eligibility of MATH115 or higher; and math eligibility is based on the Math Placement Exam. Or MATH113 .", "MATH115"), null);
+  // AP or department exams are exceptions: the course stays required; "; and" adds a requirement.
+  assert.deepEqual(read("Minimum grade of C- in CMSC131 ; or must have earned a score of 5 on the A Java AP exam; or must have earned a satisfactory score on the departmental placement exam; and minimum grade of C- in MATH140 .", "CMSC132"), ["&", "CMSC131", "MATH140"]);
+  assert.deepEqual(read("Minimum grade of C- in CMSC320 , CMSC330 , and CMSC351 ; and 1 course with a minimum grade of C- from ( MATH240 , MATH341 , MATH461 ).", "CMSC422"),
+    ["&", "CMSC320", "CMSC330", "CMSC351", ["|", "MATH240", "MATH341", "MATH461"]]);
+  // "A and B; or C" keeps both paths.
+  assert.deepEqual(read("ANSC204 and ANSC205; or ANSC201 .", "ANSC210"), ["|", ["&", "ANSC204", "ANSC205"], "ANSC201"]);
+  assert.deepEqual(read("MATH341 ; or MATH246 and one of ( MATH240 or MATH461 ).", "AMSC452"), ["|", "MATH341", ["&", "MATH246", ["|", "MATH240", "MATH461"]]]);
+  // "either A or B and C", "2 courses from", "or higher", "concurrently enrolled", comma lists.
+  assert.deepEqual(read("Minimum grade of C- in either BSCI330 or BSCI331 and BSCI332 .", "BSCI343"), ["|", "BSCI330", ["&", "BSCI331", "BSCI332"]]);
+  assert.deepEqual(read("Two of the following courses: AAAS100 , AAAS101 , AAAS200 , or AAAS202 .", "AAAS399"), [2, "AAAS100", "AAAS101", "AAAS200", "AAAS202"]);
+  assert.deepEqual(read("Minimum grade of C- in MATH115 or higher; minimum grade of C- in INST126 ; and 1 course with a minimum grade of C- from ( PSYC100 , SOCY105 , BSOS233 ).", "INST308"),
+    ["&", "MATH115+", "INST126", ["|", "PSYC100", "SOCY105", "BSOS233"]]);
+  assert.deepEqual(read("BSCI160 and BSCI170 ; and must have completed or be concurrently enrolled in CHEM131 and either BSCI180 or ( BSCI161 and BSCI171 ).", "BSCI207"),
+    ["&", "BSCI160", "BSCI170", "~CHEM131", ["|", "~BSCI180", ["&", "~BSCI161", "~BSCI171"]]]);
+  assert.deepEqual(read("one of COMM107 , COMM200 or COMM230", "COMM304"), ["|", "COMM107", "COMM200", "COMM230"]);
+  // A language placement score and AP scores are exceptions; the course path stays.
+  assert.equal(read("FREN203 ; or must have appropriate World Language Placement (WLP) score.", "FREN204"), "FREN203");
+  assert.deepEqual(read("PHYS171 , PHYS141 , or PHYS161 ; or must have scored 3 or higher on AP PHYS exam.", "PHYS165"), ["|", "PHYS171", "PHYS141", "PHYS161"]);
+});
+
+test("walks prerequisite trees: alternatives, same-term courses, and 'or higher'", async () => {
+  const { unmetPrerequisites } = await import("../lib/programs.ts");
+  const treeFacts = {
+    MATH140: { n: "Calculus I", c: 4 },
+    MATH141: { n: "Calculus II", c: 4, pr: "MATH140" },
+    CHEM131: { n: "Chemistry I", c: 3 },
+    BSCI207: { n: "Cell Biology", c: 4, pr: ["&", "MATH141", "~CHEM131"] },
+    INST308: { n: "Data", c: 3, pr: "MATH115+" },
+    ANSC210: { n: "Animal", c: 3, pr: ["|", ["&", "ANSC204", "ANSC205"], "ANSC201"] },
+  };
+  const program = { ...minor, items: [{ kind: "course", section: "", label: "", credits: 4, options: [["BSCI207"]], block: 0 }] };
+  const result = evaluateProgram(program, treeFacts, new Map());
+  // MATH140 then MATH141, and CHEM131 may share BSCI207's semester: three semesters, not four.
+  assert.equal(result.minSemesters, 3);
+  assert.deepEqual(result.hiddenPrerequisites, ["CHEM131", "MATH140", "MATH141"]);
+  const labels = { orHigher: "+", sameTerm: "*", of: (k) => `${k} of` };
+  assert.deepEqual(unmetPrerequisites(treeFacts.INST308, new Map([["MATH140", "done"]]), labels), []);
+  assert.deepEqual(unmetPrerequisites(treeFacts.INST308, new Map([["MATH113", "done"]]), labels), ["MATH115+"]);
+  assert.deepEqual(unmetPrerequisites(treeFacts.ANSC210, new Map([["ANSC201", "done"]]), labels), []);
+  assert.deepEqual(unmetPrerequisites(treeFacts.ANSC210, new Map(), labels), ["(ANSC204 + ANSC205) / ANSC201"]);
 });
