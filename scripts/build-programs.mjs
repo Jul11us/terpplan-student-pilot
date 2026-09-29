@@ -112,7 +112,8 @@ function parseTable(table) {
         if (group && !group.options.length && hours === null && !/areaheader/.test(rowClass)) continue;
         // "Maximum 3 credits from the following" adds capped choices to the list above it.
         const previous = items.at(-1);
-        if (/^(maximum|at most|up to)\b/i.test(label) && previous?.kind === "choose") {
+        // "In addition, a MAXIMUM OF ONE of the following may be applied" is optional in the same way.
+        if ((/^(?:in addition,?\s*)?(?:a\s+)?(maximum|at most|up to)\b/i.test(label) || /\bmay be applied\b/i.test(label)) && previous?.kind === "choose") {
           group = previous;
           group.indented = false;
           continue;
@@ -124,6 +125,13 @@ function parseTable(table) {
         const minimumNote = /^(minimum|at least)\b/i.test(label);
         const plainHeading = !STRONG_CHOICE.test(label);
         if (group && hours === null && (alternativeName || (group.options.length && (plainHeading || minimumNote)) || (minimumNote && group.credits))) {
+          // Each named alternative ("Sequence Two (9 credits)") is its own set of options: record where it
+          // starts, so the student is measured against one sequence, not a mix of several.
+          if (alternativeName) {
+            const credits = /(\d+)\s*credits?/i.exec(label);
+            group.alts ??= group.options.length ? [{ label: group.label, credits: group.credits, from: 0 }] : [];
+            group.alts.push({ label, credits: credits ? Number(credits[1]) : group.credits, from: group.options.length });
+          }
           section = label;
           group.indented = false;
           continue;
@@ -188,6 +196,13 @@ async function main() {
   const urls = [...new Set(Array.from(sitemap.matchAll(/<loc>([^<]+)<\/loc>/g), (match) => match[1]))]
     .filter((url) => url.includes("/undergraduate/colleges-schools/") && url.split("/").length >= 8);
   const programs = [];
+  // The Smith School lists the core every business major takes on its college page, not on each major's
+  // page, so it is added to those majors as its own always-on block.
+  const smithHtml = await page(`${CATALOG}/undergraduate/colleges-schools/business/`);
+  const smithStart = smithHtml.search(/<h3[^>]*>\s*Summary of Bachelor of Science Degree Requirements/i);
+  const smithEnd = smithStart >= 0 ? smithHtml.slice(smithStart).search(/<h3[^>]*>\s*Major Requirements/i) : -1;
+  const smithCore = smithStart >= 0 ? parseBlocks(smithHtml.slice(smithStart, smithEnd > 0 ? smithStart + smithEnd : undefined), "major") : { blocks: [], items: [] };
+  if (!smithCore.items.length) console.warn("Smith School core table not found");
   for (const url of urls) {
     const html = await page(url);
     const name = text(/<h1[^>]*>([\s\S]*?)<\/h1>/.exec(html)?.[1] ?? "");
@@ -203,6 +218,11 @@ async function main() {
     const overviewHtml = tab("textcontainer");
     const region = tab("requirementstextcontainer") || overviewHtml;
     const { blocks, items } = parseBlocks(region, kind);
+    if (kind === "major" && url.includes("/colleges-schools/business/") && smithCore.items.length) {
+      const offset = blocks.length;
+      blocks.push(...smithCore.blocks.map((block) => ({ ...block, title: "Smith School core (all business majors)", role: "always" })));
+      items.push(...smithCore.items.map((item) => ({ ...item, block: item.block + offset })));
+    }
     const overview = text(overviewHtml.replace(/<table[\s\S]*?<\/table>/g, " "));
     const intro = text(/<p>([\s\S]*?)<\/p>/.exec(region)?.[1] ?? "");
     // Selective programs ask students to apply or meet entrance requirements first.

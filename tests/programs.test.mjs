@@ -135,3 +135,20 @@ test("walks prerequisite trees: alternatives, same-term courses, and 'or higher'
   assert.deepEqual(unmetPrerequisites(treeFacts.ANSC210, new Map([["ANSC201", "done"]]), labels), []);
   assert.deepEqual(unmetPrerequisites(treeFacts.ANSC210, new Map(), labels), ["(ANSC204 + ANSC205) / ANSC201"]);
 });
+
+test("measures a list of named sequences one sequence at a time", async () => {
+  const { withBaseCourses } = await import("../lib/programs.ts");
+  const seqFacts = { PHYS161: { n: "P1", c: 3 }, PHYS260: { n: "P2", c: 3 }, PHYS270: { n: "P3", c: 3 }, ECON200: { n: "E1", c: 3 }, ECON201: { n: "E2", c: 3 }, ECON305: { n: "E3", c: 3 } };
+  const program = { ...minor, items: [{ kind: "choose", section: "", label: "Select one of two sequences", count: 1, credits: 9, block: 0,
+    options: [["PHYS161"], ["PHYS260"], ["PHYS270"], ["ECON200"], ["ECON201"], ["ECON305"]],
+    alts: [{ label: "Select one of two sequences", credits: 9, from: 0 }, { label: "Sequence Two (9 credits)", credits: 9, from: 3 }] }] };
+  // One course from the first sequence and two from the second do not add up to a finished sequence.
+  const result = evaluateProgram(program, seqFacts, new Map([["PHYS161", "done"], ["ECON200", "done"], ["ECON201", "done"]]));
+  assert.deepEqual(result.items[0].met.map((entry) => entry.option[0]), ["ECON200", "ECON201"]);
+  assert.equal(result.items[0].remainingCredits, 3);
+  assert.deepEqual(result.items[0].suggestions, [["ECON305"]]);
+  // Honors and topic versions satisfy the base course.
+  const expanded = withBaseCourses(new Map([["ENGL101H", "inProgress"], ["BMGT110F", "done"]]));
+  assert.equal(expanded.get("ENGL101"), "inProgress");
+  assert.equal(expanded.get("BMGT110"), "done");
+});

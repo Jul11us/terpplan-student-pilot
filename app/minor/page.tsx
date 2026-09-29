@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { parseCourseIds, parseDegreeAudit } from "@/lib/degree-audit";
 import { extractDegreeAuditText } from "@/lib/degree-audit-pdf";
-import { AUDIT_HANDOFF_KEY, defaultBlocks, evaluateProgram, MINOR_MAJOR_OVERLAP_COURSES, unmetPrerequisites, type CourseFact, type CourseStatus, type ItemProgress, type Program } from "@/lib/programs";
+import { AUDIT_HANDOFF_KEY, defaultBlocks, evaluateProgram, MINOR_MAJOR_OVERLAP_COURSES, unmetPrerequisites, withBaseCourses, type CourseFact, type CourseStatus, type ItemProgress, type Program } from "@/lib/programs";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 
 type Language = "en" | "zh";
@@ -14,7 +14,7 @@ type Mode = "minor" | "major";
 type AuditCourses = { completed: string[]; inProgress: string[] };
 
 // Program responses are cached by the browser for an hour; bump this when their shape changes.
-const DATA_VERSION = 4;
+const DATA_VERSION = 5;
 // Choices on this page are remembered per browser.
 const PREFS_KEY = "terpplan:minor";
 
@@ -260,7 +260,7 @@ export default function ProgramExplorerPage() {
     audit?.inProgress.forEach((code) => map.set(code, "inProgress"));
     audit?.completed.forEach((code) => map.set(code, "done"));
     parseCourseIds(manualText).forEach((code) => map.set(code, "done"));
-    return map;
+    return withBaseCourses(map);
   }, [audit, manualText, includePlan, plan.all]);
 
   const current = programData && targetSlug && programData.program.slug === targetSlug ? programData : null;

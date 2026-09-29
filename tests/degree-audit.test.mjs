@@ -33,8 +33,11 @@ Fa26 ENGL101 3.0 IP Academic Writing
 Sp25 CMSC131 4.0 B+ Programming I
 Fa25 STAT400 3.0 P Statistics
 Fa25 CHEM131 4.0 D Chemistry
-Fa25 PHYS161 3.0 I Physics`);
-  assert.deepEqual(result.completedCourseIds, ["CMSC131", "STAT400"]);
+Fa25 PHYS161 3.0 I Physics
+Sp25 MATH140 4.00 TP CALCULUS BC/SCR 5
+Sp25 XMATH BC/AB5 0.00 TP tna CALC BC/AB SUBSCR 5`);
+  // AP and transfer credit (TP) counts as completed; placeholder rows like "XMATH BC/AB5" are not courses.
+  assert.deepEqual(result.completedCourseIds, ["CMSC131", "STAT400", "MATH140"]);
   assert.deepEqual(result.inProgressCourseIds, ["ENGL101"]);
 });
 
@@ -63,4 +66,31 @@ test("rebuilds PDF text rows in reading order", () => {
     { str: "426,460", x: 185, y: 80, width: 46 },
   ]);
   assert.deepEqual(rows, ["NEEDS: 3 CREDITS", "SELECT FROM: CMSC 426,460"]);
+});
+
+test("names numbered sub-requirements and reads their Gen Ed codes", () => {
+  const result = parseDegreeAudit(`[GenEd] Distributive Studies
+ 1) Humanities (DSHU)
+Sp25 HIST201 3.00 TP U.S. HISTORY/SCR 4
+XHIST US4
+Advanced Placement Exam
+NEEDS: 1 COURSE
+ 4) Natural Sciences (DSNS or DSNL)
+NEEDS: 1 SET
+[GenEd] Diversity
+ 1) Understanding Plural Society (DVUP)
+Sp25 HIST201 3.00 TP U.S. HISTORY/SCR 4
+ 2) Cultural Competence (DVCC) or 2nd
+Understanding Plural Society (DVUP) course
+NEEDS: 1 COURSE
+[BMGT] Lower Level Core
+Principles of Accounting I & II
+ 3)
+NEEDS: 2 COURSES
+SELECT FROM: BMGT 220,221`);
+  assert.deepEqual(result.requirements.map((item) => item.genEdCode), ["DSHU", "DSNS", "DVCC", null]);
+  // DVUP is met by HIST201, so it is not reported as missing.
+  assert.equal(result.requirements.some((item) => item.genEdCode === "DVUP"), false);
+  assert.equal(result.requirements[3].title, "Principles of Accounting I & II");
+  assert.deepEqual(result.requirements[3].courseIds, ["BMGT220", "BMGT221"]);
 });

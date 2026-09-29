@@ -11,6 +11,9 @@ export type ProgramItem = {
   options: string[][];
   // Index of the catalog table (block) the item came from.
   block: number;
+  // Named alternatives inside a list ("Sequence Two (9 credits)"): each starts at options[from] and runs to
+  // the next one; the student completes one of them.
+  alts?: Array<{ label: string; credits: number | null; from: number }>;
 };
 
 // One catalog table and the heading above it. "always" tables apply to everyone; "choice" tables are
@@ -98,6 +101,17 @@ function optionStatus(option: string[], student: Map<string, CourseStatus>, used
     if (STATUS_RANK[status] > STATUS_RANK[worst!]) worst = status;
   }
   return worst;
+}
+
+// Honors and topic versions ("ENGL101H", "BMGT110F") also satisfy the base course a requirement names.
+export function withBaseCourses(student: Map<string, CourseStatus>) {
+  const expanded = new Map(student);
+  for (const [code, status] of student) {
+    const base = /^([A-Z]{4}\d{3})[A-Z]+$/.exec(code)?.[1];
+    const current = base ? expanded.get(base) : undefined;
+    if (base && (current === undefined || STATUS_RANK[status] < STATUS_RANK[current])) expanded.set(base, status);
+  }
+  return expanded;
 }
 
 type Leaf = { code: string; concurrent: boolean; orHigher: boolean };
@@ -260,8 +274,45 @@ export function evaluateProgram(program: Program, facts: Record<string, CourseFa
       continue;
     }
     const optionCredits = item.options.map((option) => creditsOf(facts, option));
+    if (item.alts?.length) {
+      // Measure each alternative on its own and follow the one the student is furthest along in.
+      const ranges = item.alts.map((alt, position) => {
+        const indexes = item.options.map((_option, optionIndex) => optionIndex).filter((optionIndex) => optionIndex >= alt.from && optionIndex < (item.alts![position + 1]?.from ?? item.options.length));
+        const target = alt.credits ?? item.credits ?? indexes.reduce((sum, optionIndex) => sum + optionCredits[optionIndex], 0);
+        const matched = indexes
+          .map((optionIndex) => ({ optionIndex, status: optionStatus(item.options[optionIndex], student, used) }))
+          .filter((match): match is { optionIndex: number; status: CourseStatus } => match.status !== null)
+          .sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status]);
+        const taken: typeof matched = [];
+        let credits = 0;
+        for (const match of matched) {
+          if (credits >= target) break;
+          taken.push(match);
+          credits += optionCredits[match.optionIndex];
+        }
+        return { indexes, target, taken, credits, remaining: Math.max(0, target - credits) };
+      });
+      const best = [...ranges].sort((a, b) => a.remaining - b.remaining || a.target - b.target)[0];
+      const met = best.taken.map((match) => ({ option: item.options[match.optionIndex], status: match.status }));
+      met.forEach((entry) => entry.option.forEach((code) => used.add(code)));
+      best.taken.forEach((match) => { creditsByStatus[match.status] += optionCredits[match.optionIndex]; });
+      const complete = best.remaining === 0;
+      // Other alternatives stay available as suggestions only when nothing has been started yet.
+      const pool = met.length ? best.indexes : ranges.flatMap((range) => range.indexes);
+      const suggestions = complete ? [] : pool.map((optionIndex) => item.options[optionIndex])
+        .filter((option) => option.every((code) => !used.has(code)))
+        .map((option) => ({ option, extra: extraCourses(option), steps: optionDepth(option) }))
+        .sort((a, b) => a.extra - b.extra || a.steps - b.steps)
+        .map((entry) => entry.option);
+      const perOption = best.indexes.length ? best.target / best.indexes.length : DEFAULT_CREDITS;
+      byIndex.set(index, { item, index, open: false, met, needed: Math.max(1, met.length + Math.ceil(best.remaining / Math.max(1, perOption))), complete, remainingCredits: best.remaining, suggestions });
+      continue;
+    }
     const average = optionCredits.length ? optionCredits.reduce((sum, value) => sum + value, 0) / optionCredits.length : DEFAULT_CREDITS;
-    const byCredits = item.kind === "choose" && !item.count && item.credits !== null;
+    // Credits decide when there is no count, or when the count cannot reach them
+    // ("Select one of eight sequences", 9 credits, from single courses).
+    const byCredits = item.kind === "choose" && item.credits !== null
+      && (!item.count || item.credits > item.count * Math.max(DEFAULT_CREDITS, ...optionCredits) + 0.5);
     const needed = item.kind === "course" ? 1 : item.count ?? (byCredits ? Math.max(1, Math.round(item.credits! / average)) : 1);
     const target = item.kind === "course" ? item.credits ?? optionCredits[0] ?? DEFAULT_CREDITS : item.credits ?? needed * average;
     const met: ItemProgress["met"] = [];
