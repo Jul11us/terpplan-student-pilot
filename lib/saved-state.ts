@@ -1,6 +1,9 @@
 // Remembers a visitor's plan in this browser only (localStorage), so a refresh does not lose it.
-// Nothing here is sent to the server. Storage can be missing or blocked (private windows,
+// Event labels are local. Anonymous time constraints are sent only when scheduling.
+// Storage can be missing or blocked (private windows,
 // cleared site data), so every access is wrapped and the page works without it.
+
+import { normalizeBusyBlocks, validBuffer, type BusyBlock } from "@/lib/personal-schedule";
 
 export const STORAGE_KEY = "terpplan:v1";
 
@@ -20,6 +23,8 @@ export type SavedPreferences = {
   strictTime: boolean;
   openSeatsOnly: boolean;
   includeFreshmanConnection: boolean;
+  busyBlocks?: BusyBlock[];
+  bufferMinutes?: number;
 };
 
 export type SavedState = {
@@ -64,6 +69,8 @@ function preferences(value: unknown): SavedPreferences | undefined {
     strictTime: record.strictTime === true,
     openSeatsOnly: record.openSeatsOnly === true,
     includeFreshmanConnection: record.includeFreshmanConnection === true,
+    busyBlocks: normalizeBusyBlocks(record.busyBlocks ?? []),
+    bufferMinutes: validBuffer(record.bufferMinutes) ? record.bufferMinutes : 0,
   };
 }
 

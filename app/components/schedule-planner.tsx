@@ -11,35 +11,12 @@ import { formatSeatReadTime } from "@/lib/seat-time";
 import { isAsyncOnline } from "@/lib/meeting-time";
 import { planKey } from "@/lib/plan-key";
 import { sharePath } from "@/lib/shared-schedule";
+import { anonymousBusyBlocks, type BusyBlock } from "@/lib/personal-schedule";
+import type { ScheduleOption, ScheduledSection, PlanDiagnosis, PlanRepair } from "@/lib/planner";
+import { PersonalSchedule, ScheduleRecovery, SectionSwap } from "@/app/components/schedule-tools";
+export type { ScheduledSection } from "@/lib/planner";
 
 type Language = "en" | "zh";
-type Meeting = { days?: string | null; start_time?: string | null; end_time?: string | null; classtype?: string | null; building?: string | null; room?: string | null };
-type ProfessorRating = { name: string; averageRating: number | null; matched: boolean };
-export type ScheduledSection = {
-  course_id: string;
-  course_title: string;
-  section_id: string;
-  credits: number | null;
-  meetings?: Meeting[];
-  instructors?: string[];
-  instructorRatings: ProfessorRating[];
-  open_seats?: string | number | null;
-  waitlist?: string | number | null;
-  seatCheckedAt?: string;
-};
-type ScheduleOption = {
-  selectedSections: ScheduledSection[];
-  totalCredits: number;
-  score: number;
-  professorRating: number | null;
-  gapMinutes: number;
-  earliestStart: string | null;
-  latestEnd: string | null;
-  campusDays: string[];
-  timeFitPercent: number | null;
-  unknownSectionIds: string[];
-  fullSectionIds?: string[];
-};
 type PlanCourse = { courseId: string; courseTitle: string; instructors?: string[]; pinnedSectionId?: string; excludedSectionIds?: string[] };
 // Mirrors PlanWarning in lib/planner.ts.
 type PlanWarning = { code: string; courseId?: string; sectionId?: string; count?: number };
@@ -122,6 +99,7 @@ type Props = {
   language: Language;
   onRemove: (courseId: string) => void;
   onBack: () => void;
+  onUpdateCourse: (courseId: string, patch: Partial<PlanCourse>) => void;
   // Reports the option being viewed so the Gen Ed finder can check conflicts against it.
   onChosenChange?: (schedule: ReferenceSchedule) => void;
 };
@@ -160,6 +138,7 @@ export function displayClock(value: number) {
 }
 
 function seatCount(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
 }
@@ -223,16 +202,20 @@ function meetingType(raw: string | null | undefined) {
   return null;
 }
 
-export function WeeklyCalendar({ sections, language }: { sections: ScheduledSection[]; language: Language }) {
+export function WeeklyCalendar({ sections: courseSections, language, busyBlocks = [], onSelectSection }: { sections: ScheduledSection[]; language: Language; busyBlocks?: BusyBlock[]; onSelectSection?: (section: ScheduledSection) => void }) {
   const t = copy[language];
-  const firstMinute = 8 * 60;
-  const lastMinute = 22 * 60;
+  const personalIds = new Set(busyBlocks.map((block) => `personal-${block.id}`));
+  const sections: ScheduledSection[] = [...courseSections, ...busyBlocks.map((block) => ({ course_id: `personal-${block.id}`, section_id: `personal-${block.id}`, course_title: block.label || (language === "zh" ? "固定日程" : "Commitment"), credits: null, instructorRatings: [], meetings: [{ days: block.days.join(" "), start_time: block.start, end_time: block.end }] }))];
+  const knownStarts = sections.flatMap((section) => (section.meetings ?? []).flatMap((meeting) => minutes(meeting.start_time) === null ? [] : [minutes(meeting.start_time)!]));
+  const knownEnds = sections.flatMap((section) => (section.meetings ?? []).flatMap((meeting) => minutes(meeting.end_time) === null ? [] : [minutes(meeting.end_time)!]));
+  const firstMinute = Math.floor(Math.min(8 * 60, ...knownStarts) / 60) * 60;
+  const lastMinute = Math.min(24 * 60, Math.ceil(Math.max(22 * 60, ...knownEnds) / 60) * 60);
   const pixelsPerMinute = 1;
   const height = (lastMinute - firstMinute) * pixelsPerMinute;
   const unknown = new Set<string>();
   const online = new Set<string>();
   for (const section of sections) if (!section.meetings?.length) unknown.add(section.section_id);
-  const colors = new Map([...new Set(sections.map((section) => section.course_id))].map((courseId, index) => [courseId, COLORS[index % COLORS.length]]));
+  const colors = new Map([...new Set(sections.map((section) => section.course_id))].map((courseId, index) => [courseId, personalIds.has(courseId) ? "#dce2df" : COLORS[index % COLORS.length]]));
   const columnClass = "relative border-l border-[#e6e4de] bg-[linear-gradient(to_bottom,transparent_59px,#e7e4dc_60px)] bg-[length:100%_60px]";
   // Phones show the week as a list by day; the 900px grid would need sideways scrolling there.
   const byDay = DAYS.map((day, dayIndex) => ({
@@ -248,20 +231,20 @@ export function WeeklyCalendar({ sections, language }: { sections: ScheduledSect
   return <div className="overflow-x-auto rounded-xl border border-[#e0ddd5] bg-white">
     <div className="divide-y divide-[#ece9e2] sm:hidden">{byDay.map((entry) => <div key={entry.day} className="px-4 py-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-[#59635f]">{entry.label}</p>
-      <div className="mt-2 space-y-2">{entry.items.map((item) => <div key={item.key} className="flex gap-3 rounded-lg border border-[#ece9e2] p-2.5">
+      <div className="mt-2 space-y-2">{entry.items.map((item) => <button type="button" disabled={!onSelectSection || personalIds.has(item.section.section_id)} onClick={() => onSelectSection?.(item.section)} key={item.key} className="flex w-full gap-3 rounded-lg border border-[#ece9e2] p-2.5 text-left enabled:hover:bg-[#f4f8f5]">
         <span aria-hidden="true" className="w-1 shrink-0 rounded-full" style={{ backgroundColor: colors.get(item.section.course_id) }} />
         <span className="min-w-0 text-xs leading-5">
           <strong className="block text-[#24312d]">{displayClock(item.start)}–{displayClock(item.end)}</strong>
-          <span className="block text-[#48534f]">{item.section.section_id}{item.type ? ` · ${item.type}` : ""}</span>
-          <span className="block text-[#737b77]">{item.room}</span>
+          <span className="block text-[#48534f]">{personalIds.has(item.section.section_id) ? item.section.course_title : item.section.section_id}{!personalIds.has(item.section.section_id) && item.type ? ` · ${item.type}` : ""}</span>
+          {!personalIds.has(item.section.section_id) && <span className="block text-[#737b77]">{item.room}</span>}
         </span>
-      </div>)}</div>
+      </button>)}</div>
     </div>)}</div>
     <div className="hidden min-w-[900px] grid-cols-[58px_repeat(7,minmax(0,1fr))] sm:grid">
       <div className="sticky top-0 z-10 bg-white p-3 text-center text-[11px] text-[#8a918e]">ET</div>
       {DAYS.map((day, index) => <div key={day} className="sticky top-0 z-10 border-l border-[#e6e4de] bg-white p-3 text-center text-xs font-semibold text-[#59635f]">{t.weekdays[index]}</div>)}
       <div className="relative" style={{ height }}>
-        {Array.from({ length: 15 }, (_, index) => <span key={index} className="absolute right-2 -translate-y-1/2 text-[10px] text-[#858d89]" style={{ top: index * 60 }}>{displayClock(firstMinute + index * 60)}</span>)}
+        {Array.from({ length: (lastMinute - firstMinute) / 60 + 1 }, (_, index) => <span key={index} className="absolute right-2 -translate-y-1/2 text-[10px] text-[#858d89]" style={{ top: index * 60 }}>{displayClock(firstMinute + index * 60)}</span>)}
       </div>
       {DAYS.map((day) => <div key={day} className={columnClass} style={{ height }}>
         {sections.flatMap((section) => (section.meetings ?? []).flatMap((meeting, index) => {
@@ -278,18 +261,19 @@ export function WeeklyCalendar({ sections, language }: { sections: ScheduledSect
           const clippedEnd = Math.min(end, lastMinute);
           if (clippedEnd <= clippedStart) return [];
           const kind = meetingType(meeting.classtype);
-          const type = kind ? t[kind] : null;
           const shortType = kind ? t[`${kind}Short`] : null;
           const sectionNumber = section.section_id.slice(section.course_id.length + 1) || section.section_id;
           const room = roomLabel(meeting.building, meeting.room, language);
-          return [<article key={section.section_id + "-" + day + "-" + index} className="absolute inset-x-1 overflow-hidden rounded-md border border-white/80 px-1.5 py-1 text-center text-[10px] leading-tight text-[#24312d] shadow-sm" style={{ top: (clippedStart - firstMinute) * pixelsPerMinute, height: Math.max(48, (clippedEnd - clippedStart) * pixelsPerMinute), backgroundColor: colors.get(section.course_id) }} title={section.section_id + (type ? " · " + type : "") + " · " + displayClock(start) + "–" + displayClock(end) + " · " + room}>
-            <strong className="block truncate">{section.course_id} · {sectionNumber}</strong><span className="block truncate">{displayClock(start)}–{displayClock(end)}</span><span className="block truncate">{room}{shortType ? " · " + shortType : ""}</span>
-          </article>];
+          const personal = personalIds.has(section.section_id);
+          return [<button type="button" disabled={!onSelectSection || personal} onClick={() => onSelectSection?.(section)} key={section.section_id + "-" + day + "-" + index} className="absolute inset-x-1 overflow-hidden rounded-md border border-white/80 px-1.5 py-1 text-center text-[10px] leading-tight text-[#24312d] shadow-sm enabled:hover:ring-2 enabled:hover:ring-[#536d64]" style={{ top: (clippedStart - firstMinute) * pixelsPerMinute, height: Math.max(30, (clippedEnd - clippedStart) * pixelsPerMinute), backgroundColor: colors.get(section.course_id) }} title={(personal ? section.course_title : section.section_id) + " · " + displayClock(start) + "–" + displayClock(end) + (personal ? "" : " · " + room)}>
+            <strong className="block truncate">{personal ? section.course_title : `${section.course_id} · ${sectionNumber}`}</strong><span className="block truncate">{displayClock(start)}–{displayClock(end)}</span>{!personal && <span className="block truncate">{room}{shortType ? " · " + shortType : ""}</span>}
+          </button>];
         }))}
       </div>)}
     </div>
     <div className="flex flex-wrap gap-x-4 gap-y-2 border-t border-[#e6e4de] px-4 py-3 text-[11px] text-[#59635f]">
-      {[...colors].map(([courseId, color]) => <span key={courseId} className="inline-flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: color }} />{courseId}</span>)}
+      {[...colors].filter(([courseId]) => !personalIds.has(courseId)).map(([courseId, color]) => <span key={courseId} className="inline-flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: color }} />{courseId}</span>)}
+      {busyBlocks.length > 0 && <span className="inline-flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-sm bg-[#dce2df]" />{language === "zh" ? "个人日程" : "Personal commitments"}</span>}
     </div>
     {unknown.size > 0 ? <p className="border-t border-[#e6e4de] bg-[#fff8e8] px-4 py-3 text-xs text-[#745424]">{t.warning} {t.unknown}: {[...unknown].join(", ")}</p> : <p className="border-t border-[#e6e4de] px-4 py-3 text-xs text-[#737b77]">{t.noUnknown}</p>}
     {online.size > 0 && <p className="border-t border-[#e6e4de] px-4 py-3 text-xs text-[#536d64]">{t.onlineAsync} {[...online].join(", ")}</p>}
@@ -344,9 +328,9 @@ export function CalendarExport({ sections, term, termName, language, incomplete 
   </div>;
 }
 
-export default function SchedulePlanner({ courses, term, termName, language, onRemove, onBack, onChosenChange }: Props) {
+export default function SchedulePlanner({ courses, term, termName, language, onRemove, onBack, onChosenChange, onUpdateCourse }: Props) {
   const t = copy[language];
-  const [generated, setGenerated] = useState<{ requestKey: string; prefsKey: string; options: ScheduleOption[]; warnings: PlanWarning[] }>({ requestKey: "", prefsKey: "", options: [], warnings: [] });
+  const [generated, setGenerated] = useState<{ requestKey: string; prefsKey: string; options: ScheduleOption[]; warnings: PlanWarning[]; diagnostics?: PlanDiagnosis[]; repairs?: PlanRepair[] }>({ requestKey: "", prefsKey: "", options: [], warnings: [] });
   const [selectedOption, setSelectedOption] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -361,14 +345,20 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
   const [strictTime, setStrictTime] = useState(savedPreferences?.strictTime ?? false);
   const [openSeatsOnly, setOpenSeatsOnly] = useState(savedPreferences?.openSeatsOnly ?? false);
   const [includeFreshmanConnection, setIncludeFreshmanConnection] = useState(savedPreferences?.includeFreshmanConnection ?? false);
+  const [busyBlocks, setBusyBlocks] = useState<BusyBlock[]>(savedPreferences?.busyBlocks ?? []);
+  const [bufferMinutes, setBufferMinutes] = useState(savedPreferences?.bufferMinutes ?? 0);
 
   useEffect(() => {
-    writeSavedState({ preferences: { excludedDays, earliestStart, windowStart, windowEnd, strictTime, openSeatsOnly, includeFreshmanConnection } });
-  }, [excludedDays, earliestStart, windowStart, windowEnd, strictTime, openSeatsOnly, includeFreshmanConnection]);
+    writeSavedState({ preferences: { excludedDays, earliestStart, windowStart, windowEnd, strictTime, openSeatsOnly, includeFreshmanConnection, busyBlocks, bufferMinutes } });
+  }, [excludedDays, earliestStart, windowStart, windowEnd, strictTime, openSeatsOnly, includeFreshmanConnection, busyBlocks, bufferMinutes]);
   // Results belong to the course list and term they were generated for; hide them once either changes.
   const requestKey = useMemo(() => planKey(courses, term), [courses, term]);
   // Preferences only mark results as out of date: the options stay visible with a notice to regenerate.
-  const prefsKey = JSON.stringify([earliestStart, [...excludedDays].sort(), windowStart, windowEnd, strictTime, openSeatsOnly, includeFreshmanConnection]);
+  const preferences = { earliestStart: earliestStart || null, excludedDays, windowStart: windowStart || null, windowEnd: windowEnd || null, strictTime, openSeatsOnly, includeFreshmanConnection, busyBlocks: anonymousBusyBlocks(busyBlocks), bufferMinutes };
+  const prefsKey = JSON.stringify(preferences);
+  const scheduleRequest = { courseIds: courses.map((course) => course.courseId), term, preferences,
+    instructorFilters: Object.fromEntries(courses.filter((course) => course.instructors?.length).map((course) => [course.courseId, course.instructors])),
+    sectionFilters: Object.fromEntries(courses.filter((course) => course.pinnedSectionId || course.excludedSectionIds?.length).map((course) => [course.courseId, { pinnedSectionId: course.pinnedSectionId, excludedSectionIds: course.excludedSectionIds }])) };
   const options = generated.requestKey === requestKey ? generated.options : [];
   const warnings = generated.requestKey === requestKey ? generated.warnings : [];
 
@@ -389,18 +379,12 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
       const response = await fetch("/api/schedules/generate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          courseIds: courses.map((course) => course.courseId),
-          instructorFilters: Object.fromEntries(courses.filter((course) => course.instructors?.length).map((course) => [course.courseId, course.instructors])),
-          sectionFilters: Object.fromEntries(courses.filter((course) => course.pinnedSectionId || course.excludedSectionIds?.length).map((course) => [course.courseId, { pinnedSectionId: course.pinnedSectionId, excludedSectionIds: course.excludedSectionIds }])),
-          term,
-          preferences: { earliestStart: earliestStart || null, excludedDays, windowStart: windowStart || null, windowEnd: windowEnd || null, strictTime, openSeatsOnly, includeFreshmanConnection },
-        }),
+        body: JSON.stringify(scheduleRequest),
       });
-      const payload = await response.json() as { error?: string; options?: ScheduleOption[]; warnings?: PlanWarning[] };
+      const payload = await response.json() as { error?: string; options?: ScheduleOption[]; warnings?: PlanWarning[]; diagnostics?: PlanDiagnosis[]; repairs?: PlanRepair[] };
       if (seq !== generationSeq.current) return;
       if (!response.ok) throw new Error(payload.error || t.loadError);
-      setGenerated({ requestKey, prefsKey, options: payload.options ?? [], warnings: payload.warnings ?? [] });
+      setGenerated({ requestKey, prefsKey, options: payload.options ?? [], warnings: payload.warnings ?? [], diagnostics: payload.diagnostics ?? [], repairs: payload.repairs ?? [] });
       setSelectedOption(0);
       setShareUrl("");
       setShareCopied(false);
@@ -429,6 +413,33 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
   // Courses in the plan that an option could not place; an option missing any is incomplete.
   const missingFrom = (option: ScheduleOption) => courses.map((course) => course.courseId).filter((courseId) => !option.selectedSections.some((section) => section.course_id === courseId));
   const chosenMissing = chosen ? missingFrom(chosen) : [];
+  const applyRepair = (repair: PlanRepair) => {
+    generationSeq.current++;
+    setShareUrl(""); setShareCopied(false);
+    switch (repair.kind) {
+      case "allowDay": setExcludedDays((current) => current.filter((day) => day !== repair.day)); break;
+      case "clearEarliest": setEarliestStart(""); break;
+      case "relaxWindow": setStrictTime(false); break;
+      case "clearBuffer": setBufferMinutes(0); break;
+      case "removeBlock": setBusyBlocks((current) => current.filter((block) => block.id !== repair.blockId)); break;
+      case "allowFull": setOpenSeatsOnly(false); break;
+      case "unpin": onUpdateCourse(repair.courseId!, { pinnedSectionId: undefined }); break;
+      case "resetFilters": onUpdateCourse(repair.courseId!, { pinnedSectionId: undefined, excludedSectionIds: [], instructors: undefined }); break;
+      case "removeCourse": onRemove(repair.courseId!); break;
+    }
+  };
+  const applySwap = (option: ScheduleOption, courseId: string) => {
+    const replacement = option.selectedSections.find((section) => section.course_id === courseId);
+    if (!replacement || !chosen || loading || !upToDate || missingFrom(option).length) return;
+    const originalIds = chosen.selectedSections.filter((section) => section.course_id !== courseId).map((section) => section.section_id).sort();
+    const nextIds = option.selectedSections.filter((section) => section.course_id !== courseId).map((section) => section.section_id).sort();
+    if (JSON.stringify(originalIds) !== JSON.stringify(nextIds)) return;
+    generationSeq.current++;
+    onUpdateCourse(courseId, { pinnedSectionId: replacement.section_id });
+    const nextCourses = courses.map((course) => course.courseId === courseId ? { ...course, pinnedSectionId: replacement.section_id } : course);
+    setGenerated({ requestKey: planKey(nextCourses, term), prefsKey, options: [option], warnings: [], diagnostics: [], repairs: [] });
+    setSelectedOption(0); setShareUrl(""); setShareCopied(false);
+  };
   useEffect(() => {
     if (!chosen || !onChosenChange) return;
     onChosenChange({ term, planKey: requestKey, sectionIds: chosen.selectedSections.map((section) => section.section_id), meetings: chosen.selectedSections.flatMap((section) => section.meetings ?? []) });
@@ -464,11 +475,13 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
         <label className="mt-2 flex items-center gap-2 text-xs text-[#68716e]"><input type="checkbox" checked={includeFreshmanConnection} onChange={(event) => setIncludeFreshmanConnection(event.target.checked)} />{t.includeFc}</label>
         <p className="mt-3 text-xs leading-5 text-[#858d89]">{t.windowHint}</p>
         {courses.some((course) => course.pinnedSectionId) && <p className="mt-1 text-xs leading-5 text-[#858d89]">{t.pinnedNote}</p>}
+        <PersonalSchedule blocks={busyBlocks} buffer={bufferMinutes} onBlocks={setBusyBlocks} onBuffer={setBufferMinutes} language={language} />
       </div>
       {error && <p role="alert" className="mt-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]">{error}</p>}
       <div className="mt-5 flex flex-wrap items-center justify-end gap-3"><p className="text-xs text-[#858d89]">{t.autoNote}</p><button onClick={() => void generate()} disabled={loading} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1d302c] disabled:opacity-60">{loading ? t.generating : t.generate}</button></div>
     </>}
     {warnings.length > 0 && <ul className="mt-5 space-y-2 rounded-xl border border-[#ead8b5] bg-[#fff8e8] p-4 text-sm text-[#745424]">{warnings.map((warning, index) => <li key={index}>{warningText(warning, language)}</li>)}</ul>}
+    {generated.requestKey === requestKey && <ScheduleRecovery diagnostics={generated.diagnostics ?? []} repairs={generated.repairs ?? []} blocks={busyBlocks} language={language} disabled={loading || !upToDate} onRepair={applyRepair} onBack={onBack} />}
     {courses.length > 0 && options.length === 0 && !loading && !error && warnings.length > 0 && <p className="mt-4 text-sm text-[#68716e]">{t.noOptions}</p>}
     {options.length > 0 && <div className="mt-8">
       <h3 className="font-serif text-2xl">{t.options}</h3>
@@ -491,7 +504,8 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
           <div className="flex flex-wrap items-center gap-3"><button type="button" onClick={() => void shareSchedule()} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]">{shareCopied ? t.shareCopied : t.shareSchedule}</button><p className="min-w-0 flex-1 text-[11px] leading-5 text-[#737b77]">{t.shareHint}</p></div>
           {shareUrl && <div className="mt-3"><label htmlFor="share-schedule-url" className="text-[11px] font-medium text-[#68716e]">{shareCopied ? t.shareReady : t.shareCopyFailed}</label><input id="share-schedule-url" readOnly value={shareUrl} onFocus={(event) => event.target.select()} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-[#fbfaf8] px-3 py-2 text-xs text-[#273c38]" /></div>}
         </div>
-        <WeeklyCalendar sections={chosen.selectedSections} language={language} />
+        <p className="mb-2 text-xs leading-5 text-[#737b77]">{language === "zh" ? "点击课表中的课程可查看备选班次。个人日程仅显示在这里，不包含在分享链接或日历导出中。" : "Click a class to review alternative sections. Personal commitments appear here and are excluded from share links and calendar exports."}</p>
+        <WeeklyCalendar sections={chosen.selectedSections} language={language} busyBlocks={busyBlocks} onSelectSection={(section) => { const control = document.getElementById(`section-swap-${section.section_id}`); control?.scrollIntoView({ block: "center", behavior: "smooth" }); control?.click(); }} />
         <div className="mt-4 space-y-2">{chosen.selectedSections.map((section) => <article key={section.section_id} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{section.course_id} · {section.course_title}</p><p className="mt-1 text-sm text-[#626c67]">{section.section_id}{(section.meetings ?? []).length ? " · " + (section.meetings ?? []).map((meeting) => {
           const start = minutes(meeting.start_time), end = minutes(meeting.end_time);
           const kind = meetingType(meeting.classtype);
@@ -501,7 +515,9 @@ export default function SchedulePlanner({ courses, term, termName, language, onR
           return start === null || end === null || !days.length ? (language === "zh" ? "时间待定" : "Time TBA") : (type ? type + " · " : "") + days.join(" ") + " " + displayClock(start) + "–" + displayClock(end) + " · " + roomLabel(meeting.building, meeting.room, language);
         }).join(" · ") : language === "zh" ? " · 时间待定" : " · Time TBA"}</p>
         {section.instructorRatings.length > 0 && <p className="mt-2 text-xs text-[#737b77]">{section.instructorRatings.map((item) => item.name + (item.averageRating === null ? "" : " · " + item.averageRating.toFixed(2) + " / 5")).join(" · ")}</p>}
-        </div><div className="text-right"><span className={`inline-block rounded-full px-2.5 py-1 text-xs ${seatCount(section.open_seats) === 0 ? "bg-[#f5e9e5] font-semibold text-[#8f4538]" : "bg-[#f1efe9] text-[#68716e]"}`}>{seatText(section.open_seats, t)}</span>{formatSeatReadTime(section.seatCheckedAt, language) && <p className="mt-1 text-[11px] text-[#858d89]">{t.seatReadAt}: {formatSeatReadTime(section.seatCheckedAt, language)}</p>}</div></div></article>)}</div>
+        </div><div className="text-right"><span className={`inline-block rounded-full px-2.5 py-1 text-xs ${seatCount(section.open_seats) === 0 ? "bg-[#f5e9e5] font-semibold text-[#8f4538]" : "bg-[#f1efe9] text-[#68716e]"}`}>{seatText(section.open_seats, t)}</span>{formatSeatReadTime(section.seatCheckedAt, language) && <p className="mt-1 text-[11px] text-[#858d89]">{t.seatReadAt}: {formatSeatReadTime(section.seatCheckedAt, language)}</p>}</div></div>
+        <SectionSwap key={`${requestKey}:${prefsKey}:${chosen.selectedSections.map((item) => item.section_id).join("|")}`} section={section} language={language} request={{ ...scheduleRequest, selectedSectionIds: chosen.selectedSections.map((item) => item.section_id) }} disabled={loading || !upToDate || chosenMissing.length > 0} forceOpen={false} onApply={(option) => applySwap(option, section.course_id)} />
+        </article>)}</div>
         <p className="mt-3 text-xs leading-5 text-[#858d89]">{t.seatReadHint}</p>
         <RegistrationChecklist option={chosen} others={options.filter((option) => option !== chosen)} missingCourseIds={chosenMissing} language={language} />
       </div>}

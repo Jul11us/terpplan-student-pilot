@@ -1,4 +1,5 @@
-import { generateOptions, type PlanCourse, type PlanPreferences, type PlanWarning } from "@/lib/planner";
+import { generateOptions, replacementOptions, type PlanCourse, type PlanPreferences, type PlanWarning } from "@/lib/planner";
+import { anonymousBusyBlocks, validBusyBlocks, validBuffer } from "@/lib/personal-schedule";
 import { getProfessorSummaries, normalizeProfessorName } from "@/lib/planetterp";
 import { courseIdIsValid, DEFAULT_TERM, getCourse, sectionId as normalizedSectionId } from "@/lib/umd";
 
@@ -8,9 +9,10 @@ function creditsValue(value: unknown) {
 }
 
 export async function POST(request: Request) {
-  let body: { courseIds?: unknown; term?: unknown; preferences?: unknown; instructorFilters?: unknown; sectionFilters?: unknown };
+  let body: { courseIds?: unknown; term?: unknown; preferences?: unknown; instructorFilters?: unknown; sectionFilters?: unknown; mode?: unknown; selectedSectionIds?: unknown; replaceCourseId?: unknown };
   try {
     body = await request.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid request");
   } catch {
     return Response.json({ error: "Provide a valid schedule request." }, { status: 400 });
   }
@@ -25,6 +27,8 @@ export async function POST(request: Request) {
   const rawPreferences = body.preferences && typeof body.preferences === "object"
     ? body.preferences as Record<string, unknown>
     : {};
+  if (rawPreferences.busyBlocks !== undefined && !validBusyBlocks(rawPreferences.busyBlocks)) return Response.json({ error: "Invalid personal schedule.", code: "invalidBusyBlocks" }, { status: 400 });
+  if (rawPreferences.bufferMinutes !== undefined && !validBuffer(rawPreferences.bufferMinutes)) return Response.json({ error: "Choose a whole-number buffer between 0 and 120 minutes.", code: "invalidBuffer" }, { status: 400 });
   const preferences: PlanPreferences = {
     earliestStart: typeof rawPreferences.earliestStart === "string" ? rawPreferences.earliestStart : null,
     excludedDays: Array.isArray(rawPreferences.excludedDays) ? rawPreferences.excludedDays.filter((day): day is string => typeof day === "string") : [],
@@ -33,7 +37,13 @@ export async function POST(request: Request) {
     strictTime: rawPreferences.strictTime === true,
     openSeatsOnly: rawPreferences.openSeatsOnly === true,
     includeFreshmanConnection: rawPreferences.includeFreshmanConnection === true,
+    busyBlocks: anonymousBusyBlocks(rawPreferences.busyBlocks ?? []),
+    bufferMinutes: rawPreferences.bufferMinutes as number | undefined,
   };
+  if (body.mode !== undefined && body.mode !== "alternatives") return Response.json({ error: "Invalid schedule operation." }, { status: 400 });
+  if (body.mode === "alternatives" && (typeof body.replaceCourseId !== "string" || !courseIds.includes(body.replaceCourseId)
+    || !Array.isArray(body.selectedSectionIds) || body.selectedSectionIds.length !== courseIds.length
+    || body.selectedSectionIds.some((id) => typeof id !== "string" || id.length > 40))) return Response.json({ error: "Provide every selected section and a course to replace." }, { status: 400 });
 
   // Per-course instructor picks from the page; a course without an entry keeps every instructor.
   const instructorFilters = new Map<string, Set<string>>();
@@ -60,7 +70,6 @@ export async function POST(request: Request) {
   }
 
   const warnings: PlanWarning[] = [];
-  let sectionSelectionFailed = false;
   const loaded = await Promise.all(courseIds.map(async (courseId) => {
     try {
       const detail = await getCourse(courseId, term);
@@ -81,16 +90,12 @@ export async function POST(request: Request) {
       const pinnedSectionId = sectionFilter?.pinnedSectionId;
       if (pinnedSectionId && !validSections.some((section) => section.section_id === pinnedSectionId)) {
         warnings.push({ code: "pinnedSectionUnavailable", courseId, sectionId: pinnedSectionId });
-        sectionSelectionFailed = true;
-        return null;
       }
       const selectedSections = pinnedSectionId
         ? validSections.filter((section) => section.section_id === pinnedSectionId)
         : validSections.filter((section) => !sectionFilter?.excludedSectionIds.has(section.section_id));
       if (!selectedSections.length && validSections.length) {
         warnings.push({ code: "allSectionsExcluded", courseId });
-        sectionSelectionFailed = true;
-        return null;
       }
       const keptInstructors = instructorFilters.get(courseId);
       const sections = keptInstructors && !pinnedSectionId
@@ -105,15 +110,16 @@ export async function POST(request: Request) {
       }
       if (!sections.length) {
         warnings.push({ code: "noSelectedInstructors", courseId });
-        return null;
       }
       return {
         course_id: courseId,
         title: String(rawCourse.name ?? rawCourse.title ?? courseId),
         credits: creditsValue(rawCourse.credits),
-        sections,
+        sections: validSections,
         seatCheckedAt: detail.seatCheckedAt ?? undefined,
         pinnedSectionId: pinnedSectionId ?? undefined,
+        excludedSectionIds: [...(sectionFilter?.excludedSectionIds ?? [])],
+        instructors: keptInstructors ? [...keptInstructors] : undefined,
       } satisfies PlanCourse;
     } catch {
       warnings.push({ code: "courseLoadFailed", courseId });
@@ -121,18 +127,28 @@ export async function POST(request: Request) {
     }
   }));
   const courses: PlanCourse[] = loaded.filter((course) => course !== null);
-  if (sectionSelectionFailed) return Response.json({ term, options: [], warnings, truncated: false });
   if (!courses.length) return Response.json({ term, options: [], warnings, truncated: false });
   const names = [...new Set(courses.flatMap((course) => course.sections.flatMap((section) => section.instructors ?? [])))];
   const professorRatings = await getProfessorSummaries(names);
   const limitedRatings = Object.values(professorRatings).filter((rating) => rating.status === "limited").length;
   if (limitedRatings) warnings.push({ code: "ratingsLimited", count: limitedRatings });
+  if (body.mode === "alternatives") {
+    if (courses.length !== courseIds.length) return Response.json({ error: "Some courses could not be refreshed. Generate the schedule again.", code: "scheduleChanged" }, { status: 409 });
+    try {
+      return Response.json({ term, ...replacementOptions(courses, professorRatings, preferences, body.selectedSectionIds as string[], body.replaceCourseId as string) });
+    } catch {
+      return Response.json({ error: "The selected schedule changed or a section is no longer available. Generate it again.", code: "scheduleChanged" }, { status: 409 });
+    }
+  }
   const result = generateOptions(courses, professorRatings, preferences);
   return Response.json({
     term,
     options: result.options,
     warnings: [...warnings, ...result.warnings],
     truncated: result.truncated,
+    diagnostics: result.diagnostics,
+    // A repair is confirmed only when every requested course was available to the search.
+    repairs: courses.length === courseIds.length ? result.repairs : [],
     professorRatingLookups: Object.keys(professorRatings).length,
   });
 }

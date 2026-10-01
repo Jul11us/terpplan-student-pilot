@@ -1,5 +1,6 @@
 import { isAsyncOnline } from "@/lib/meeting-time";
 import { isInstructorTba, normalizeProfessorName, type ProfessorSummary } from "@/lib/planetterp";
+import { normalizeBusyBlocks, validBuffer, type BusyBlock } from "@/lib/personal-schedule";
 
 export type PlanMeeting = {
   days?: string | null;
@@ -27,6 +28,8 @@ export type PlanCourse = {
   sections: PlanSection[];
   seatCheckedAt?: string;
   pinnedSectionId?: string;
+  instructors?: string[];
+  excludedSectionIds?: string[];
 };
 
 export type PlanPreferences = {
@@ -37,6 +40,8 @@ export type PlanPreferences = {
   strictTime?: boolean;
   openSeatsOnly?: boolean;
   includeFreshmanConnection?: boolean;
+  busyBlocks?: BusyBlock[];
+  bufferMinutes?: number;
 };
 
 export type ScheduledSection = PlanSection & {
@@ -75,6 +80,25 @@ export type PlannerResult = {
   options: ScheduleOption[];
   warnings: PlanWarning[];
   truncated: boolean;
+  diagnostics?: PlanDiagnosis[];
+  repairs?: PlanRepair[];
+};
+
+export type PlanDiagnosis = {
+  code: "excludedDay" | "earliestStart" | "timeWindow" | "busyBlock" | "fullSections" | "fcSections" | "sectionFilters" | "courseConflict" | "bufferConflict" | "combinationConflict";
+  courseIds: string[];
+  day?: string;
+  blockId?: string;
+  sectionIds?: string[];
+  time?: string;
+  sample?: { days: string[]; leftStart: string; leftEnd: string; rightStart: string; rightEnd: string };
+};
+export type PlanRepair = {
+  kind: "allowDay" | "clearEarliest" | "relaxWindow" | "clearBuffer" | "removeBlock" | "allowFull" | "unpin" | "resetFilters" | "removeCourse";
+  day?: string;
+  blockId?: string;
+  courseId?: string;
+  sectionIds: string[];
 };
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
@@ -170,17 +194,17 @@ function hasUnknownTime(section: PlanSection) {
   return !section.meetings?.length || section.meetings.some((meeting) => !hasKnownTime(meeting) && !isAsyncOnline(meeting));
 }
 
-function overlaps(a: PlanMeeting, b: PlanMeeting) {
+function overlaps(a: PlanMeeting, b: PlanMeeting, buffer = 0) {
   if (!hasKnownTime(a) || !hasKnownTime(b)) return false;
   const aStart = minutes(a.start_time) as number;
   const aEnd = minutes(a.end_time) as number;
   const bStart = minutes(b.start_time) as number;
   const bEnd = minutes(b.end_time) as number;
-  return dayNames(a.days).some((day) => dayNames(b.days).includes(day)) && aStart < bEnd && bStart < aEnd;
+  return dayNames(a.days).some((day) => dayNames(b.days).includes(day)) && aStart < bEnd + buffer && bStart < aEnd + buffer;
 }
 
-function conflicts(left: PlanSection, right: PlanSection) {
-  return (left.meetings ?? []).some((a) => (right.meetings ?? []).some((b) => overlaps(a, b)));
+function conflicts(left: PlanSection, right: PlanSection, buffer = 0) {
+  return (left.meetings ?? []).some((a) => (right.meetings ?? []).some((b) => overlaps(a, b, buffer)));
 }
 
 function sectionRatings(section: PlanSection, ratings: Record<string, ProfessorSummary>) {
@@ -205,6 +229,8 @@ function parsePrefs(preferences: PlanPreferences) {
     strictTime: Boolean(preferences.strictTime && interval),
     openSeatsOnly: Boolean(preferences.openSeatsOnly),
     includeFreshmanConnection: Boolean(preferences.includeFreshmanConnection),
+    busyBlocks: normalizeBusyBlocks(preferences.busyBlocks ?? []),
+    bufferMinutes: validBuffer(preferences.bufferMinutes) ? preferences.bufferMinutes : 0,
   };
 }
 
@@ -212,6 +238,7 @@ function conflictsWithTimePreferences(section: PlanSection, preference: ReturnTy
   const meetings = section.meetings ?? [];
   for (const meeting of meetings) {
     if (isAsyncOnline(meeting)) continue;
+    if (preference.busyBlocks.some((block) => overlaps(meeting, { days: block.days.join(" "), start_time: block.start, end_time: block.end }))) return true;
     const days = dayNames(meeting.days);
     if (days.some((day) => preference.excludedDays.has(day))) return true;
     const start = minutes(meeting.start_time);
@@ -225,8 +252,22 @@ function conflictsWithTimePreferences(section: PlanSection, preference: ReturnTy
   return preference.strictTime && meetings.length === 0;
 }
 
+function selectedByCourse(section: PlanSection, course: PlanCourse, ignorePin = false) {
+  const id = sectionId(section, course.course_id);
+  if (course.pinnedSectionId && !ignorePin) return id === course.pinnedSectionId;
+  if (course.excludedSectionIds?.includes(id)) return false;
+  return !course.instructors?.length || (section.instructors ?? []).some((name) => course.instructors!.some((kept) => normalizeProfessorName(kept) === normalizeProfessorName(name)));
+}
+
+function eligibleSections(course: PlanCourse, preference: ReturnType<typeof parsePrefs>, ignorePin = false) {
+  return course.sections.filter((section) => selectedByCourse(section, course, ignorePin)
+    && allowedByPreferences(section, preference, !ignorePin && sectionId(section, course.course_id) === course.pinnedSectionId));
+}
+
 function allowedByPreferences(section: PlanSection, preference: ReturnType<typeof parsePrefs>, pinned: boolean) {
   if (conflictsWithTimePreferences(section, preference)) return false;
+  const meetings = section.meetings ?? [];
+  if (meetings.some((meeting, index) => meetings.slice(index + 1).some((other) => overlaps(meeting, other, preference.bufferMinutes)))) return false;
   if (!pinned && preference.openSeatsOnly && isFull(section)) return false;
   if (!pinned && !preference.includeFreshmanConnection && isFreshmanConnection(section)) return false;
   return true;
@@ -309,7 +350,7 @@ function formatClock(value: number) {
   return (hour % 12 || 12) + ":" + String(minute).padStart(2, "0") + suffix;
 }
 
-export function generateOptions(
+function searchOptions(
   courses: PlanCourse[],
   ratings: Record<string, ProfessorSummary>,
   preferences: PlanPreferences,
@@ -323,7 +364,7 @@ export function generateOptions(
     const pinnedConflict = Boolean(pinnedSection && conflictsWithTimePreferences(pinnedSection, parsed));
     if (pinnedConflict) warnings.push({ code: "pinnedSectionPreferenceConflict", courseId: course.course_id, sectionId: course.pinnedSectionId! });
     const sections = (course.sections ?? [])
-      .filter((section) => allowedByPreferences(section, parsed, sectionId(section, course.course_id) === course.pinnedSectionId))
+      .filter((section) => selectedByCourse(section, course) && allowedByPreferences(section, parsed, sectionId(section, course.course_id) === course.pinnedSectionId))
       .map((section) => ({
         ...section,
         course_id: course.course_id,
@@ -375,7 +416,7 @@ export function generateOptions(
         return;
       }
       nodes += 1;
-      if (chosen.some((section) => conflicts(candidate, section))) continue;
+      if (chosen.some((section) => conflicts(candidate, section, parsed.bufferMinutes))) continue;
       chosen.push(candidate);
       walk(groupIndex + 1);
       chosen.pop();
@@ -411,4 +452,138 @@ export function generateOptions(
     warnings.push({ code: "tbaTimes" });
   }
   return { options, warnings, truncated };
+}
+
+function scheduled(section: PlanSection, course: PlanCourse, ratings: Record<string, ProfessorSummary>): ScheduledSection {
+  return { ...section, course_id: course.course_id, course_title: course.title, section_id: sectionId(section, course.course_id),
+    credits: course.credits, instructorRatings: sectionRatings(section, ratings), seatCheckedAt: course.seatCheckedAt };
+}
+
+function diagnose(courses: PlanCourse[], preferences: PlanPreferences): PlanDiagnosis[] {
+  const parsed = parsePrefs(preferences);
+  const diagnoses: PlanDiagnosis[] = [];
+  const groups = courses.map((course) => ({ course, sections: eligibleSections(course, parsed) }));
+  for (const { course, sections } of groups) {
+    if (sections.length) continue;
+    const selected = course.sections.filter((section) => selectedByCourse(section, course));
+    if (!selected.length) diagnoses.push({ code: "sectionFilters", courseIds: [course.course_id] });
+    const meets = selected.flatMap((section) => section.meetings ?? []).filter((meeting) => !isAsyncOnline(meeting));
+    for (const day of parsed.excludedDays) if (meets.some((meeting) => dayNames(meeting.days).includes(day))) diagnoses.push({ code: "excludedDay", courseIds: [course.course_id], day });
+    if (parsed.earliest !== null && meets.some((meeting) => minutes(meeting.start_time) !== null && minutes(meeting.start_time)! < parsed.earliest!)) diagnoses.push({ code: "earliestStart", courseIds: [course.course_id], time: preferences.earliestStart ?? undefined });
+    if (parsed.strictTime && selected.some((section) => conflictsWithTimePreferences(section, { ...parsed, excludedDays: new Set(), earliest: null, busyBlocks: [] }))) diagnoses.push({ code: "timeWindow", courseIds: [course.course_id] });
+    for (const block of parsed.busyBlocks) if (meets.some((meeting) => overlaps(meeting, { days: block.days.join(" "), start_time: block.start, end_time: block.end }))) diagnoses.push({ code: "busyBlock", courseIds: [course.course_id], blockId: block.id });
+    if (parsed.openSeatsOnly && selected.some(isFull)) diagnoses.push({ code: "fullSections", courseIds: [course.course_id] });
+    if (!parsed.includeFreshmanConnection && selected.some(isFreshmanConnection)) diagnoses.push({ code: "fcSections", courseIds: [course.course_id] });
+    if (parsed.bufferMinutes && selected.some((section) => (section.meetings ?? []).some((meeting, index) => (section.meetings ?? []).slice(index + 1).some((other) => overlaps(meeting, other, parsed.bufferMinutes))))) diagnoses.push({ code: "bufferConflict", courseIds: [course.course_id] });
+  }
+  // A pair is reported as blocking only when every eligible combination conflicts.
+  let comparisons = 0;
+  for (let i = 0; i < groups.length; i++) for (let j = i + 1; j < groups.length; j++) {
+    const a = groups[i], b = groups[j];
+    if (!a.sections.length || !b.sections.length) continue;
+    let allConflict = true, allDirect = true;
+    outer: for (const left of a.sections) for (const right of b.sections) {
+      if (++comparisons > 40_000 || !conflicts(left, right, parsed.bufferMinutes)) { allConflict = false; break outer; }
+      if (!conflicts(left, right)) allDirect = false;
+    }
+    if (!allConflict) continue;
+    const left = a.sections[0], right = b.sections[0];
+    const meeting = (left.meetings ?? []).flatMap((x) => (right.meetings ?? []).filter((y) => overlaps(x, y, parsed.bufferMinutes)).map((y) => ({ days: dayNames(x.days).filter((day) => dayNames(y.days).includes(day)), leftStart: x.start_time!, leftEnd: x.end_time!, rightStart: y.start_time!, rightEnd: y.end_time! })))[0];
+    diagnoses.push({ code: allDirect ? "courseConflict" : "bufferConflict", courseIds: [a.course.course_id, b.course.course_id], sectionIds: [sectionId(left, a.course.course_id), sectionId(right, b.course.course_id)], sample: meeting });
+  }
+  if (!diagnoses.length) diagnoses.push({ code: "combinationConflict", courseIds: courses.map((course) => course.course_id) });
+  return diagnoses;
+}
+
+// Stop at the first complete schedule. A shared budget bounds all proposed repairs together.
+function completeWitness(courses: PlanCourse[], preferences: PlanPreferences, budget: { remaining: number }) {
+  if (!courses.length) return null;
+  const parsed = parsePrefs(preferences);
+  const groups = courses.map((course) => ({ course, sections: eligibleSections(course, parsed) })).sort((a, b) => a.sections.length - b.sections.length);
+  if (groups.some((group) => !group.sections.length)) return null;
+  const picked: Array<{ course: PlanCourse; section: PlanSection }> = [];
+  const visit = (index: number): string[] | null => {
+    if (index === groups.length) return picked.map(({ course, section }) => sectionId(section, course.course_id));
+    for (const section of groups[index].sections) {
+      if (--budget.remaining < 0) return null;
+      if (picked.some((item) => conflicts(item.section, section, parsed.bufferMinutes))) continue;
+      picked.push({ course: groups[index].course, section });
+      const result = visit(index + 1);
+      picked.pop();
+      if (result) return result;
+    }
+    return null;
+  };
+  return visit(0);
+}
+
+export function applyRepair(courses: PlanCourse[], preferences: PlanPreferences, repair: Pick<PlanRepair, "kind" | "day" | "blockId" | "courseId">) {
+  const nextPreferences = { ...preferences };
+  let nextCourses = courses;
+  switch (repair.kind) {
+    case "allowDay": nextPreferences.excludedDays = (preferences.excludedDays ?? []).filter((day) => day !== repair.day); break;
+    case "clearEarliest": nextPreferences.earliestStart = null; break;
+    case "relaxWindow": nextPreferences.strictTime = false; break;
+    case "clearBuffer": nextPreferences.bufferMinutes = 0; break;
+    case "removeBlock": nextPreferences.busyBlocks = (preferences.busyBlocks ?? []).filter((block) => block.id !== repair.blockId); break;
+    case "allowFull": nextPreferences.openSeatsOnly = false; break;
+    case "unpin": nextCourses = courses.map((course) => course.course_id === repair.courseId ? { ...course, pinnedSectionId: undefined } : course); break;
+    case "resetFilters": nextCourses = courses.map((course) => course.course_id === repair.courseId ? { ...course, pinnedSectionId: undefined, excludedSectionIds: [], instructors: undefined } : course); break;
+    case "removeCourse": nextCourses = courses.filter((course) => course.course_id !== repair.courseId); break;
+  }
+  return { courses: nextCourses, preferences: nextPreferences };
+}
+
+export function generateOptions(courses: PlanCourse[], ratings: Record<string, ProfessorSummary>, preferences: PlanPreferences): PlannerResult {
+  const result = searchOptions(courses, ratings, preferences);
+  if (result.options.some((option) => option.selectedSections.length === courses.length)) return { ...result, diagnostics: [], repairs: [] };
+  const diagnostics = diagnose(courses, preferences);
+  const candidates: Array<Omit<PlanRepair, "sectionIds">> = [];
+  for (const day of preferences.excludedDays ?? []) candidates.push({ kind: "allowDay", day });
+  if (preferences.earliestStart) candidates.push({ kind: "clearEarliest" });
+  if (preferences.strictTime) candidates.push({ kind: "relaxWindow" });
+  if (preferences.bufferMinutes) candidates.push({ kind: "clearBuffer" });
+  for (const block of preferences.busyBlocks ?? []) candidates.push({ kind: "removeBlock", blockId: block.id });
+  if (preferences.openSeatsOnly) candidates.push({ kind: "allowFull" });
+  for (const course of courses) {
+    if (course.pinnedSectionId) candidates.push({ kind: "unpin", courseId: course.course_id });
+    if (course.instructors?.length || course.excludedSectionIds?.length) candidates.push({ kind: "resetFilters", courseId: course.course_id });
+  }
+  for (const course of courses) candidates.push({ kind: "removeCourse", courseId: course.course_id });
+  const budget = { remaining: 80_000 };
+  const repairs: PlanRepair[] = [];
+  for (const candidate of candidates) {
+    const changed = applyRepair(courses, preferences, candidate);
+    // A difficult first trial must not starve every other possible repair.
+    const trialBudget = { remaining: Math.min(8_000, budget.remaining) };
+    const before = trialBudget.remaining;
+    const sectionIds = completeWitness(changed.courses, changed.preferences, trialBudget);
+    budget.remaining -= before - Math.max(0, trialBudget.remaining);
+    if (sectionIds) repairs.push({ ...candidate, sectionIds });
+    if (repairs.length >= 6 || budget.remaining <= 0) break;
+  }
+  return { ...result, diagnostics, repairs };
+}
+
+export function replacementOptions(courses: PlanCourse[], ratings: Record<string, ProfessorSummary>, preferences: PlanPreferences, currentIds: string[], courseId: string) {
+  const parsed = parsePrefs(preferences);
+  const target = courses.find((course) => course.course_id === courseId);
+  if (!target || currentIds.length !== courses.length || new Set(currentIds).size !== currentIds.length) throw new Error("invalidSchedule");
+  const current = courses.map((course) => {
+    const matching = course.sections.filter((section) => currentIds.includes(sectionId(section, course.course_id)));
+    if (matching.length !== 1) throw new Error("sectionUnavailable");
+    return scheduled(matching[0], course, ratings);
+  });
+  const others = current.filter((section) => section.course_id !== courseId);
+  for (const section of others) {
+    const course = courses.find((course) => course.course_id === section.course_id)!;
+    if (!selectedByCourse(section, course) || !allowedByPreferences(section, parsed, section.section_id === course.pinnedSectionId)
+      || others.some((other) => other !== section && conflicts(section, other, parsed.bufferMinutes))) throw new Error("scheduleChanged");
+  }
+  const currentTarget = current.find((section) => section.course_id === courseId)!;
+  const alternatives = eligibleSections(target, parsed, true)
+    .filter((section) => sectionId(section, courseId) !== currentTarget.section_id && !others.some((other) => conflicts(section, other, parsed.bufferMinutes)))
+    .map((section) => summarize(current.map((item) => item.course_id === courseId ? scheduled(section, target, ratings) : item), parsed))
+    .sort((a, b) => a.fullSectionIds.length - b.fullSectionIds.length || b.score - a.score);
+  return { current: summarize(current, parsed), options: alternatives.slice(0, 20), total: alternatives.length };
 }
