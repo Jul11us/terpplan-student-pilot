@@ -189,3 +189,18 @@ test("score parts explain the score and add up to it", () => {
     assert.equal(option.scoreParts.find((part) => part.key === "gaps").count, option.gapMinutes);
   }
 });
+
+test("the GPA preference puts the higher-GPA instructor first and explains the points", () => {
+  const two = course("CMSC131", [
+    section("CMSC131-0101", "10:00", "10:50", { instructors: ["Tough Grader"] }),
+    section("CMSC131-0201", "14:00", "14:50", { instructors: ["Easy Grader"] }),
+  ], { instructorGpa: { "tough grader": 2.6, "easy grader": 3.6 } });
+  const plain = generateOptions([two], {}, {});
+  assert.equal(plain.options[0].averageGpa, null);
+  assert.ok(!plain.options[0].scoreParts.some((part) => part.key === "gpa"));
+  const preferred = generateOptions([two], {}, { preferGpa: true });
+  assert.equal(preferred.options[0].selectedSections[0].section_id, "CMSC131-0201");
+  assert.equal(preferred.options[0].averageGpa, 3.6);
+  const part = preferred.options[0].scoreParts.find((item) => item.key === "gpa");
+  assert.ok(Math.abs(part.points - 1.2) < 1e-9);
+});

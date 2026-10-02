@@ -1,6 +1,9 @@
 import { generateOptions, replacementOptions, type PlanCourse, type PlanPreferences, type PlanWarning } from "@/lib/planner";
 import { anonymousBusyBlocks, validBusyBlocks, validBuffer } from "@/lib/personal-schedule";
-import { getProfessorSummaries, normalizeProfessorName } from "@/lib/planetterp";
+import { getProfessorGpa, getProfessorSummaries, normalizeProfessorName } from "@/lib/planetterp";
+
+// GPA lookups (one or two PlanetTerp requests each) for the "prefer higher GPA" preference.
+const MAX_GPA_LOOKUPS = 40;
 import { courseIdIsValid, DEFAULT_TERM, getCourse, sectionId as normalizedSectionId } from "@/lib/umd";
 
 function creditsValue(value: unknown) {
@@ -39,6 +42,7 @@ export async function POST(request: Request) {
     includeFreshmanConnection: rawPreferences.includeFreshmanConnection === true,
     busyBlocks: anonymousBusyBlocks(rawPreferences.busyBlocks ?? []),
     bufferMinutes: rawPreferences.bufferMinutes as number | undefined,
+    preferGpa: rawPreferences.preferGpa === true,
   };
   if (body.mode !== undefined && body.mode !== "alternatives") return Response.json({ error: "Invalid schedule operation." }, { status: 400 });
   if (body.mode === "alternatives" && (typeof body.replaceCourseId !== "string" || !courseIds.includes(body.replaceCourseId)
@@ -130,6 +134,20 @@ export async function POST(request: Request) {
   if (!courses.length) return Response.json({ term, options: [], warnings, truncated: false });
   const names = [...new Set(courses.flatMap((course) => course.sections.flatMap((section) => section.instructors ?? [])))];
   const professorRatings = await getProfessorSummaries(names);
+  if (preferences.preferGpa) {
+    // Each instructor's average GPA in that course (or across their courses), for instructors PlanetTerp knows.
+    const pairs = courses.flatMap((course) => [...new Set(course.sections.flatMap((section) => section.instructors ?? []))]
+      .flatMap((name) => { const rating = professorRatings[normalizeProfessorName(name)]; return rating?.matched ? [{ course, key: normalizeProfessorName(name), name: rating.name }] : []; }))
+      .slice(0, MAX_GPA_LOOKUPS);
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(6, pairs.length) }, async () => {
+      while (next < pairs.length) {
+        const pair = pairs[next++];
+        const gpa = await getProfessorGpa(pair.name, pair.course.course_id);
+        if (gpa) pair.course.instructorGpa = { ...pair.course.instructorGpa, [pair.key]: gpa.gpa };
+      }
+    }));
+  }
   const limitedRatings = Object.values(professorRatings).filter((rating) => rating.status === "limited").length;
   if (limitedRatings) warnings.push({ code: "ratingsLimited", count: limitedRatings });
   if (body.mode === "alternatives") {

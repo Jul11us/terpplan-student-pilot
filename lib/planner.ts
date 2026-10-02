@@ -31,6 +31,8 @@ export type PlanCourse = {
   pinnedSectionId?: string;
   instructors?: string[];
   excludedSectionIds?: string[];
+  // Average GPA each instructor gave (PlanetTerp), by normalized name; only looked up when preferGpa is on.
+  instructorGpa?: Record<string, number>;
 };
 
 export type PlanPreferences = {
@@ -43,6 +45,8 @@ export type PlanPreferences = {
   includeFreshmanConnection?: boolean;
   busyBlocks?: BusyBlock[];
   bufferMinutes?: number;
+  // Rank sections whose instructors gave higher grades first.
+  preferGpa?: boolean;
 };
 
 export type ScheduledSection = PlanSection & {
@@ -52,10 +56,12 @@ export type ScheduledSection = PlanSection & {
   credits: number | null;
   instructorRatings: ProfessorSummary[];
   seatCheckedAt?: string;
+  // Average GPA of this section's instructors in this course, when it was looked up and known.
+  instructorGpa?: number | null;
 };
 
 export type ScorePart = {
-  key: "base" | "rating" | "gaps" | "early" | "unknown" | "window" | "full" | "walks";
+  key: "base" | "rating" | "gpa" | "gaps" | "early" | "unknown" | "window" | "full" | "walks";
   points: number;
   // How many of the thing were counted (minutes for gaps, meetings for early classes, ...), when it helps explain.
   count?: number;
@@ -68,6 +74,8 @@ export type ScheduleOption = {
   // What the score is made of, so the page can explain it. points add up to score.
   scoreParts: ScorePart[];
   professorRating: number | null;
+  // Mean of the sections' instructor GPAs, when the GPA preference is on and any is known.
+  averageGpa: number | null;
   gapMinutes: number;
   // Times a week the estimated walk to the next class is longer than the gap before it.
   tightWalkCount: number;
@@ -126,6 +134,10 @@ const FULL_SECTION_PENALTY = 2.5;
 // treated as worse than waiting: 4 minutes short costs about as much as 100 extra minutes of gaps.
 const TIGHT_WALK_PENALTY = 0.4;
 const TIGHT_WALK_PER_MINUTE = 0.1;
+// With the GPA preference on, each 0.1 of average GPA above (or below) 3.0 adds (or takes) 0.2 points, so
+// a full grade point is worth about as much as a 2-point difference in instructor rating.
+const GPA_BASELINE = 3;
+const GPA_WEIGHT = 2;
 const DAY_TOKENS: Array<[string, (typeof DAYS)[number]]> = [
   ["MONDAY", "Mon"], ["MON", "Mon"], ["MO", "Mon"], ["M", "Mon"],
   ["TUESDAY", "Tue"], ["TUES", "Tue"], ["TUE", "Tue"], ["TU", "Tue"],
@@ -249,8 +261,16 @@ function parsePrefs(preferences: PlanPreferences) {
     includeFreshmanConnection: Boolean(preferences.includeFreshmanConnection),
     busyBlocks: normalizeBusyBlocks(preferences.busyBlocks ?? []),
     bufferMinutes: validBuffer(preferences.bufferMinutes) ? preferences.bufferMinutes : 0,
+    preferGpa: Boolean(preferences.preferGpa),
   };
 }
+
+function sectionGpa(section: PlanSection, course: PlanCourse) {
+  const values = (section.instructors ?? []).map((name) => course.instructorGpa?.[normalizeProfessorName(name)]).filter((value): value is number => typeof value === "number");
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+}
+
+const gpaPoints = (gpa: number | null | undefined, preferGpa: boolean) => preferGpa && typeof gpa === "number" ? GPA_WEIGHT * (gpa - GPA_BASELINE) : 0;
 
 function conflictsWithTimePreferences(section: PlanSection, preference: ReturnType<typeof parsePrefs>) {
   const meetings = section.meetings ?? [];
@@ -297,6 +317,8 @@ function summarize(sections: ScheduledSection[], preferences: ReturnType<typeof 
     return values.length ? [values.reduce((sum, rating) => sum + rating, 0) / values.length] : [];
   });
   const professorRating = courseRatings.length ? courseRatings.reduce((sum, value) => sum + value, 0) / courseRatings.length : null;
+  const gpas = sections.map((section) => section.instructorGpa).filter((value): value is number => typeof value === "number");
+  const averageGpa = preferences.preferGpa && gpas.length ? gpas.reduce((sum, value) => sum + value, 0) / gpas.length : null;
   const unknownSectionIds = sections.filter(hasUnknownTime).map((section) => section.section_id);
   const fullSectionIds = sections.filter(isFull).map((section) => section.section_id);
   let unknownCount = sections.reduce((sum, section) => {
@@ -346,6 +368,7 @@ function summarize(sections: ScheduledSection[], preferences: ReturnType<typeof 
   const scoreParts: ScorePart[] = [
     { key: "base", points: 0.4 },
     { key: "rating", points: professorRating ?? 0 },
+    ...(preferences.preferGpa ? [{ key: "gpa" as const, points: gpaPoints(averageGpa, true) }] : []),
     { key: "gaps", points: -0.008 * gapMinutes, count: gapMinutes },
     { key: "early", points: -0.7 * earlyCount, count: earlyCount },
     { key: "unknown", points: -0.35 * unknownCount, count: unknownCount },
@@ -362,6 +385,7 @@ function summarize(sections: ScheduledSection[], preferences: ReturnType<typeof 
     score,
     scoreParts,
     professorRating,
+    averageGpa,
     gapMinutes,
     tightWalkCount: walks.length,
     earliestStart: earliestStart === null ? null : formatClock(earliestStart),
@@ -403,6 +427,7 @@ function searchOptions(
         credits: course.credits,
         instructorRatings: sectionRatings(section, ratings),
         seatCheckedAt: course.seatCheckedAt,
+        instructorGpa: sectionGpa(section, course),
       } as ScheduledSection));
     if (!sections.length && !pinnedConflict) warnings.push({ code: "noEligibleSections", courseId: course.course_id });
     return { courseId: course.course_id, sections };
@@ -419,7 +444,7 @@ function searchOptions(
         const rating = rated.length ? rated.reduce((sum, item) => sum + item, 0) / rated.length : 0;
         const early = (section.meetings ?? []).filter((meeting) => hasKnownTime(meeting) && (minutes(meeting.start_time) as number) < 540).length;
         const unknown = Number(hasUnknownTime(section)) + section.instructorRatings.filter((item) => !item.matched || item.averageRating === null).length;
-        return rating - 0.7 * early - 0.35 * unknown - (isFull(section) ? FULL_SECTION_PENALTY : 0);
+        return rating + gpaPoints(section.instructorGpa, parsed.preferGpa) - 0.7 * early - 0.35 * unknown - (isFull(section) ? FULL_SECTION_PENALTY : 0);
       };
       return localScore(b) - localScore(a) || a.section_id.localeCompare(b.section_id);
     });
@@ -486,7 +511,7 @@ function searchOptions(
 
 function scheduled(section: PlanSection, course: PlanCourse, ratings: Record<string, ProfessorSummary>): ScheduledSection {
   return { ...section, course_id: course.course_id, course_title: course.title, section_id: sectionId(section, course.course_id),
-    credits: course.credits, instructorRatings: sectionRatings(section, ratings), seatCheckedAt: course.seatCheckedAt };
+    credits: course.credits, instructorRatings: sectionRatings(section, ratings), seatCheckedAt: course.seatCheckedAt, instructorGpa: sectionGpa(section, course) };
 }
 
 function diagnose(courses: PlanCourse[], preferences: PlanPreferences): PlanDiagnosis[] {

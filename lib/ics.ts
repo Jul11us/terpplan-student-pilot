@@ -103,3 +103,31 @@ export function buildIcs(meetings: IcsMeeting[], calendar: TermCalendar, calenda
   lines.push("END:VCALENDAR");
   return lines.map(fold).join("\r\n") + "\r\n";
 }
+
+// One reminder event for the student's registration time (Eastern time), with alerts a day and 15 minutes
+// before. `when` is "YYYY-MM-DD" and "HH:MM" as Testudo shows them.
+export function buildReminderIcs(when: { date: string; time: string }, event: { summary: string; description: string; url: string }, now = new Date()) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(when.date) || !/^\d{2}:\d{2}$/.test(when.time)) throw new Error("Invalid registration time.");
+  const [hour, minute] = when.time.split(":").map(Number);
+  const start = hour * 60 + minute;
+  // Half an hour; an appointment that starts late in the evening still ends the same day.
+  const end = Math.min(start + 30, 23 * 60 + 59);
+  const stamp = now.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const alarm = (trigger: string) => ["BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${escapeText(event.summary)}`, `TRIGGER:${trigger}`, "END:VALARM"];
+  const lines = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//TerpPlan//Registration reminder//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", ...VTIMEZONE,
+    "BEGIN:VEVENT",
+    `UID:terpplan-registration-${compact(when.date)}T${clock(start)}@terpplan.com`,
+    `DTSTAMP:${stamp}`,
+    `DTSTART;TZID=America/New_York:${compact(when.date)}T${clock(start)}`,
+    `DTEND;TZID=America/New_York:${compact(when.date)}T${end === 23 * 60 + 59 ? "235900" : clock(end)}`,
+    `SUMMARY:${escapeText(event.summary)}`,
+    `DESCRIPTION:${escapeText(event.description)}`,
+    `URL:${event.url}`,
+    ...alarm("-P1D"),
+    ...alarm("-PT15M"),
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ];
+  return lines.map(fold).join("\r\n") + "\r\n";
+}

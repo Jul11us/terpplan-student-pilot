@@ -33,10 +33,10 @@ const copy = {
     start: "From", end: "To", strict: "Keep every class inside this window", options: "Top schedule options",
     ranking: "Ordered by instructor ratings, gaps between classes, early starts and walks between buildings. Options with full sections come last.",
     scoreHow: "How this score is built", scoreTotal: "Score", scoreNote: "Higher is better. The score only compares these options with each other.",
-    scorePart: { base: "Starting points", rating: "Average instructor rating", gaps: "Between-class gaps ({count} min × −0.008)", early: "Classes before 9am ({count} × −0.70)", unknown: "Unknown times or unrated instructors ({count} × −0.35)", window: "Time outside your preferred window ({count} min)", full: "Full sections ({count} × −2.50)", walks: "Hard-to-reach classes ({count} a week)" },
+    scorePart: { base: "Starting points", rating: "Average instructor rating", gpa: "Average GPA instructors gave (±0.2 per 0.1 from 3.0)", gaps: "Between-class gaps ({count} min × −0.008)", early: "Classes before 9am ({count} × −0.70)", unknown: "Unknown times or unrated instructors ({count} × −0.35)", window: "Time outside your preferred window ({count} min)", full: "Full sections ({count} × −2.50)", walks: "Hard-to-reach classes ({count} a week)" },
     highlight: { noRush: "No rushing between buildings", rating: "Highest-rated instructors", days: "Fewest days on campus", gaps: "Fewest gaps between classes", lateStart: "Latest first class", window: "Best fit for your time window", balanced: "Best overall balance", onlyOne: "The only schedule that fits" },
     option: "Option", score: "Score", rating: "Instructor rating", gaps: "Between-class gaps", days: "Campus days", firstClass: "earliest class",
-    openOnly: "Only use sections with open seats", fullIn: "Full", seatsUnknown: "Seats unknown", full: "Full", seat: "seat open", seatsOpen: "seats open",
+    openOnly: "Only use sections with open seats", preferGpa: "Prefer instructors who give higher grades (PlanetTerp average GPA in the course)", avgGpa: "Avg GPA", fullIn: "Full", seatsUnknown: "Seats unknown", full: "Full", seat: "seat open", seatsOpen: "seats open",
     windowHint: "Classes outside this window lower the ranking; tick the box to exclude them.",
     includeFc: "I'm in the Freshman Connection program (include FC sections)",
     exportCalendar: "Export to calendar (.ics)",
@@ -76,10 +76,10 @@ const copy = {
     start: "开始", end: "结束", strict: "所有课程都必须在此时间段内", options: "推荐方案",
     ranking: "按教师评分、课间空档、早课和换楼步行时间排序；有已满班次的方案排在最后。",
     scoreHow: "分数是怎么算的", scoreTotal: "综合分", scoreNote: "分数越高越好，只用来比较这几个方案。",
-    scorePart: { base: "基础分", rating: "教师平均评分", gaps: "课间空档（{count} 分钟 × −0.008）", early: "早上 9 点前的课（{count} 节 × −0.70）", unknown: "时间待定或没有评分的老师（{count} 项 × −0.35）", window: "超出时间偏好（{count} 分钟）", full: "已满班次（{count} 个 × −2.50）", walks: "课间来不及走（每周 {count} 处）" },
+    scorePart: { base: "基础分", rating: "教师平均评分", gpa: "老师给出的平均 GPA（比 3.0 每高 / 低 0.1，加 / 减 0.2 分）", gaps: "课间空档（{count} 分钟 × −0.008）", early: "早上 9 点前的课（{count} 节 × −0.70）", unknown: "时间待定或没有评分的老师（{count} 项 × −0.35）", window: "超出时间偏好（{count} 分钟）", full: "已满班次（{count} 个 × −2.50）", walks: "课间来不及走（每周 {count} 处）" },
     highlight: { noRush: "不用赶场换楼", rating: "教师评分最高", days: "到校天数最少", gaps: "课间空档最少", lateStart: "第一节课最晚", window: "最符合时间偏好", balanced: "综合最均衡", onlyOne: "唯一能排下的方案" },
     option: "方案", score: "综合分", rating: "教师评分", gaps: "课间空档", days: "到校天数", firstClass: "最早上课",
-    openOnly: "只使用有空位的班次", fullIn: "已满", seatsUnknown: "余位未知", full: "已满", seat: "个空位", seatsOpen: "个空位",
+    openOnly: "只使用有空位的班次", preferGpa: "优先选给分高的老师（按 PlanetTerp 上该课的平均 GPA）", avgGpa: "平均 GPA", fullIn: "已满", seatsUnknown: "余位未知", full: "已满", seat: "个空位", seatsOpen: "个空位",
     windowHint: "时间段外的课程会降低排名；勾选后会直接排除。",
     includeFc: "我参加了 Freshman Connection 项目（包含 FC 班次）",
     exportCalendar: "导出到日历（.ics）",
@@ -127,6 +127,8 @@ type Props = {
   prereqNeeds?: Record<string, string[]>;
   // Where the student enters the courses they've taken, shown above the course list.
   takenEditor?: React.ReactNode;
+  // The Plan A / Plan B switch, owned by the page.
+  planSwitch?: React.ReactNode;
   onBack: () => void;
   onUpdateCourse: (courseId: string, patch: Partial<PlanCourse>) => void;
   // Reports the option being viewed so the Gen Ed finder can check conflicts against it.
@@ -397,7 +399,7 @@ export function CalendarExport({ sections, term, termName, language, incomplete 
   </div>;
 }
 
-export default function SchedulePlanner({ courses, term, termName, language, creditsLabel, creditWarning, prereqNeeds = {}, takenEditor, onRemove, onBack, onChosenChange, onUpdateCourse }: Props) {
+export default function SchedulePlanner({ courses, term, termName, language, creditsLabel, creditWarning, prereqNeeds = {}, takenEditor, planSwitch, onRemove, onBack, onChosenChange, onUpdateCourse }: Props) {
   const t = copy[language];
   const [generated, setGenerated] = useState<{ requestKey: string; prefsKey: string; options: ScheduleOption[]; warnings: PlanWarning[]; diagnostics?: PlanDiagnosis[]; repairs?: PlanRepair[] }>({ requestKey: "", prefsKey: "", options: [], warnings: [] });
   const [selectedOption, setSelectedOption] = useState(0);
@@ -413,20 +415,21 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
   const [windowEnd, setWindowEnd] = useState(savedPreferences?.windowEnd ?? "");
   const [strictTime, setStrictTime] = useState(savedPreferences?.strictTime ?? false);
   const [openSeatsOnly, setOpenSeatsOnly] = useState(savedPreferences?.openSeatsOnly ?? false);
+  const [preferGpa, setPreferGpa] = useState(savedPreferences?.preferGpa ?? false);
   const [includeFreshmanConnection, setIncludeFreshmanConnection] = useState(savedPreferences?.includeFreshmanConnection ?? false);
   const [busyBlocks, setBusyBlocks] = useState<BusyBlock[]>(savedPreferences?.busyBlocks ?? []);
   const [bufferMinutes, setBufferMinutes] = useState(savedPreferences?.bufferMinutes ?? 0);
   // Phones show the preferences folded; this counts what is set, so a folded form still says something.
   const [prefsOpen, setPrefsOpen] = useState(false);
-  const prefsSet = [earliestStart, windowStart || windowEnd, excludedDays.length, openSeatsOnly, includeFreshmanConnection, busyBlocks.length, bufferMinutes].filter(Boolean).length;
+  const prefsSet = [earliestStart, windowStart || windowEnd, excludedDays.length, openSeatsOnly, preferGpa, includeFreshmanConnection, busyBlocks.length, bufferMinutes].filter(Boolean).length;
 
   useEffect(() => {
-    writeSavedState({ preferences: { excludedDays, earliestStart, windowStart, windowEnd, strictTime, openSeatsOnly, includeFreshmanConnection, busyBlocks, bufferMinutes } });
-  }, [excludedDays, earliestStart, windowStart, windowEnd, strictTime, openSeatsOnly, includeFreshmanConnection, busyBlocks, bufferMinutes]);
+    writeSavedState({ preferences: { excludedDays, earliestStart, windowStart, windowEnd, strictTime, openSeatsOnly, preferGpa, includeFreshmanConnection, busyBlocks, bufferMinutes } });
+  }, [excludedDays, earliestStart, windowStart, windowEnd, strictTime, openSeatsOnly, preferGpa, includeFreshmanConnection, busyBlocks, bufferMinutes]);
   // Results belong to the course list and term they were generated for; hide them once either changes.
   const requestKey = useMemo(() => planKey(courses, term), [courses, term]);
   // Preferences only mark results as out of date: the options stay visible with a notice to regenerate.
-  const preferences = { earliestStart: earliestStart || null, excludedDays, windowStart: windowStart || null, windowEnd: windowEnd || null, strictTime, openSeatsOnly, includeFreshmanConnection, busyBlocks: anonymousBusyBlocks(busyBlocks), bufferMinutes };
+  const preferences = { earliestStart: earliestStart || null, excludedDays, windowStart: windowStart || null, windowEnd: windowEnd || null, strictTime, openSeatsOnly, preferGpa, includeFreshmanConnection, busyBlocks: anonymousBusyBlocks(busyBlocks), bufferMinutes };
   const prefsKey = JSON.stringify(preferences);
   const scheduleRequest = { courseIds: courses.map((course) => course.courseId), term, preferences,
     instructorFilters: Object.fromEntries(courses.filter((course) => course.instructors?.length).map((course) => [course.courseId, course.instructors])),
@@ -536,6 +539,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
       <div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">02 · {t.preferences}</p><h2 className="mt-2 font-serif text-3xl">{t.courses}</h2></div>
       <button onClick={onBack} className="rounded-lg border border-[#d9d6ce] px-3 py-2 text-sm font-medium hover:bg-white">{t.back}</button>
     </div>
+    {planSwitch && <div className="mt-4">{planSwitch}</div>}
     {!courses.length ? <p className="mt-6 rounded-xl bg-[#f2f0eb] p-5 text-sm text-[#717975]">{t.addCourse}</p> : <>
       {creditsLabel && <p className="mt-6 text-xs font-medium text-[#48534f]">{creditsLabel}</p>}
       {creditWarning && <p role="status" className="mt-2 rounded-lg bg-[#fff8e8] px-3 py-2 text-xs leading-5 text-[#745424]">⚠ {creditWarning}</p>}
@@ -554,6 +558,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
         </div>
         <div className="mt-4"><p className="mb-2 text-xs font-medium text-[#68716e]">{t.excluded}</p><div className="flex flex-wrap gap-2">{DAYS.map((day, index) => <label key={day} className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[#e3e0d8] bg-[#fbfaf8] px-3 py-2 text-xs"><input type="checkbox" checked={excludedDays.includes(day)} onChange={(event) => setExcludedDays((current) => event.target.checked ? [...current, day] : current.filter((item) => item !== day))} />{t.weekdays[index]}</label>)}</div></div>
         <label className="mt-4 inline-flex items-center gap-2 text-xs text-[#68716e]"><input type="checkbox" checked={openSeatsOnly} onChange={(event) => setOpenSeatsOnly(event.target.checked)} />{t.openOnly}</label>
+        <label className="mt-2 flex items-start gap-2 text-xs text-[#68716e]"><input type="checkbox" className="mt-0.5" checked={preferGpa} onChange={(event) => setPreferGpa(event.target.checked)} />{t.preferGpa}</label>
         <label className="mt-2 flex items-center gap-2 text-xs text-[#68716e]"><input type="checkbox" checked={includeFreshmanConnection} onChange={(event) => setIncludeFreshmanConnection(event.target.checked)} />{t.includeFc}</label>
         <p className="mt-3 text-xs leading-5 text-[#858d89]">{t.windowHint}</p>
         {courses.some((course) => course.pinnedSectionId) && <p className="mt-1 text-xs leading-5 text-[#858d89]">{t.pinnedNote}</p>}
@@ -581,7 +586,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
         <span className="mt-3 block text-xs leading-5 text-[#626c67]">{option.selectedSections.map((section) => section.section_id).join(" · ")}</span>
         {missingFrom(option).length ? <span className="mt-2 mr-1 inline-block rounded-full bg-[#8f4538] px-2 py-0.5 text-[11px] font-semibold text-white">{t.incompleteTag}: {missingFrom(option).join(", ")}</span> : null}
         {option.fullSectionIds?.length ? <span className="mt-2 inline-block rounded-full bg-[#f5e9e5] px-2 py-0.5 text-[11px] font-semibold text-[#8f4538]">{t.fullIn}: {option.fullSectionIds.join(", ")}</span> : null}
-        <span className="mt-3 block text-xs text-[#737b77]">{t.rating}: {option.professorRating === null ? "—" : option.professorRating.toFixed(2) + " / 5"} · {t.gaps}: {option.gapMinutes} {t.minutes}{option.tightWalkCount ? <span className="text-[#8f4538]"> · {t.tightWalks}: {option.tightWalkCount} {t.times}</span> : null}</span>
+        <span className="mt-3 block text-xs text-[#737b77]">{t.rating}: {option.professorRating === null ? "—" : option.professorRating.toFixed(2) + " / 5"}{option.averageGpa !== null && option.averageGpa !== undefined ? ` · ${t.avgGpa} ${option.averageGpa.toFixed(2)}` : ""} · {t.gaps}: {option.gapMinutes} {t.minutes}{option.tightWalkCount ? <span className="text-[#8f4538]"> · {t.tightWalks}: {option.tightWalkCount} {t.times}</span> : null}</span>
         <span className="mt-1 block text-xs text-[#737b77]">{t.days}: {option.campusDays.map((day) => t.weekdays[DAYS.indexOf(day as (typeof DAYS)[number])] ?? day).join(", ") || "—"}{option.earliestStart ? " · " + t.firstClass + " " + option.earliestStart : ""}</span>
         {option.timeFitPercent !== null && <span className="mt-1 block text-xs text-[#737b77]">{t.fit}: {Math.round(option.timeFitPercent)}%</span>}
         </div>
@@ -609,7 +614,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
         <SectionSwap key={`${requestKey}:${prefsKey}:${chosen.selectedSections.map((item) => item.section_id).join("|")}`} section={section} language={language} request={{ ...scheduleRequest, selectedSectionIds: chosen.selectedSections.map((item) => item.section_id) }} disabled={loading || !upToDate || chosenMissing.length > 0} forceOpen={false} onApply={(option) => applySwap(option, section.course_id)} />
         </article>)}</div>
         <p className="mt-3 text-xs leading-5 text-[#858d89]">{t.seatReadHint}</p>
-        <RegistrationChecklist option={chosen} others={options.filter((option) => option !== chosen)} missingCourseIds={chosenMissing} language={language} />
+        <RegistrationChecklist option={chosen} others={options.filter((option) => option !== chosen)} missingCourseIds={chosenMissing} language={language} termName={termName} />
       </div>}
     </div>}
   </section>;

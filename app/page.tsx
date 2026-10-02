@@ -20,7 +20,7 @@ import SeatEmailToggle from "@/app/components/seat-email-toggle";
 import SectionProfessors from "@/app/components/section-professors";
 import type { ProfessorSummary } from "@/lib/planetterp";
 import { roomLabel } from "@/lib/room";
-import { readSavedState, STORAGE_KEY, writeSavedState } from "@/lib/saved-state";
+import { readSavedState, STORAGE_KEY, swapPlans, writeSavedState } from "@/lib/saved-state";
 import { formatSeatReadTime } from "@/lib/seat-time";
 import { courseSearchView, startCourseSearch, type CourseSearchState } from "@/lib/course-search";
 import { groupSections, ownMeetings } from "@/lib/section-groups";
@@ -76,7 +76,7 @@ const copy = {
     watchLimit: "You can watch up to 10 courses (40 sections). Remove one to add another.", watchAll: "Watch all {n} sections", watchingAll: "Watching all {n} sections", watchAllHint: "One email when any of them opens. Untick instructors above to leave theirs out.", watchAllTooMany: "{n} sections is more than 20. Untick instructors above to watch fewer at once.", watchGroup: "Watching {n} sections", watchGroupOpen: "{k} open", removeAll: "Remove all", emailPrivacy: "Your address is used to sign you in. Codes expire after 10 minutes.", wrongCode: "That code could not be verified.", emailSignedIn: "Signed in with email", signOut: "Sign out",
     loading: "Loading…", error: "Something went wrong. Please try again.",
     resultFull: "Full", resultNoSections: "No sections", resultSeatsUnknown: "Seats unknown",
-    filterOpen: "Open seats", filterPrereqs: "Prerequisites met", filterPrereqsNeedTaken: "Add the courses you've taken (above) to use this filter.", filterCredits: "Credits", filterAny: "Any", filterShowing: "Showing {n} of {m}", filterNone: "No matches with these filters.", filterClear: "Clear filters", showMore: "Show {n} more ({m} left)", transferButton: "Continue on another device", transferCopied: "Link copied. Open it on your other device, for example by emailing or messaging it to yourself.", transferReady: "Copy this link and open it on your other device.", transferPrivacy: "It carries your plans, schedule preferences and courses taken, but not the names of personal events. Anyone with the link can see them.", transferTitle: "Plan from another device", transferBody: "This link has {courses} planned courses{taken}. Load them here? This replaces the plan saved in this browser.", transferTaken: " and {n} courses taken", transferLoad: "Load plan", transferDismiss: "Not now", transferInvalid: "This transfer link is incomplete or damaged. Make a new one on the other device.", resultsCapped: "Showing the first {n} matches. Type more of the course code or title to narrow the search.",
+    filterOpen: "Open seats", filterPrereqs: "Prerequisites met", filterPrereqsNeedTaken: "Add the courses you've taken (above) to use this filter.", filterCredits: "Credits", filterAny: "Any", filterShowing: "Showing {n} of {m}", filterNone: "No matches with these filters.", filterClear: "Clear filters", showMore: "Show {n} more ({m} left)", planName: "Plan {x}", planSwitch: "Plan A or Plan B for this term", planCopy: "Copy this plan to Plan {x}", planHint: "Keep a backup plan for this term. Each plan has its own courses; preferences are shared.", transferButton: "Continue on another device", transferCopied: "Link copied. Open it on your other device, for example by emailing or messaging it to yourself.", transferReady: "Copy this link and open it on your other device.", transferPrivacy: "It carries your plans, schedule preferences and courses taken, but not the names of personal events. Anyone with the link can see them.", transferTitle: "Plan from another device", transferBody: "This link has {courses} planned courses{taken}. Load them here? This replaces the plan saved in this browser.", transferTaken: " and {n} courses taken", transferLoad: "Load plan", transferDismiss: "Not now", transferInvalid: "This transfer link is incomplete or damaged. Make a new one on the other device.", resultsCapped: "Showing the first {n} matches. Type more of the course code or title to narrow the search.",
     prereqNeeds: "Prerequisite not met yet: {needs}", prereqMet: "Prerequisites met by the courses you've taken.", prereqAddTaken: "Add the courses you've taken (at the top of the page) to check this prerequisite.", prereqOrHigher: " or higher", prereqSameTerm: " (same term OK)", prereqOf: "{k} of",
     seats: "seats open", seat: "seat open", credit: "credit", creditsUnit: "credits", openOf: "{n} / {total} open", waitlisted: "{n} waitlisted", groupSections: "{n} sections", groupShared: "Every section meets", groupOwn: "Each section adds", groupOpenIn: "across {n} sections", fcOnly: "Freshman Connection only", pickCourse: "Pick a course from the matches to see its sections.", waitlist: "waitlist", checked: "Last checked", status: "Status", freshness: "Seat counts come from UMD course data and may lag the official Schedule of Classes. This page checks at most once a minute while open.",
     open: "Seats available", full: "Full", unknown: "Unknown", stale: "Last check failed · showing saved count", checking: "Checking…",
@@ -98,7 +98,7 @@ const copy = {
     watchLimit: "最多可以关注 10 门课（共 40 个班次），请先移除一些再添加。", watchAll: "关注全部 {n} 个班次", watchingAll: "已关注全部 {n} 个班次", watchAllHint: "任意一个班次有空位就发一封邮件。取消勾选上方的老师，就不会关注那些老师的班次。", watchAllTooMany: "{n} 个班次超过了 20 个，请先取消勾选上方的一些老师。", watchGroup: "关注了 {n} 个班次", watchGroupOpen: "{k} 个有空位", removeAll: "全部移除", emailPrivacy: "邮箱仅用于登录。验证码将在 10 分钟后失效。", wrongCode: "验证码无法验证。", emailSignedIn: "已通过邮箱登录", signOut: "退出登录",
     loading: "加载中…",
     resultFull: "已满", resultNoSections: "本学期无班次", resultSeatsUnknown: "余位未知",
-    filterOpen: "有空位", filterPrereqs: "先修课已满足", filterPrereqsNeedTaken: "先在上方填写修过的课程，才能用这个筛选。", filterCredits: "学分", filterAny: "不限", filterShowing: "显示 {n} / {m} 门", filterNone: "没有符合筛选条件的课程。", filterClear: "清除筛选", showMore: "再显示 {n} 门（还有 {m} 门）", transferButton: "在其他设备上继续", transferCopied: "链接已复制。在另一台设备上打开它，比如用邮件或消息发给自己。", transferReady: "复制这个链接，在另一台设备上打开。", transferPrivacy: "链接里有你的排课方案、排课偏好和修过的课程，不包括个人日程的名称。拿到链接的人都能看到这些内容。", transferTitle: "来自其他设备的方案", transferBody: "这个链接里有 {courses} 门计划课程{taken}。要在这里载入吗？这会替换这个浏览器里保存的方案。", transferTaken: "和 {n} 门修过的课程", transferLoad: "载入方案", transferDismiss: "暂不", transferInvalid: "这个链接不完整或已损坏，请在另一台设备上重新生成。", resultsCapped: "只列出前 {n} 个匹配结果。输入更完整的课号或课名可以缩小范围。",
+    filterOpen: "有空位", filterPrereqs: "先修课已满足", filterPrereqsNeedTaken: "先在上方填写修过的课程，才能用这个筛选。", filterCredits: "学分", filterAny: "不限", filterShowing: "显示 {n} / {m} 门", filterNone: "没有符合筛选条件的课程。", filterClear: "清除筛选", showMore: "再显示 {n} 门（还有 {m} 门）", planName: "方案 {x}", planSwitch: "本学期的方案 A 或方案 B", planCopy: "把这个方案复制到方案 {x}", planHint: "给这学期留一个备用方案。两个方案的课程各自独立，排课偏好共用。", transferButton: "在其他设备上继续", transferCopied: "链接已复制。在另一台设备上打开它，比如用邮件或消息发给自己。", transferReady: "复制这个链接，在另一台设备上打开。", transferPrivacy: "链接里有你的排课方案、排课偏好和修过的课程，不包括个人日程的名称。拿到链接的人都能看到这些内容。", transferTitle: "来自其他设备的方案", transferBody: "这个链接里有 {courses} 门计划课程{taken}。要在这里载入吗？这会替换这个浏览器里保存的方案。", transferTaken: "和 {n} 门修过的课程", transferLoad: "载入方案", transferDismiss: "暂不", transferInvalid: "这个链接不完整或已损坏，请在另一台设备上重新生成。", resultsCapped: "只列出前 {n} 个匹配结果。输入更完整的课号或课名可以缩小范围。",
     prereqNeeds: "先修课还没满足：{needs}", prereqMet: "你修过的课程已满足先修要求。", prereqAddTaken: "在页面上方填写修过的课程，就能检查这门课的先修要求。", prereqOrHigher: " 或更高", prereqSameTerm: "（可同学期修）", prereqOf: "任选 {k} 门：",
     error: "发生错误，请重试。", seats: "个空位", seat: "个空位", credit: "学分", creditsUnit: "学分", openOf: "空位 {n} / {total}", waitlisted: "候补 {n} 人", groupSections: "{n} 个班次", groupShared: "所有班次都上", groupOwn: "各班次另外的时间", groupOpenIn: "{n} 个班次合计", fcOnly: "仅限 Freshman Connection", pickCourse: "从匹配结果中选择一门课程，查看它的班次。", waitlist: "候补人数", checked: "上次检查", status: "状态",
     freshness: "余位数据来自 UMD 课程数据，可能晚于学校官方课表。页面打开时最多每分钟检查一次。",
@@ -238,6 +238,14 @@ export default function Home() {
   const creditRequestsRef = useRef(new Set<string>());
   // Plans saved in this browser, one per term; kept in a ref so switching terms can restore them.
   const savedPlansRef = useRef<Record<string, PlanCourse[]>>({});
+  // Plan A / Plan B for the current term: which one is on screen, and how many courses the other has.
+  const [showingB, setShowingB] = useState(false);
+  const [otherPlanCount, setOtherPlanCount] = useState(0);
+  const syncPlanSlot = useCallback((forTerm: string) => {
+    const saved = readSavedState();
+    setShowingB(Boolean(saved.showingB?.[forTerm]));
+    setOtherPlanCount(saved.otherPlans?.[forTerm]?.length ?? 0);
+  }, []);
   const [restored, setRestored] = useState(false);
   // A plan arriving in a "continue on another device" link (#move=...), waiting for the student to accept.
   const [transferOffer, setTransferOffer] = useState<Transfer | "invalid" | null>(null);
@@ -297,7 +305,8 @@ export default function Home() {
     setTerm(nextTerm);
     setSelected(null); setSections([]); setCourseSeatCheckedAt(null); setCourseInfo(null); setCourseCredits(null); setProfessorRatings({}); setRatingsLoading(false);
     setPlanCourses(savedPlansRef.current[nextTerm] ?? []);
-  }, []);
+    syncPlanSlot(nextTerm);
+  }, [syncPlanSlot]);
 
   // A "continue on another device" link: on load, and when one is pasted into a tab already on TerpPlan
   // (only the #fragment changes then, so the page does not reload).
@@ -364,10 +373,11 @@ export default function Home() {
       savedPlansRef.current = saved.plans;
       applyingOtherTabRef.current = true;
       setPlanCourses(saved.plans[termRef.current] ?? []);
+      syncPlanSlot(termRef.current);
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, []);
+  }, [syncPlanSlot]);
 
   useEffect(() => startCourseSearch(query, term, setSearchState, t.error), [query, term, t.error]);
 
@@ -641,6 +651,31 @@ export default function Home() {
     window.location.reload();
   };
 
+  // Swap the plan on screen with the one put aside (A <-> B). The save effect then stores the new plans[term].
+  const switchPlan = () => {
+    const next = swapPlans(readSavedState(), term, planCourses);
+    writeSavedState(next);
+    savedPlansRef.current = next.plans;
+    setOtherPlanCount(planCourses.length);
+    setShowingB(Boolean(next.showingB?.[term]));
+    setPlanCourses(next.plans[term] ?? []);
+  };
+  const copyPlanToOther = () => {
+    const saved = readSavedState();
+    writeSavedState({ otherPlans: { ...saved.otherPlans, [term]: planCourses } });
+    setOtherPlanCount(planCourses.length);
+  };
+  const planSwitch = <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+    <div role="group" aria-label={t.planSwitch} title={t.planHint} className="inline-flex rounded-lg border border-[#d9d6ce] bg-white p-0.5">
+      {(["A", "B"] as const).map((slot) => {
+        const active = (slot === "B") === showingB;
+        return <button key={slot} type="button" aria-pressed={active} onClick={() => { if (!active) switchPlan(); }} className={`rounded-md px-2.5 py-1 font-semibold transition ${active ? "bg-[#273c38] text-white" : "text-[#48534f] hover:bg-[#f1efe9]"}`}>{t.planName.replace("{x}", slot)} <span className="font-normal opacity-75">({active ? planCourses.length : otherPlanCount})</span></button>;
+      })}
+    </div>
+    {otherPlanCount === 0 && planCourses.length > 0 ? <button type="button" onClick={copyPlanToOther} className="font-medium text-[#a34a39] hover:underline">{t.planCopy.replace("{x}", showingB ? "A" : "B")}</button> : null}
+    {otherPlanCount === 0 && <span className="basis-full text-[11px] leading-5 text-[#858d89] sm:basis-auto">{t.planHint}</span>}
+  </div>;
+
   const requestEmailCode = async () => {
     setError(""); setMessage(""); setAuthBusy(true);
     try {
@@ -734,6 +769,7 @@ export default function Home() {
             </div>
             <Link href="/audit" className="basis-full text-xs font-medium text-[#a34a39] hover:underline sm:shrink-0 sm:basis-auto">{language === "en" ? "Not sure what you still need? Check your degree audit →" : "不确定还缺哪些课？查看学位审计 →"}</Link>
           </div>
+          <div className="mt-2">{planSwitch}</div>
           {planCreditWarning && <p role="status" className="mt-2 rounded-lg bg-[#fff8e8] px-3 py-2 text-xs leading-5 text-[#745424]">⚠ {planCreditWarning}</p>}
           <div className="mt-2 border-t border-[#ece9e2] pt-2"><TakenCoursesEditor taken={taken} language={language} /></div>
           <div className="mt-2 border-t border-[#ece9e2] pt-2 text-xs"><button type="button" onClick={() => void makeTransferLink()} className="font-medium text-[#a34a39] hover:underline">{t.transferButton} →</button>
@@ -863,7 +899,7 @@ export default function Home() {
         </section>}
 
         {/* Mounted (hidden) outside step 02 too, so options regenerate while courses are added from search. */}
-        {restored && <div hidden={step !== "schedule"}><SchedulePlanner onChosenChange={rememberSchedule} courses={planCourses} prereqNeeds={Object.fromEntries(planCourses.map((course) => [course.courseId, prereqNeeds(course.courseId) ?? []]))} takenEditor={<TakenCoursesEditor taken={taken} language={language} />} creditsLabel={planCreditLabel} creditWarning={planCreditWarning} term={term} termName={termLabel(term, "en")} language={language} onUpdateCourse={(courseId, patch) => setPlanCourses((current) => current.map((course) => course.courseId === courseId ? { ...course, ...patch } : course))} onRemove={(courseId) => setPlanCourses((current) => current.filter((course) => course.courseId !== courseId))} onBack={() => setStep("find")} /></div>}
+        {restored && <div hidden={step !== "schedule"}><SchedulePlanner onChosenChange={rememberSchedule} courses={planCourses} prereqNeeds={Object.fromEntries(planCourses.map((course) => [course.courseId, prereqNeeds(course.courseId) ?? []]))} takenEditor={<TakenCoursesEditor taken={taken} language={language} />} creditsLabel={planCreditLabel} creditWarning={planCreditWarning} planSwitch={planSwitch} term={term} termName={termLabel(term, "en")} language={language} onUpdateCourse={(courseId, patch) => setPlanCourses((current) => current.map((course) => course.courseId === courseId ? { ...course, ...patch } : course))} onRemove={(courseId) => setPlanCourses((current) => current.filter((course) => course.courseId !== courseId))} onBack={() => setStep("find")} /></div>}
 
         {step === "watch" && <section className="mx-auto max-w-4xl rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-8"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">03 · {t.watch}</p><h2 className="mt-2 font-serif text-3xl">{t.watchesTitle}</h2></div><button onClick={() => void refreshWatches()} disabled={checking || !watches.length} className="rounded-lg bg-[#273c38] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{checking ? t.checking : t.refresh}</button></div>
           {authenticated === false && <div className="mt-6 rounded-xl border border-[#e3dfd6] bg-white p-5"><p className="text-sm font-medium">{t.signIn}</p><label className="mt-4 grid gap-1.5 text-xs font-medium text-[#68716e]">{t.email}<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm text-[#202728] outline-none focus:border-[#a34a39]" /></label>{codeSent && <label className="mt-3 grid gap-1.5 text-xs font-medium text-[#68716e]">{t.emailCode}<input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={emailCode} onChange={(event) => setEmailCode(event.target.value.replace(/\D/g, "").slice(0, 6))} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm tracking-[.2em] text-[#202728] outline-none focus:border-[#a34a39]" /></label>}<p className="mt-2 text-xs leading-5 text-[#858d89]">{t.emailPrivacy}</p><div className="mt-4 flex flex-wrap gap-2">{!codeSent ? <button onClick={() => void requestEmailCode()} disabled={authBusy || !email.trim()} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.sendCode}</button> : <><button onClick={() => void verifyEmailCode()} disabled={authBusy || emailCode.length !== 6} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.verifyCode}</button><button onClick={() => void requestEmailCode()} disabled={authBusy} className="rounded-lg border border-[#dedbd3] px-4 py-2.5 text-sm font-medium text-[#68716e] disabled:opacity-50">{t.sendCode}</button></>}</div></div>}

@@ -60,3 +60,21 @@ test("loading another device's plan replaces old preferences and taken courses, 
     else globalThis.window = previous;
   }
 });
+
+test("Plan B travels with the link and swapping keeps both plans", async () => {
+  const { swapPlans } = await import("../lib/saved-state.ts");
+  const planA = [{ courseId: "CMSC216", courseTitle: "Introduction to Computer Systems" }];
+  const planB = [{ courseId: "CMSC250", courseTitle: "Discrete Structures" }];
+  const swapped = swapPlans({ plans: { "202701": planA } }, "202701", planA);
+  assert.deepEqual(swapped.plans["202701"], []);
+  assert.deepEqual(swapped.otherPlans["202701"], planA);
+  assert.equal(swapped.showingB["202701"], true);
+  const back = swapPlans({ ...swapped, plans: { "202701": planB } }, "202701", planB);
+  assert.deepEqual(back.plans["202701"], planA);
+  assert.equal(back.showingB["202701"], undefined);
+
+  const transfer = await decodeTransfer(await encodeTransfer({ term: "202701", plans: { "202701": planB }, otherPlans: { "202701": planA }, showingB: { "202701": true } }, null));
+  assert.deepEqual(transfer.state.otherPlans["202701"], planA);
+  assert.equal(transfer.state.showingB["202701"], true);
+  assert.equal(transferCourseCount(transfer), 2);
+});

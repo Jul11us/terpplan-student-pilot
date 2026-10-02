@@ -32,6 +32,8 @@ function shareable(state: SavedState): SavedState {
   return {
     term: state.term,
     plans: state.plans,
+    otherPlans: state.otherPlans,
+    showingB: state.showingB,
     ...(state.preferences ? { preferences: { ...state.preferences, ...(busyBlocks ? { busyBlocks } : {}) } } : {}),
   };
 }
@@ -47,16 +49,17 @@ export async function decodeTransfer(code: string): Promise<Transfer | null> {
     const parsed = JSON.parse(new TextDecoder().decode(await pipe(fromBase64Url(code), new DecompressionStream("deflate-raw")))) as { v?: unknown; s?: unknown; t?: unknown };
     if (parsed.v !== VERSION) return null;
     const state = parseSavedState(parsed.s);
-    return { state: { term: state.term, plans: state.plans, ...(state.preferences ? { preferences: state.preferences } : {}) }, taken: parseTaken(parsed.t) };
+    return { state: { term: state.term, plans: state.plans, otherPlans: state.otherPlans, showingB: state.showingB, ...(state.preferences ? { preferences: state.preferences } : {}) }, taken: parseTaken(parsed.t) };
   } catch {
     return null;
   }
 }
 
-export const transferCourseCount = (transfer: Transfer) => Object.values(transfer.state.plans).reduce((sum, courses) => sum + courses.length, 0);
+// Courses in every plan the link carries (both Plan A and Plan B of each term).
+export const transferCourseCount = (transfer: Transfer) => [...Object.values(transfer.state.plans), ...Object.values(transfer.state.otherPlans ?? {})].reduce((sum, courses) => sum + courses.length, 0);
 
 // Replace the receiving browser's plan data, including empty values, while keeping its language.
 export function applyTransfer(transfer: Transfer) {
-  writeSavedState({ term: transfer.state.term, plans: transfer.state.plans, preferences: transfer.state.preferences });
+  writeSavedState({ term: transfer.state.term, plans: transfer.state.plans, otherPlans: transfer.state.otherPlans ?? {}, showingB: transfer.state.showingB ?? {}, preferences: transfer.state.preferences });
   writeTaken(transfer.taken ? { completed: transfer.taken.completed, inProgress: transfer.taken.inProgress, source: transfer.taken.source } : null);
 }

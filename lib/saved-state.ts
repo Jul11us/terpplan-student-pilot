@@ -22,6 +22,7 @@ export type SavedPreferences = {
   windowEnd: string;
   strictTime: boolean;
   openSeatsOnly: boolean;
+  preferGpa?: boolean;
   includeFreshmanConnection: boolean;
   busyBlocks?: BusyBlock[];
   bufferMinutes?: number;
@@ -32,6 +33,10 @@ export type SavedState = {
   term?: string;
   // One plan per term, so switching terms and back restores each one.
   plans: Record<string, SavedPlanCourse[]>;
+  // Plan A / Plan B: plans[term] is always the plan on screen, so the rest of the page reads one list;
+  // otherPlans[term] is the one put aside, and showingB marks the terms where Plan B is on screen.
+  otherPlans?: Record<string, SavedPlanCourse[]>;
+  showingB?: Record<string, true>;
   preferences?: SavedPreferences;
 };
 
@@ -68,6 +73,7 @@ function preferences(value: unknown): SavedPreferences | undefined {
     windowEnd: text("windowEnd"),
     strictTime: record.strictTime === true,
     openSeatsOnly: record.openSeatsOnly === true,
+    preferGpa: record.preferGpa === true,
     includeFreshmanConnection: record.includeFreshmanConnection === true,
     busyBlocks: normalizeBusyBlocks(record.busyBlocks ?? []),
     bufferMinutes: validBuffer(record.bufferMinutes) ? record.bufferMinutes : 0,
@@ -78,17 +84,37 @@ function preferences(value: unknown): SavedPreferences | undefined {
 export function parseSavedState(value: unknown): SavedState {
   if (!value || typeof value !== "object") return { plans: {} };
   const parsed = value as Record<string, unknown>;
-  const plans: Record<string, SavedPlanCourse[]> = {};
-  if (parsed.plans && typeof parsed.plans === "object") {
-    for (const [term, courses] of Object.entries(parsed.plans as Record<string, unknown>)) {
-      if (/^\d{6}$/.test(term)) plans[term] = planCourses(courses);
+  const byTerm = (raw: unknown) => {
+    const result: Record<string, SavedPlanCourse[]> = {};
+    if (raw && typeof raw === "object") {
+      for (const [term, courses] of Object.entries(raw as Record<string, unknown>)) {
+        if (/^\d{6}$/.test(term)) result[term] = planCourses(courses);
+      }
     }
-  }
+    return result;
+  };
+  const showingB = parsed.showingB && typeof parsed.showingB === "object"
+    ? Object.fromEntries(Object.entries(parsed.showingB as Record<string, unknown>).filter(([term, value]) => /^\d{6}$/.test(term) && value === true).map(([term]) => [term, true as const]))
+    : {};
   return {
     language: parsed.language === "zh" || parsed.language === "en" ? parsed.language : undefined,
     term: typeof parsed.term === "string" && /^\d{6}$/.test(parsed.term) ? parsed.term : undefined,
-    plans,
+    plans: byTerm(parsed.plans),
+    otherPlans: byTerm(parsed.otherPlans),
+    showingB,
     preferences: preferences(parsed.preferences),
+  };
+}
+
+// Puts the plan on screen aside and brings the other one (A <-> B) for this term.
+export function swapPlans(state: SavedState, term: string, current: SavedPlanCourse[]): Pick<SavedState, "plans" | "otherPlans" | "showingB"> {
+  const showingB = { ...state.showingB };
+  if (showingB[term]) delete showingB[term];
+  else showingB[term] = true;
+  return {
+    plans: { ...state.plans, [term]: state.otherPlans?.[term] ?? [] },
+    otherPlans: { ...state.otherPlans, [term]: current },
+    showingB,
   };
 }
 
@@ -107,6 +133,7 @@ export function writeSavedState(patch: Partial<SavedState>) {
     const next = { ...readSavedState(), ...patch };
     // Drop empty per-term plans so old terms do not pile up.
     next.plans = Object.fromEntries(Object.entries(next.plans).filter(([, courses]) => courses.length));
+    next.otherPlans = Object.fromEntries(Object.entries(next.otherPlans ?? {}).filter(([, courses]) => courses.length));
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   } catch {
     // Storage unavailable or full: the page keeps working, it just will not remember.
