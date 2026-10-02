@@ -156,6 +156,17 @@ body {
   font-weight: 600;
 }
 
+/* One dropdown arrow for every select. Native arrows sit against the right border in Safari and vary by
+   browser. Unlayered on purpose: it must beat the px-3 utility on the right side to make room for the arrow. */
+select:not([multiple]) {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%2368716e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
+  background-position: right 0.75rem center;
+  background-repeat: no-repeat;
+  background-size: 0.75rem;
+  padding-right: 2.25rem;
+}
+
 .course-finder button:focus-visible,
 .course-finder select:focus-visible {
   outline: 2px solid #a34a39;

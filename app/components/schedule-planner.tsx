@@ -47,7 +47,7 @@ const copy = {
     updating: "Updating options for your latest changes…", autoNote: "Options update automatically when you change courses or preferences.",
     staleOptions: "Your preferences changed since these options were generated. Generate again to apply them.",
     pinnedNote: "Sections you required are kept even when they are full or Freshman Connection.",
-    onlyInstructors: "Only", minutes: "min", credits: "credits", lecture: "Lecture", discussion: "Discussion", lab: "Lab",
+    onlyInstructors: "Only", minutes: "min", credits: "credits", credit: "credit", lecture: "Lecture", discussion: "Discussion", lab: "Lab",
     // Short forms for the narrow timetable blocks.
     lectureShort: "LEC", discussionShort: "DIS", labShort: "LAB",
     select: "View this schedule", calendar: "Weekly timetable", unknown: "Times to confirm", noUnknown: "All meeting times are listed.",
@@ -84,7 +84,7 @@ const copy = {
     updating: "正在根据最新的改动更新方案…", autoNote: "修改课程或排课偏好后，方案会自动更新。",
     staleOptions: "排课偏好在生成这些方案后改过了。请重新生成，新的偏好才会生效。",
     pinnedNote: "你指定的班次即使已满或属于 FC，也会保留在方案里。",
-    onlyInstructors: "只排", minutes: "分钟", credits: "学分", lecture: "讲课", discussion: "讨论课", lab: "实验课",
+    onlyInstructors: "只排", minutes: "分钟", credits: "学分", credit: "学分", lecture: "讲课", discussion: "讨论课", lab: "实验课",
     lectureShort: "讲课", discussionShort: "讨论课", labShort: "实验课",
     select: "查看此方案", calendar: "每周课表", unknown: "需要确认的时间", noUnknown: "所有班次均列出了上课时间。",
     noOptions: "没有找到无冲突方案。可以移除一项偏好或课程后重试。",
@@ -268,7 +268,8 @@ export function WeeklyCalendar({ sections: courseSections, language, busyBlocks 
       <div className="sticky top-0 z-10 bg-white p-3 text-center text-[11px] text-[#8a918e]">ET</div>
       {DAYS.map((day, index) => <div key={day} className="sticky top-0 z-10 border-l border-[#e6e4de] bg-white p-3 text-center text-xs font-semibold text-[#59635f]">{t.weekdays[index]}</div>)}
       <div className="relative" style={{ height }}>
-        {Array.from({ length: (lastMinute - firstMinute) / 60 + 1 }, (_, index) => <span key={index} className="absolute right-2 -translate-y-1/2 text-[10px] text-[#858d89]" style={{ top: index * 60 }}>{displayClock(firstMinute + index * 60)}</span>)}
+        {/* Labels sit centred on their hour line, except the first and last, which would be half hidden under the day header or past the bottom edge. */}
+        {Array.from({ length: (lastMinute - firstMinute) / 60 + 1 }, (_, index) => <span key={index} className={`absolute right-2 text-[10px] text-[#858d89] ${index === 0 ? "translate-y-0.5" : index === (lastMinute - firstMinute) / 60 ? "-translate-y-full" : "-translate-y-1/2"}`} style={{ top: index * 60 }}>{displayClock(firstMinute + index * 60)}</span>)}
       </div>
       {DAYS.map((day) => <div key={day} className={columnClass} style={{ height }}>
         {sections.flatMap((section) => (section.meetings ?? []).flatMap((meeting, index) => {
@@ -531,7 +532,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
       </button>)}</div>
       {chosen && <div className="mt-6">
         {chosenMissing.length > 0 && <div role="alert" className="mb-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]"><p className="font-semibold">{t.incompleteTitle}</p><p className="mt-1 text-xs leading-5">{t.incompleteBody} <strong>{chosenMissing.join(", ")}</strong></p></div>}
-        <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h4 className="font-semibold">{t.calendar}</h4><p className="mt-1 text-xs text-[#737b77]">{chosen.selectedSections.map((section) => section.section_id).join(" · ")}</p></div><span className="text-xs text-[#737b77]">{t.rating}: {chosen.professorRating === null ? "—" : chosen.professorRating.toFixed(2) + " / 5"}{chosen.totalCredits ? " · " + chosen.totalCredits + " " + t.credits : ""}</span></div>
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h4 className="font-semibold">{t.calendar}</h4><p className="mt-1 text-xs text-[#737b77]">{chosen.selectedSections.map((section) => section.section_id).join(" · ")}</p></div><span className="text-xs text-[#737b77]">{t.rating}: {chosen.professorRating === null ? "—" : chosen.professorRating.toFixed(2) + " / 5"}{chosen.totalCredits ? " · " + chosen.totalCredits + " " + (chosen.totalCredits === 1 ? t.credit : t.credits) : ""}</span></div>
         <CalendarExport key={chosen.selectedSections.map((section) => section.section_id).join("|")} sections={chosen.selectedSections} term={term} termName={termName} language={language} incomplete={chosenMissing.length > 0} />
         <div className="mb-3 rounded-xl border border-[#e3e0d8] bg-white p-3 sm:p-4">
           <div className="flex flex-wrap items-center gap-3"><button type="button" onClick={() => void shareSchedule()} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]">{shareCopied ? t.shareCopied : t.shareSchedule}</button><p className="min-w-0 flex-1 text-[11px] leading-5 text-[#737b77]">{t.shareHint}</p></div>
