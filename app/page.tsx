@@ -9,6 +9,10 @@ import { isAsyncOnline } from "@/lib/meeting-time";
 import { GEN_ED_CATEGORIES } from "@/lib/gened-categories";
 import { creditRange, formatCreditTotal, totalPlanCredits, type CreditRange } from "@/lib/plan-credits";
 import { planKey } from "@/lib/plan-key";
+import { courseSet, describeRequirement, unmetRequirements } from "@/lib/prereq-check";
+import type { PrereqNode } from "@/lib/programs";
+import { readTaken, TAKEN_EVENT, TAKEN_KEY, type TakenCourses } from "@/lib/taken-courses";
+import TakenCoursesEditor from "@/app/components/taken-courses";
 import type { SeatSummary } from "@/lib/seat-summary";
 import SchedulePlanner from "@/app/components/schedule-planner";
 import SeatEmailToggle from "@/app/components/seat-email-toggle";
@@ -68,6 +72,7 @@ const copy = {
     watchLimit: "You can watch up to 10 sections. Remove one to add another.", emailPrivacy: "Your address is used to sign you in. Codes expire after 10 minutes.", wrongCode: "That code could not be verified.", emailSignedIn: "Signed in with email", signOut: "Sign out",
     loading: "Loading…", error: "Something went wrong. Please try again.",
     resultFull: "Full", resultNoSections: "No sections", resultSeatsUnknown: "Seats unknown",
+    prereqNeeds: "Prerequisite not met yet: {needs}", prereqMet: "Prerequisites met by the courses you've taken.", prereqAddTaken: "Add the courses you've taken (at the top of the page) to check this prerequisite.", prereqOrHigher: " or higher", prereqSameTerm: " (same term OK)", prereqOf: "{k} of",
     seats: "seats open", seat: "seat open", credit: "credit", creditsUnit: "credits", capacity: "{n} seats total", waitlisted: "{n} waitlisted", fcOnly: "Freshman Connection only", pickCourse: "Pick a course from the matches to see its sections.", waitlist: "waitlist", checked: "Last checked", status: "Status", freshness: "Seat counts come from UMD course data and may lag the official Schedule of Classes. This page checks at most once a minute while open.",
     open: "Seats available", full: "Full", unknown: "Unknown", stale: "Last check failed · showing saved count", checking: "Checking…",
     next: "Next step", back: "Back", termFallback: "Term list unavailable — showing Spring 2027",
@@ -88,6 +93,7 @@ const copy = {
     watchLimit: "最多可以关注 10 个班次，请先移除一个再添加。", emailPrivacy: "邮箱仅用于登录。验证码将在 10 分钟后失效。", wrongCode: "验证码无法验证。", emailSignedIn: "已通过邮箱登录", signOut: "退出登录",
     loading: "加载中…",
     resultFull: "已满", resultNoSections: "本学期无班次", resultSeatsUnknown: "余位未知",
+    prereqNeeds: "先修课还没满足：{needs}", prereqMet: "你修过的课程已满足先修要求。", prereqAddTaken: "在页面上方填写修过的课程，就能检查这门课的先修要求。", prereqOrHigher: " 或更高", prereqSameTerm: "（可同学期修）", prereqOf: "任选 {k} 门：",
     error: "发生错误，请重试。", seats: "个空位", seat: "个空位", credit: "学分", creditsUnit: "学分", capacity: "共 {n} 座", waitlisted: "候补 {n} 人", fcOnly: "仅限 Freshman Connection", pickCourse: "从匹配结果中选择一门课程，查看它的班次。", waitlist: "候补人数", checked: "上次检查", status: "状态",
     freshness: "余位数据来自 UMD 课程数据，可能晚于学校官方课表。页面打开时最多每分钟检查一次。",
     open: "有空位", full: "已满", unknown: "未知", stale: "上次检查失败 · 显示已保存数据", checking: "检查中…",
@@ -443,6 +449,41 @@ export default function Home() {
 
   useEffect(() => { planCoursesRef.current = planCourses; }, [planCourses]);
 
+  // Courses the student has taken (this browser only) and prerequisite rules by "term|courseId", for the
+  // prerequisite check. A rule is null when the course has no course-based prerequisite or the term has
+  // no rules; a missing key is still loading.
+  const [taken, setTaken] = useState<TakenCourses | null>(null);
+  const [prereqRules, setPrereqRules] = useState<Record<string, PrereqNode | null>>({});
+  const prereqRequestsRef = useRef(new Set<string>());
+  useEffect(() => {
+    const load = () => setTaken(readTaken());
+    load();
+    const onStorage = (event: StorageEvent) => { if (event.key === TAKEN_KEY) load(); };
+    window.addEventListener(TAKEN_EVENT, load);
+    window.addEventListener("storage", onStorage);
+    return () => { window.removeEventListener(TAKEN_EVENT, load); window.removeEventListener("storage", onStorage); };
+  }, []);
+  useEffect(() => {
+    if (!restored) return;
+    const ids = [...new Set([...planCourses.map((course) => course.courseId), ...(selected ? [selected.course_id] : [])])]
+      .filter((id) => !((term + "|" + id) in prereqRules) && !prereqRequestsRef.current.has(term + "|" + id));
+    if (!ids.length) return;
+    ids.forEach((id) => prereqRequestsRef.current.add(term + "|" + id));
+    void fetch(`/api/prereqs?term=${encodeURIComponent(term)}&ids=${ids.join(",")}`)
+      .then(async (response) => response.ok ? ((await response.json()) as { rules?: Record<string, PrereqNode | null> }).rules ?? {} : {})
+      .catch(() => ({} as Record<string, PrereqNode | null>))
+      .then((rules) => setPrereqRules((current) => ({ ...current, ...Object.fromEntries(ids.map((id) => [term + "|" + id, rules[id] ?? null])) })));
+  }, [restored, planCourses, selected, term, prereqRules]);
+  const takenSet = courseSet(taken ? [...taken.completed, ...taken.inProgress] : []);
+  const prereqLabels = { orHigher: t.prereqOrHigher, sameTerm: t.prereqSameTerm, of: (k: number) => t.prereqOf.replace("{k}", String(k)) };
+  // What a course still needs, or null when there is nothing to say (no rule, or no courses entered yet).
+  const prereqNeeds = (courseId: string): string[] | null => {
+    const rule = prereqRules[term + "|" + courseId];
+    if (!rule || !taken) return null;
+    const sameTerm = courseSet(planCourses.map((course) => course.courseId).filter((id) => id !== courseId));
+    return unmetRequirements(rule, takenSet, sameTerm).map((node) => describeRequirement(node, prereqLabels));
+  };
+
   useEffect(() => {
     if (!restored) return;
     for (const { courseId } of planCourses) {
@@ -596,10 +637,11 @@ export default function Home() {
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <p className="shrink-0 text-xs font-semibold text-[#48534f]">{t.selectedCourses} <span className="ml-1 rounded-md bg-[#ece9e2] px-1.5 py-0.5 text-[11px] text-[#68716e]">{planCourses.length}/10</span>{planCreditLabel && <span className="ml-2 font-normal text-[#68716e]">{planCreditLabel}</span>}</p>
             <div className="flex min-w-0 basis-full flex-wrap gap-2 sm:basis-auto sm:flex-1">
-              {planCourses.length ? planCourses.map((course) => <span key={course.courseId} title={`${course.courseId} · ${course.courseTitle}`} className="rounded-lg border border-[#cddbd1] bg-[#edf3ef] px-2.5 py-1.5 text-xs font-semibold text-[#315c43]">{course.courseId}</span>) : <p className="text-xs text-[#8a918e]">{t.noSelectedCourses}</p>}
+              {planCourses.length ? planCourses.map((course) => { const needs = prereqNeeds(course.courseId); const missing = Boolean(needs?.length); return <span key={course.courseId} title={`${course.courseId} · ${course.courseTitle}${missing ? " · " + t.prereqNeeds.replace("{needs}", needs!.join("; ")) : ""}`} className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${missing ? "border-[#ead8b5] bg-[#fff8e8] text-[#745424]" : "border-[#cddbd1] bg-[#edf3ef] text-[#315c43]"}`}>{missing ? "⚠ " : ""}{course.courseId}</span>; }) : <p className="text-xs text-[#8a918e]">{t.noSelectedCourses}</p>}
             </div>
             <Link href="/audit" className="basis-full text-xs font-medium text-[#a34a39] hover:underline sm:shrink-0 sm:basis-auto">{language === "en" ? "Not sure what you still need? Check your degree audit →" : "不确定还缺哪些课？查看学位审计 →"}</Link>
           </div>
+          <div className="mt-2 border-t border-[#ece9e2] pt-2"><TakenCoursesEditor taken={taken} language={language} /></div>
         </section>}
 
         {termUnavailable && <p className="mb-4 rounded-xl border border-[#ead8b5] bg-[#fff8e8] px-4 py-3 text-sm text-[#745424]">{t.termFallback}</p>}
@@ -620,7 +662,7 @@ export default function Home() {
               {results.map((course) => { const inPlan = planCourses.some((item) => item.courseId === course.course_id); const courseId = course.course_id; const onAdd = () => quickAdd(course); return <div key={course.course_id} className="flex items-center gap-2 pr-2"><button type="button" onClick={() => void openCourse(course)} aria-pressed={selected?.course_id === course.course_id} className={`flex min-w-0 flex-1 flex-col items-start gap-2 border-l-2 px-3 py-3.5 text-left transition hover:bg-[#f6f4ef] ${selected?.course_id === course.course_id ? "border-[#536d64] bg-[#edf3ef] text-[#273c38]" : "border-transparent"}`}><span className="min-w-0"><span className="block text-sm font-semibold">{course.course_id}</span><span className="mt-1 block text-sm leading-5 text-[#606966]">{course.name}</span><ResultFacts credits={course.credits} seats={resultSeats[term + "|" + course.course_id]?.summary} t={t} /></span><span className="text-xs font-medium text-[#a34a39]">{t.select} →</span></button><button type="button" onClick={() => onAdd()} disabled={inPlan} aria-label={inPlan ? t.inPlanShort : `${t.quickAdd} ${courseId}`} title={inPlan ? t.inPlanShort : t.quickAdd} className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${inPlan ? "border-[#cddbd1] bg-[#edf3ef] text-[#315c43]" : "border-[#536d64] text-[#273c38] hover:bg-[#edf3ef]"}`}>{inPlan ? `✓ ${t.inPlanShort}` : `+ ${t.quickAdd}`}</button></div>; })}
             </div></>}
           </div>
-          <div className="course-detail-panel min-w-0 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-6"><div className="mb-5"><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{selected ? `${selected.course_id} · ${termLabel(term, language)}` : `02 · ${t.sections}`}</p><h2 className="mt-2 font-serif text-2xl">{selected?.name ?? t.sections}</h2>{selected && courseCredits && <p className="mt-1 text-sm font-medium text-[#48534f]">{courseCredits} {courseCredits === "1" ? t.credit : t.creditsUnit}</p>}{selected && courseInfo && <CourseRequirements requirements={courseInfo.requirements} description={courseInfo.description} language={language} currentCourseId={selected.course_id} onCourseClick={(courseId) => void jumpToCourse(courseId)} />}{selected && sections.length > 0 && <button onClick={() => addToSchedule(selected)} disabled={planCourses.some((item) => item.courseId === selected.course_id)} className="mt-4 rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:cursor-default disabled:opacity-60">{planCourses.some((item) => item.courseId === selected.course_id) ? t.courseInPlan : t.addSchedule}</button>}
+          <div className="course-detail-panel min-w-0 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-6"><div className="mb-5"><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{selected ? `${selected.course_id} · ${termLabel(term, language)}` : `02 · ${t.sections}`}</p><h2 className="mt-2 font-serif text-2xl">{selected?.name ?? t.sections}</h2>{selected && courseCredits && <p className="mt-1 text-sm font-medium text-[#48534f]">{courseCredits} {courseCredits === "1" ? t.credit : t.creditsUnit}</p>}{selected && courseInfo && <CourseRequirements requirements={courseInfo.requirements} description={courseInfo.description} language={language} currentCourseId={selected.course_id} onCourseClick={(courseId) => void jumpToCourse(courseId)} />}{selected && prereqRules[term + "|" + selected.course_id] && (() => { const needs = prereqNeeds(selected.course_id); return <p className={`mt-2 rounded-lg px-3 py-2 text-xs ${!needs ? "bg-[#f2f0eb] text-[#68716e]" : needs.length ? "bg-[#fff8e8] text-[#745424]" : "bg-[#eaf4ec] text-[#367047]"}`}>{!needs ? t.prereqAddTaken : needs.length ? "⚠ " + t.prereqNeeds.replace("{needs}", needs.join("; ")) : "✓ " + t.prereqMet}</p>; })()}{selected && sections.length > 0 && <button onClick={() => addToSchedule(selected)} disabled={planCourses.some((item) => item.courseId === selected.course_id)} className="mt-4 rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:cursor-default disabled:opacity-60">{planCourses.some((item) => item.courseId === selected.course_id) ? t.courseInPlan : t.addSchedule}</button>}
               {selected && courseInstructors.length > 1 && <div className="mt-4"><p className="text-xs font-medium text-[#68716e]">{t.instructorPick} <span className="font-normal text-[#8a918e]">· {excludedInstructors.length ? `${keptInstructors.length}/${courseInstructors.length}` : t.allInstructors}</span></p><div className="mt-2 flex flex-wrap gap-2">{courseInstructors.map((name) => { const kept = !excludedInstructors.includes(name); return <button key={name} type="button" onClick={() => toggleInstructor(name)} disabled={Boolean(selectedPlan?.pinnedSectionId)} aria-pressed={kept} className={`rounded-full border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${kept ? "border-[#536d64] bg-[#edf3ef] font-medium text-[#24312d]" : "border-[#e0ddd5] bg-white text-[#9aa19d] line-through"}`}>{kept ? "✓ " : ""}{name}</button>; })}</div><p className="mt-2 text-[11px] text-[#8a918e]">{selectedPlan?.pinnedSectionId ? t.pinnedInstructorHint : t.instructorHint}</p></div>}</div>
             {!selected && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm leading-6 text-[#717975]">{results.length ? t.pickCourse : t.noResults}</p>}{loadingDetail && <p className="py-8 text-sm text-[#737b77]">{t.loading}</p>}
             {selected && !loadingDetail && !sections.length && !error && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm text-[#717975]">{language === "en" ? "No sections listed for this term." : "本学期没有列出班次。"}</p>}
@@ -663,7 +705,7 @@ export default function Home() {
         </section>}
 
         {/* Mounted (hidden) outside step 02 too, so options regenerate while courses are added from search. */}
-        {restored && <div hidden={step !== "schedule"}><SchedulePlanner onChosenChange={rememberSchedule} courses={planCourses} creditsLabel={planCreditLabel} term={term} termName={termLabel(term, "en")} language={language} onUpdateCourse={(courseId, patch) => setPlanCourses((current) => current.map((course) => course.courseId === courseId ? { ...course, ...patch } : course))} onRemove={(courseId) => setPlanCourses((current) => current.filter((course) => course.courseId !== courseId))} onBack={() => setStep("find")} /></div>}
+        {restored && <div hidden={step !== "schedule"}><SchedulePlanner onChosenChange={rememberSchedule} courses={planCourses} prereqNeeds={Object.fromEntries(planCourses.map((course) => [course.courseId, prereqNeeds(course.courseId) ?? []]))} takenEditor={<TakenCoursesEditor taken={taken} language={language} />} creditsLabel={planCreditLabel} term={term} termName={termLabel(term, "en")} language={language} onUpdateCourse={(courseId, patch) => setPlanCourses((current) => current.map((course) => course.courseId === courseId ? { ...course, ...patch } : course))} onRemove={(courseId) => setPlanCourses((current) => current.filter((course) => course.courseId !== courseId))} onBack={() => setStep("find")} /></div>}
 
         {step === "watch" && <section className="mx-auto max-w-4xl rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-8"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">03 · {t.watch}</p><h2 className="mt-2 font-serif text-3xl">{t.watchesTitle}</h2></div><button onClick={() => void refreshWatches()} disabled={checking || !watches.length} className="rounded-lg bg-[#273c38] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{checking ? t.checking : t.refresh}</button></div>
           {authenticated === false && <div className="mt-6 rounded-xl border border-[#e3dfd6] bg-white p-5"><p className="text-sm font-medium">{t.signIn}</p><label className="mt-4 grid gap-1.5 text-xs font-medium text-[#68716e]">{t.email}<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm text-[#202728] outline-none focus:border-[#a34a39]" /></label>{codeSent && <label className="mt-3 grid gap-1.5 text-xs font-medium text-[#68716e]">{t.emailCode}<input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={emailCode} onChange={(event) => setEmailCode(event.target.value.replace(/\D/g, "").slice(0, 6))} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm tracking-[.2em] text-[#202728] outline-none focus:border-[#a34a39]" /></label>}<p className="mt-2 text-xs leading-5 text-[#858d89]">{t.emailPrivacy}</p><div className="mt-4 flex flex-wrap gap-2">{!codeSent ? <button onClick={() => void requestEmailCode()} disabled={authBusy || !email.trim()} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.sendCode}</button> : <><button onClick={() => void verifyEmailCode()} disabled={authBusy || emailCode.length !== 6} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.verifyCode}</button><button onClick={() => void requestEmailCode()} disabled={authBusy} className="rounded-lg border border-[#dedbd3] px-4 py-2.5 text-sm font-medium text-[#68716e] disabled:opacity-50">{t.sendCode}</button></>}</div></div>}

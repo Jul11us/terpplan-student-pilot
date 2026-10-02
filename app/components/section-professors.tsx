@@ -33,6 +33,7 @@ const labels = {
     source: "All reviews on PlanetTerp",
     disclaimer: "Selected excerpts from student-submitted PlanetTerp reviews. See the source for the full set.",
     stars: "{n}/5",
+    searchPlanetTerp: "Search PlanetTerp",
   },
   zh: {
     average: "PlanetTerp 教师平均分",
@@ -50,6 +51,7 @@ const labels = {
     source: "在 PlanetTerp 查看全部评论",
     disclaimer: "以下为 PlanetTerp 学生评论的精选摘录。完整评论请查看来源页面。",
     stars: "{n}/5 分",
+    searchPlanetTerp: "在 PlanetTerp 搜索",
   },
 } as const;
 
@@ -128,6 +130,9 @@ export default function SectionProfessors({ names, courseId, ratings, language, 
                   {rating?.status === "unmatched" ? t.unmatched : rating?.status === "failed" || rating?.status === "limited" ? t.unavailable : t.noRating}
                 </span>
               )}
+              {/* TerpPlan could not tell which PlanetTerp page is this instructor's (or there is none), so let the
+                  student look: PlanetTerp opens the professor directly when the search has one match. */}
+              {!isTba && rating?.status === "unmatched" && <a href={`https://planetterp.com/search?query=${encodeURIComponent(name.trim())}`} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#9a5040] underline-offset-2 hover:underline">{t.searchPlanetTerp} ↗</a>}
               {!isTba && rating?.status !== "unmatched" && <button
                 type="button"
                 onClick={() => void toggleReviews(name)}

@@ -1,0 +1,30 @@
+<!doctype html>
+<!-- Source for public/og-image.png, the 1200×630 link preview shown on Reddit, Discord, iMessage and so on.
+     Render it with: python scripts/render-og-image.py (Playwright + Edge, from the TerpPlan repo's .venv). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; }
+  body { width: 1200px; height: 630px; background: #f4f2ee; color: #1f2826; font-family: "Segoe UI", Arial, Helvetica, sans-serif; position: relative; overflow: hidden; }
+  .bar { position: absolute; inset: 0 0 auto 0; height: 10px; background: #c0312f; }
+  .brand { position: absolute; left: 96px; top: 96px; display: flex; align-items: center; gap: 28px; }
+  .logo { width: 88px; height: 88px; border-radius: 18px; background: #c0312f; color: #fff; display: grid; place-items: center; font: 700 58px/1 "Segoe UI", Arial, sans-serif; }
+  .name { font-size: 40px; font-weight: 700; letter-spacing: -0.5px; }
+  h1 { position: absolute; left: 96px; top: 242px; margin: 0; font: 400 76px/1.1 Georgia, "Times New Roman", serif; letter-spacing: -1.5px; }
+  .sub { position: absolute; left: 98px; top: 362px; font-size: 29px; color: #6b736f; }
+  .pills { position: absolute; left: 96px; top: 500px; display: flex; gap: 16px; }
+  .pill { border: 2px solid #dedbd3; background: #fff; border-radius: 999px; padding: 12px 26px; font-size: 22px; color: #34403c; }
+  .pill.dark { background: #273c38; border-color: #273c38; color: #fff; }
+  .url { position: absolute; right: 96px; top: 512px; font-size: 24px; font-weight: 600; color: #a34a39; }
+</style>
+</head>
+<body>
+  <div class="bar"></div>
+  <div class="brand"><div class="logo">T</div><div class="name">TerpPlan</div></div>
+  <h1>Plan your next semester</h1>
+  <div class="sub">Find UMD courses · compare conflict-free schedules · watch open seats</div>
+  <div class="pills"><span class="pill dark">Find a course</span><span class="pill">Build a schedule</span><span class="pill">Watch seats</span></div>
+  <div class="url">terpplan.com</div>
+</body>
+</html>

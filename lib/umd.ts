@@ -34,8 +34,10 @@ export type CatalogItem = {
   course_id: string;
   name: string;
   department?: string;
-  // "3", or a range such as "1–3"; only in the bundled Spring 2027 catalog (scripts/add-catalog-credits.mjs).
+  // "3", or a range such as "1–3"; only in the bundled Spring 2027 catalog (scripts/add-catalog-details.mjs).
   credits?: string;
+  // Prerequisite rule as a logic tree (see lib/prereq-check.ts); same catalog, same script.
+  pr?: unknown;
 };
 
 export function parseCount(value: unknown): number | null {

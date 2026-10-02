@@ -3,7 +3,7 @@ import { CLOUDFLARE_ANALYTICS_TOKEN, SITE_URL, analyticsEnabled } from "@/lib/si
 import "./globals.css";
 
 const title = "TerpPlan · UMD course & schedule planner";
-const description = "Find University of Maryland courses, compare conflict-free schedules, and watch open seats. Free and student-built. 马里兰大学选课与排课助手。";
+const description = "Find University of Maryland courses, compare conflict-free schedules, and watch open seats. Free and student-built.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

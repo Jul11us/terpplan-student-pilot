@@ -9,6 +9,7 @@ import { GEN_ED_CATEGORIES } from "@/lib/gened-categories";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { compareAuditCandidates, compareAuditCandidatesByGpa, type AuditCandidate } from "@/lib/audit-recommendations";
 import { AUDIT_HANDOFF_KEY } from "@/lib/programs";
+import { writeTakenFromAudit } from "@/lib/taken-courses";
 
 type Language = "en" | "zh";
 type CandidateResponse = { candidates?: AuditCandidate[]; totalCandidates?: number; error?: string };
@@ -18,6 +19,8 @@ const copy = {
     upload: "Choose degree audit PDF", size: "PDF · up to 12 MB · up to 60 pages", reading: "Reading PDF in your browser…", badFile: "Choose a PDF under 12 MB and 60 pages.", badPdf: "This PDF could not be read. Export a text-based audit PDF from uAchieve and try again.", noText: "No readable text was found. A scanned PDF needs text recognition before it can be used here.", noNeeds: "No unmet requirements were found. Check that this is a uAchieve degree audit PDF.", complete: "This audit says all identified requirements are met.", unknown: "The audit format was not fully recognized. Review every result against your official audit.",
     chooseFile: "Choose PDF", noFile: "No file chosen",
     minorLink: "Thinking about a minor or a double major? See how your courses count →",
+    useForPrereqs: "Use these courses to check planner prerequisites →",
+    prereqStorage: "Saves only completed and in-progress course codes in this browser. Edit or clear them in the planner.",
     genEdMissing: (codes: string) => `Your audit still needs these Gen Ed categories: ${codes}`, genEdOpen: "Find courses for them together →",
     genEdOpenOne: "Find this category in course search (checks your schedule) →",
     genEdHint: "Opens Gen Ed search with them selected. It checks time conflicts with your plan and lists courses that count for several first. Only the category codes are passed along.",
@@ -33,6 +36,8 @@ const copy = {
     upload: "选择 degree audit PDF", size: "PDF · 不超过 12 MB · 不超过 60 页", reading: "正在浏览器中读取 PDF…", badFile: "请选择不超过 12 MB、60 页的 PDF。", badPdf: "无法读取这个 PDF。请从 uAchieve 导出含文字的审计 PDF 后重试。", noText: "没有找到可读取的文字。扫描版 PDF 需要先做文字识别。", noNeeds: "没有识别出未完成要求。请确认上传的是 uAchieve 的 degree audit PDF。", complete: "这份审计显示已满足所有列出的要求。", unknown: "未完全识别这份审计的格式。请对照官方报告逐项核对。",
     chooseFile: "选择 PDF", noFile: "未选择文件",
     minorLink: "想修辅修或双专业？看看你的课能抵多少 →",
+    useForPrereqs: "用这些课程检查排课的先修要求 →",
+    prereqStorage: "只将已完成和正在修的课程编号保存在当前浏览器，可在排课页修改或清空。",
     genEdMissing: (codes: string) => `审计显示还缺这些 Gen Ed：${codes}`, genEdOpen: "到找课页一起查找 →",
     genEdOpenOne: "到找课页查找这个类别（会检查课表冲突）→",
     genEdHint: "会打开 Gen Ed 查找并选好这些类别，检查和你课表的时间冲突，能同时抵多项要求的课排在前面。只会带上类别代码。",
@@ -194,6 +199,12 @@ export default function AuditPage() {
     router.push("/minor");
   }
 
+  function useForPrereqs() {
+    if (!audit) return;
+    writeTakenFromAudit(audit);
+    router.push("/");
+  }
+
   function addToPlan(candidate: AuditCandidate) {
     const saved = readSavedState();
     const current = saved.plans[term] ?? [];
@@ -232,6 +243,10 @@ export default function AuditPage() {
               <p className="mt-2 text-[11px] leading-5 text-[#68716e]">{t.genEdHint}</p>
             </div>}
             <button type="button" onClick={openMinor} className="mt-4 block text-left text-xs font-medium text-[#536d64] underline underline-offset-2 hover:text-[#273c38]">{t.minorLink}</button>
+            {audit.completedCourseIds.length + audit.inProgressCourseIds.length > 0 && <div className="mt-3">
+              <button type="button" onClick={useForPrereqs} className="text-left text-xs font-medium text-[#536d64] underline underline-offset-2 hover:text-[#273c38]">{t.useForPrereqs}</button>
+              <p className="mt-1 text-[11px] leading-5 text-[#737b77]">{t.prereqStorage}</p>
+            </div>}
             <p className="mt-4 text-xs font-medium text-[#48534f]">{t.summary(actionable.length, others.length, audit.inProgressCourseIds.length)}</p>
             {actionable.length > 0 ? <>
               <h3 className="mt-4 text-xs font-semibold uppercase tracking-[.1em] text-[#9a5040]">{t.actionable}</h3>
