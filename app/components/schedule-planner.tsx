@@ -9,6 +9,7 @@ import { TERM_CALENDARS } from "@/lib/term-calendar";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { formatSeatReadTime } from "@/lib/seat-time";
 import { isAsyncOnline } from "@/lib/meeting-time";
+import { buildingFor, mapsUrl, tightWalks } from "@/lib/campus-walk";
 import { planKey } from "@/lib/plan-key";
 import { sharePath } from "@/lib/shared-schedule";
 import { anonymousBusyBlocks, type BusyBlock } from "@/lib/personal-schedule";
@@ -56,6 +57,9 @@ const copy = {
     weekdays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
     pinned: "Required section", excludedSections: "Excluded sections", changeSections: "Change in course search",
     seatReadAt: "Seat data read", seatReadHint: "This is when TerpPlan read the source, not when UMD updated it.",
+    openMap: "Open in Google Maps", walkTitle: "Classes that may be hard to reach in time",
+    walkLine: "{day}: {from} ({fromBuilding}) ends {end}, {to} ({toBuilding}) starts {start}. {gap} min between them, about {walk} min walk.",
+    walkNote: "Walking time is a rough estimate from the distance between buildings (about 80 m a minute along paths), not a route. Tap a building in the timetable to see it on a map.",
   },
   zh: {
     courses: "待排课程", addCourse: "请先从找课中添加课程，再生成方案。", remove: "移除",
@@ -88,6 +92,9 @@ const copy = {
     weekdays: ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
     pinned: "指定班次", excludedSections: "已排除班次", changeSections: "返回找课修改班次",
     seatReadAt: "余位数据读取于", seatReadHint: "这是 TerpPlan 读取数据的时间，不代表 UMD 更新数据的时间。",
+    openMap: "在 Google 地图中打开", walkTitle: "这些课之间可能来不及走过去",
+    walkLine: "{day}：{from}（{fromBuilding}）{end} 下课，{to}（{toBuilding}）{start} 上课。课间 {gap} 分钟，步行约 {walk} 分钟。",
+    walkNote: "步行时间是按楼与楼之间的距离粗略估算的（沿路约每分钟 80 米），不是实际路线。点课表里的教学楼可以在地图上查看。",
   },
 } as const;
 
@@ -204,6 +211,16 @@ function meetingType(raw: string | null | undefined) {
   return null;
 }
 
+const fill = (template: string, values: Record<string, string | number>) => template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ""));
+
+// A meeting's room label; the building opens in Google Maps when TerpPlan knows where it is.
+function RoomLink({ building, room, language, className = "" }: { building?: string | null; room?: string | null; language: Language; className?: string }) {
+  const label = roomLabel(building, room, language);
+  const place = /online|tba|tbd/i.test(label) ? null : buildingFor(building);
+  if (!place) return <span className={className}>{label}</span>;
+  return <a href={mapsUrl(place)} target="_blank" rel="noopener noreferrer" title={`${place.name} · ${copy[language].openMap}`} className={`pointer-events-auto relative z-10 underline decoration-dotted underline-offset-2 hover:text-[#a34a39] ${className}`}>{label}</a>;
+}
+
 export function WeeklyCalendar({ sections: courseSections, language, busyBlocks = [], onSelectSection }: { sections: ScheduledSection[]; language: Language; busyBlocks?: BusyBlock[]; onSelectSection?: (section: ScheduledSection) => void }) {
   const t = copy[language];
   const personalIds = new Set(busyBlocks.map((block) => `personal-${block.id}`));
@@ -216,6 +233,7 @@ export function WeeklyCalendar({ sections: courseSections, language, busyBlocks 
   const height = (lastMinute - firstMinute) * pixelsPerMinute;
   const unknown = new Set<string>();
   const online = new Set<string>();
+  const walks = tightWalks(courseSections);
   for (const section of sections) if (!section.meetings?.length) unknown.add(section.section_id);
   const colors = new Map([...new Set(sections.map((section) => section.course_id))].map((courseId, index) => [courseId, personalIds.has(courseId) ? "#dce2df" : COLORS[index % COLORS.length]]));
   const columnClass = "relative border-l border-[#e6e4de] bg-[linear-gradient(to_bottom,transparent_59px,#e7e4dc_60px)] bg-[length:100%_60px]";
@@ -227,20 +245,22 @@ export function WeeklyCalendar({ sections: courseSections, language, busyBlocks 
       const start = minutes(meeting.start_time), end = minutes(meeting.end_time);
       if (isAsyncOnline(meeting) || start === null || end === null || end <= start || !dayNames(meeting.days).includes(day)) return [];
       const kind = meetingType(meeting.classtype);
-      return [{ key: `${section.section_id}-${index}`, section, start, end, type: kind ? t[kind] : null, room: roomLabel(meeting.building, meeting.room, language) }];
+      return [{ key: `${section.section_id}-${index}`, section, start, end, type: kind ? t[kind] : null, meeting }];
     })).sort((a, b) => a.start - b.start),
   })).filter((entry) => entry.items.length);
   return <div className="overflow-x-auto rounded-xl border border-[#e0ddd5] bg-white">
     <div className="divide-y divide-[#ece9e2] sm:hidden">{byDay.map((entry) => <div key={entry.day} className="px-4 py-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-[#59635f]">{entry.label}</p>
-      <div className="mt-2 space-y-2">{entry.items.map((item) => <button type="button" disabled={!onSelectSection || personalIds.has(item.section.section_id)} onClick={() => onSelectSection?.(item.section)} key={item.key} className="flex w-full gap-3 rounded-lg border border-[#ece9e2] p-2.5 text-left enabled:hover:bg-[#f4f8f5]">
-        <span aria-hidden="true" className="w-1 shrink-0 rounded-full" style={{ backgroundColor: colors.get(item.section.course_id) }} />
-        <span className="min-w-0 text-xs leading-5">
+      <div className="mt-2 space-y-2">{entry.items.map((item) => <div key={item.key} className="relative flex w-full gap-3 rounded-lg border border-[#ece9e2] p-2.5 text-left">
+        {/* The whole card opens the section swap; the building is a separate link on top of it. */}
+        <button type="button" disabled={!onSelectSection || personalIds.has(item.section.section_id)} onClick={() => onSelectSection?.(item.section)} aria-label={`${item.section.section_id} · ${displayClock(item.start)}–${displayClock(item.end)}`} className="absolute inset-0 rounded-lg enabled:hover:bg-[#f4f8f5]" />
+        <span aria-hidden="true" className="pointer-events-none relative w-1 shrink-0 rounded-full" style={{ backgroundColor: colors.get(item.section.course_id) }} />
+        <span className="pointer-events-none relative min-w-0 text-xs leading-5">
           <strong className="block text-[#24312d]">{displayClock(item.start)}–{displayClock(item.end)}</strong>
           <span className="block text-[#48534f]">{personalIds.has(item.section.section_id) ? item.section.course_title : item.section.section_id}{!personalIds.has(item.section.section_id) && item.type ? ` · ${item.type}` : ""}</span>
-          {!personalIds.has(item.section.section_id) && <span className="block text-[#737b77]">{item.room}</span>}
+          {!personalIds.has(item.section.section_id) && <RoomLink building={item.meeting.building} room={item.meeting.room} language={language} className="block w-fit text-[#737b77]" />}
         </span>
-      </button>)}</div>
+      </div>)}</div>
     </div>)}</div>
     <div className="hidden min-w-[900px] grid-cols-[58px_repeat(7,minmax(0,1fr))] sm:grid">
       <div className="sticky top-0 z-10 bg-white p-3 text-center text-[11px] text-[#8a918e]">ET</div>
@@ -267,9 +287,12 @@ export function WeeklyCalendar({ sections: courseSections, language, busyBlocks 
           const sectionNumber = section.section_id.slice(section.course_id.length + 1) || section.section_id;
           const room = roomLabel(meeting.building, meeting.room, language);
           const personal = personalIds.has(section.section_id);
-          return [<button type="button" disabled={!onSelectSection || personal} onClick={() => onSelectSection?.(section)} key={section.section_id + "-" + day + "-" + index} className="absolute inset-x-1 overflow-hidden rounded-md border border-white/80 px-1.5 py-1 text-center text-[10px] leading-tight text-[#24312d] shadow-sm enabled:hover:ring-2 enabled:hover:ring-[#536d64]" style={{ top: (clippedStart - firstMinute) * pixelsPerMinute, height: Math.max(30, (clippedEnd - clippedStart) * pixelsPerMinute), backgroundColor: colors.get(section.course_id) }} title={(personal ? section.course_title : section.section_id) + " · " + displayClock(start) + "–" + displayClock(end) + (personal ? "" : " · " + room)}>
-            <strong className="block truncate">{personal ? section.course_title : `${section.course_id} · ${sectionNumber}`}</strong><span className="block truncate">{displayClock(start)}–{displayClock(end)}</span>{!personal && <span className="block truncate">{room}{shortType ? " · " + shortType : ""}</span>}
-          </button>];
+          const title = (personal ? section.course_title : section.section_id) + " · " + displayClock(start) + "–" + displayClock(end) + (personal ? "" : " · " + room);
+          return [<div key={section.section_id + "-" + day + "-" + index} className="absolute inset-x-1 overflow-hidden rounded-md border border-white/80 text-center text-[10px] leading-tight text-[#24312d] shadow-sm" style={{ top: (clippedStart - firstMinute) * pixelsPerMinute, height: Math.max(30, (clippedEnd - clippedStart) * pixelsPerMinute), backgroundColor: colors.get(section.course_id) }}>
+            {/* The block opens the section swap; the building is a separate link on top of it. */}
+            <button type="button" disabled={!onSelectSection || personal} onClick={() => onSelectSection?.(section)} title={title} aria-label={title} className="absolute inset-0 rounded-md enabled:hover:ring-2 enabled:hover:ring-inset enabled:hover:ring-[#536d64]" />
+            <div className="pointer-events-none relative px-1.5 py-1"><strong className="block truncate">{personal ? section.course_title : `${section.course_id} · ${sectionNumber}`}</strong><span className="block truncate">{displayClock(start)}–{displayClock(end)}</span>{!personal && <span className="block truncate"><RoomLink building={meeting.building} room={meeting.room} language={language} />{shortType ? " · " + shortType : ""}</span>}</div>
+          </div>];
         }))}
       </div>)}
     </div>
@@ -279,6 +302,11 @@ export function WeeklyCalendar({ sections: courseSections, language, busyBlocks 
     </div>
     {unknown.size > 0 ? <p className="border-t border-[#e6e4de] bg-[#fff8e8] px-4 py-3 text-xs text-[#745424]">{t.warning} {t.unknown}: {[...unknown].join(", ")}</p> : <p className="border-t border-[#e6e4de] px-4 py-3 text-xs text-[#737b77]">{t.noUnknown}</p>}
     {online.size > 0 && <p className="border-t border-[#e6e4de] px-4 py-3 text-xs text-[#536d64]">{t.onlineAsync} {[...online].join(", ")}</p>}
+    {walks.length > 0 && <div className="border-t border-[#e6e4de] bg-[#fff8e8] px-4 py-3 text-xs text-[#745424]">
+      <p className="font-semibold">{t.walkTitle}</p>
+      <ul className="mt-1 list-disc space-y-1 pl-4">{walks.map((walk) => <li key={walk.day + walk.from.sectionId + walk.to.sectionId}>{fill(t.walkLine, { day: t.weekdays[DAYS.indexOf(walk.day as (typeof DAYS)[number])] ?? walk.day, from: walk.from.sectionId, fromBuilding: walk.from.building, end: displayClock(walk.from.end), to: walk.to.sectionId, toBuilding: walk.to.building, start: displayClock(walk.to.start), gap: walk.gapMinutes, walk: walk.walkMinutes })}</li>)}</ul>
+      <p className="mt-2 text-[11px] text-[#8a6a35]">{t.walkNote}</p>
+    </div>}
   </div>;
 }
 
