@@ -1,6 +1,7 @@
 // Builds data/umd-buildings.json: Testudo building code -> name and map position, for the timetable's
 // map links and walking-time estimates.
 // Run: node scripts/build-buildings.mjs
+// Then check the map links still open the right buildings: python scripts/check-building-maps.py
 // Source: umd.io's campus building list. It gives coordinates for 421 buildings but a code for only about
 // a hundred, so the codes Testudo uses that it leaves out are matched to a building below by name.
 import { writeFileSync } from "node:fs";
@@ -41,10 +42,16 @@ const MAP_QUERY = {
   SHM: "Shoemaker Bldg, College Park, MD 20742",
   SPH: "School of Public Health, University of Maryland, College Park, MD",
   TAL: "Talbot Hall, University of Maryland, College Park, MD",
+  // No classes met in these in the Spring 2027 sample, and no wording opened the building itself. These
+  // show a list instead; the default wording jumped to the wrong place (e.g. Harrison Lab -> a greenhouse).
+  HAR: "Harrison Laboratory, University of Maryland, College Park",
+  SHR: "Shriver Laboratory, University of Maryland, College Park",
+  "SCUB 3": "Satellite Central Utilities Bldg 3, College Park, MD",
+  "SCUB 4": "Satellite Central Utilities Bldg 4, College Park, MD",
 };
 // No wording opened a single place for these (no classes met in them in the Spring 2027 sample);
 // the search still names the building and lists matches on campus.
-const MAP_LIST_ONLY = new Set(["CSS", "FRD", "HAR", "SHR", "PGUC", "SCUB 3", "SCUB 4"]);
+const MAP_LIST_ONLY = new Set(["CSS", "FRD", "PGUC"]);
 const mapQuery = (code, name) => MAP_QUERY[code]
   ?? (MAP_LIST_ONLY.has(code) ? `${name.replace(/\s*\(Residence Hall\)$/, "")}, University of Maryland, College Park, MD` : `${name}, College Park, MD`);
 
