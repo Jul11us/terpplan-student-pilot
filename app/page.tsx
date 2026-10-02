@@ -223,6 +223,7 @@ export default function Home() {
   const [professorRatings, setProfessorRatings] = useState<Record<string, ProfessorSummary>>({});
   const [ratingsLoading, setRatingsLoading] = useState(false);
   const activeCourseRef = useRef("");
+  const panelScrollPendingRef = useRef(false);
   const planCoursesRef = useRef<PlanCourse[]>([]);
   // Credits per "term|courseId" for the plan total; null once a lookup failed. Filled by opening a course
   // or, for courses restored from storage or added straight from a result list, by a lookup below.
@@ -376,7 +377,15 @@ export default function Home() {
     activeCourseRef.current = courseRequestKey;
     setSelected(course); setSections([]); setCourseSeatCheckedAt(null); setCourseCredits(null); setCourseInfo(null); setLoadingDetail(true); setError(""); setMessage(""); setProfessorRatings({});
     // On a phone the sections panel sits below the results, so without this the tap seems to do nothing.
-    if (window.matchMedia("(max-width: 1023px)").matches) window.setTimeout(() => document.querySelector(".course-detail-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+    // The effect on loadingDetail scrolls once more after the sections are in (see below).
+    if (window.matchMedia("(max-width: 1023px)").matches) {
+      panelScrollPendingRef.current = true;
+      window.setTimeout(() => document.querySelector(".course-detail-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+      // If the student scrolls by hand while it loads, leave the page where they put it.
+      const cancel = () => { panelScrollPendingRef.current = false; };
+      for (const type of ["wheel", "touchstart", "keydown"]) window.addEventListener(type, cancel, { once: true, passive: true });
+      window.setTimeout(() => { for (const type of ["wheel", "touchstart", "keydown"]) window.removeEventListener(type, cancel); }, 15000);
+    }
     setExcludedInstructors([]);
     setRatingsLoading(false);
     try {
@@ -414,6 +423,15 @@ export default function Home() {
     }
     finally { if (activeCourseRef.current === courseRequestKey) setLoadingDetail(false); }
   };
+
+  // While the sections load the page is too short to bring the panel to the top of a phone screen, so
+  // it scrolls again once they are rendered (unless the student scrolled by hand in the meantime).
+  useEffect(() => {
+    if (loadingDetail || !panelScrollPendingRef.current) return;
+    panelScrollPendingRef.current = false;
+    const frame = window.requestAnimationFrame(() => document.querySelector(".course-detail-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [loadingDetail]);
 
   // A course code clicked inside a prerequisite or restriction: search it in this term and open it if offered.
   // If it is not offered, the current course stays open and the search list shows the "not offered this term" note.
