@@ -64,6 +64,7 @@ const copy = {
     seatReadAt: "Seat data read", seatReadHint: "This is when TerpPlan read the source, not when UMD updated it.",
     tightWalks: "Hard-to-reach classes", times: "a week",
     prereqNeeds: "Prerequisite not met yet: {needs}",
+    prefsSet: "{n} set",
     openMap: "Open in Google Maps", walkTitle: "Classes that may be hard to reach in time",
     walkLine: "{day}: {from} ({fromBuilding}) ends {end}, {to} ({toBuilding}) starts {start}. {gap} min between them, about {walk} min walk.",
     walkNote: "Walking time is a rough estimate from the distance between buildings (about 80 m a minute along paths), not a route. Tap a building in the timetable to see it on a map.",
@@ -105,6 +106,7 @@ const copy = {
     seatReadAt: "余位数据读取于", seatReadHint: "这是 TerpPlan 读取数据的时间，不代表 UMD 更新数据的时间。",
     tightWalks: "课间来不及走", times: "处/周",
     prereqNeeds: "先修课还没满足：{needs}",
+    prefsSet: "已设 {n} 项",
     openMap: "在 Google 地图中打开", walkTitle: "这些课之间可能来不及走过去",
     walkLine: "{day}：{from}（{fromBuilding}）{end} 下课，{to}（{toBuilding}）{start} 上课。课间 {gap} 分钟，步行约 {walk} 分钟。",
     walkNote: "步行时间是按楼与楼之间的距离粗略估算的（沿路约每分钟 80 米），不是实际路线。点课表里的教学楼可以在地图上查看。",
@@ -408,6 +410,9 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
   const [includeFreshmanConnection, setIncludeFreshmanConnection] = useState(savedPreferences?.includeFreshmanConnection ?? false);
   const [busyBlocks, setBusyBlocks] = useState<BusyBlock[]>(savedPreferences?.busyBlocks ?? []);
   const [bufferMinutes, setBufferMinutes] = useState(savedPreferences?.bufferMinutes ?? 0);
+  // Phones show the preferences folded; this counts what is set, so a folded form still says something.
+  const [prefsOpen, setPrefsOpen] = useState(false);
+  const prefsSet = [earliestStart, windowStart || windowEnd, excludedDays.length, openSeatsOnly, includeFreshmanConnection, busyBlocks.length, bufferMinutes].filter(Boolean).length;
 
   useEffect(() => {
     writeSavedState({ preferences: { excludedDays, earliestStart, windowStart, windowEnd, strictTime, openSeatsOnly, includeFreshmanConnection, busyBlocks, bufferMinutes } });
@@ -530,7 +535,10 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
       {takenEditor && <div className="mt-2">{takenEditor}</div>}
       <div className={`${creditsLabel ? "mt-2" : "mt-6"} space-y-2`}>{courses.map((course) => <article key={course.courseId} className="flex items-center justify-between gap-4 rounded-xl border border-[#e3e0d8] bg-white px-4 py-3"><div><p className="font-semibold">{course.courseId}</p><p className="mt-0.5 text-xs text-[#737b77]">{course.courseTitle}</p>{prereqNeeds[course.courseId]?.length ? <p className="mt-1 text-xs font-medium text-[#745424]">⚠ {t.prereqNeeds.replace("{needs}", prereqNeeds[course.courseId].join("; "))}</p> : null}{course.instructors?.length ? <p className="mt-1 text-xs text-[#536d64]">{t.onlyInstructors}: {course.instructors.join(", ")}</p> : null}{course.pinnedSectionId && <p className="mt-1 text-xs font-medium text-[#315c43]">{t.pinned}: {course.pinnedSectionId}</p>}{course.excludedSectionIds?.length ? <p className="mt-1 text-xs text-[#8f4538]">{t.excludedSections}: {course.excludedSectionIds.join(", ")}</p> : null}{(course.pinnedSectionId || course.excludedSectionIds?.length) && <button onClick={onBack} className="mt-1 text-xs font-medium text-[#536d64] underline underline-offset-2">{t.changeSections}</button>}</div><button onClick={() => onRemove(course.courseId)} className="rounded-lg border border-[#dedbd3] px-3 py-2 text-xs font-medium text-[#6a736f] hover:bg-[#f6f4ef]">{t.remove}</button></article>)}</div>
       <div className="mt-5 rounded-xl border border-[#e3e0d8] bg-white p-4 sm:p-5">
-        <h3 className="font-semibold">{t.preferences}</h3>
+        {/* On a phone the form is long enough to hide the options below it, so it folds to one line there. */}
+        <button type="button" onClick={() => setPrefsOpen(!prefsOpen)} aria-expanded={prefsOpen} className="flex w-full items-center justify-between gap-3 text-left sm:hidden"><span className="font-semibold">{t.preferences}{prefsSet ? <span className="ml-2 text-xs font-normal text-[#68716e]">· {t.prefsSet.replace("{n}", String(prefsSet))}</span> : null}</span><span aria-hidden="true" className="text-xs text-[#68716e]">{prefsOpen ? "▲" : "▼"}</span></button>
+        <h3 className="hidden font-semibold sm:block">{t.preferences}</h3>
+        <div className={`${prefsOpen ? "" : "hidden"} sm:block`}>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <label className="grid gap-1.5 text-xs font-medium text-[#68716e]">{t.earliest}<input type="time" value={earliestStart} onChange={(event) => setEarliestStart(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]" /></label>
           <label className="grid gap-1.5 text-xs font-medium text-[#68716e]">{t.window} · {t.start}<input type="time" value={windowStart} onChange={(event) => setWindowStart(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]" /></label>
@@ -543,6 +551,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
         <p className="mt-3 text-xs leading-5 text-[#858d89]">{t.windowHint}</p>
         {courses.some((course) => course.pinnedSectionId) && <p className="mt-1 text-xs leading-5 text-[#858d89]">{t.pinnedNote}</p>}
         <PersonalSchedule blocks={busyBlocks} buffer={bufferMinutes} onBlocks={setBusyBlocks} onBuffer={setBufferMinutes} language={language} />
+        </div>
       </div>
       {error && <p role="alert" className="mt-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]">{error}</p>}
       <div className="mt-5 flex flex-wrap items-center justify-end gap-3"><p className="text-xs text-[#858d89]">{t.autoNote}</p><button onClick={() => void generate()} disabled={loading} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1d302c] disabled:opacity-60">{loading ? t.generating : t.generate}</button></div>

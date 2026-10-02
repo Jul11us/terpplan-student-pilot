@@ -14,6 +14,7 @@ import type { PrereqNode } from "@/lib/programs";
 import { readTaken, TAKEN_EVENT, TAKEN_KEY, type TakenCourses } from "@/lib/taken-courses";
 import TakenCoursesEditor from "@/app/components/taken-courses";
 import type { SeatSummary } from "@/lib/seat-summary";
+import { filterResults, filtersActive, NO_FILTERS, type CreditFilter, type ResultFilters } from "@/lib/result-filters";
 import SchedulePlanner from "@/app/components/schedule-planner";
 import SeatEmailToggle from "@/app/components/seat-email-toggle";
 import SectionProfessors from "@/app/components/section-professors";
@@ -66,19 +67,20 @@ const copy = {
     schedule: "Build a schedule", watch: "Watch seats", search: "Search course code or title",
     searchHint: "e.g. CMSC131 or Calculus", term: "Term", results: "Course matches", select: "View sections",
     quickAdd: "Add", inPlanShort: "In plan", searchMode: "Search courses", genEdMode: "Find by Gen Ed", noResults: "No matches yet. Search by a course code or title.", notOffered: "{course} is not offered in {term}. It may be offered in another term — try switching the term above.", sections: "Sections", addSchedule: "Add this course to plan", courseInPlan: "Course in plan", instructorPick: "Instructors to keep", instructorHint: "Tap a name to leave out that instructor's sections.", keepOne: "Keep at least one instructor.", allInstructors: "All",
-    addWatch: "Watch this section", scheduleTitle: "Your schedule", emptySchedule: "Add courses from search to generate schedule options.",
+    addWatch: "Watch this section", watchShort: "Watch", watchingShort: "Watching", scheduleTitle: "Your schedule", emptySchedule: "Add courses from search to generate schedule options.",
     watchesTitle: "Seat watches", emptyWatches: "Watch a section to see it here.", refresh: "Check now", remove: "Remove",
     added: "Course added to plan", watched: "Seat watch saved", conflict: "Time conflict", noConflict: "No time conflicts found", planLimit: "A plan can include up to 10 courses.",
     signIn: "Sign in to save and sync your seat watches.", email: "Email address", emailCode: "Six-digit code", sendCode: "Email me a code", verifyCode: "Verify and sign in", codeSent: "Code sent. Check your inbox.",
     watchLimit: "You can watch up to 10 sections. Remove one to add another.", emailPrivacy: "Your address is used to sign you in. Codes expire after 10 minutes.", wrongCode: "That code could not be verified.", emailSignedIn: "Signed in with email", signOut: "Sign out",
     loading: "Loading…", error: "Something went wrong. Please try again.",
     resultFull: "Full", resultNoSections: "No sections", resultSeatsUnknown: "Seats unknown",
+    filterOpen: "Open seats", filterPrereqs: "Prerequisites met", filterPrereqsNeedTaken: "Add the courses you've taken (above) to use this filter.", filterCredits: "Credits", filterAny: "Any", filterShowing: "Showing {n} of {m}", filterNone: "No matches with these filters.", filterClear: "Clear filters",
     prereqNeeds: "Prerequisite not met yet: {needs}", prereqMet: "Prerequisites met by the courses you've taken.", prereqAddTaken: "Add the courses you've taken (at the top of the page) to check this prerequisite.", prereqOrHigher: " or higher", prereqSameTerm: " (same term OK)", prereqOf: "{k} of",
     seats: "seats open", seat: "seat open", credit: "credit", creditsUnit: "credits", capacity: "{n} seats total", waitlisted: "{n} waitlisted", fcOnly: "Freshman Connection only", pickCourse: "Pick a course from the matches to see its sections.", waitlist: "waitlist", checked: "Last checked", status: "Status", freshness: "Seat counts come from UMD course data and may lag the official Schedule of Classes. This page checks at most once a minute while open.",
     open: "Seats available", full: "Full", unknown: "Unknown", stale: "Last check failed · showing saved count", checking: "Checking…",
     next: "Next step", back: "Back", termFallback: "Term list unavailable — showing Spring 2027",
     timeUnknown: "Some meeting times are missing, so the conflict check is incomplete.",
-    pinSection: "Require this section", unpinSection: "Remove requirement", excludeSection: "Exclude from schedules", includeSection: "Allow in schedules",
+    pinSection: "Require this section", unpinSection: "Remove requirement", pinShort: "Require", unpinShort: "Required ✓", excludeSection: "Exclude from schedules", includeSection: "Allow in schedules", excludeShort: "Exclude", includeShort: "Allow",
     keepSection: "Keep at least one section available.", seatReadAt: "Seat data read", seatReadHint: "This is when TerpPlan read the source, not when UMD updated it.",
     pinnedInstructorHint: "Remove the required section before changing instructors.",
     selectedCourses: "Courses in your plan", noSelectedCourses: "No courses added for this term yet.",
@@ -87,19 +89,20 @@ const copy = {
     eyebrow: "马里兰大学 · 学生试用", title: "规划下一学期", subtitle: "找课程、排进课表，并关注空余名额。",
     find: "找课程", schedule: "排课", watch: "关注余位", search: "搜索课程编号或名称", searchHint: "例如 CMSC131 或 Calculus",
     term: "学期", results: "匹配课程", select: "查看班次", quickAdd: "加入", inPlanShort: "已加入", searchMode: "搜索课程", genEdMode: "按 Gen Ed 查找", noResults: "暂无匹配结果。请按课程编号或名称搜索。", notOffered: "{term}没有开设 {course}。这门课可能在其他学期开设，可以在上方切换学期查看。",
-    sections: "可选班次", addSchedule: "将整门课程加入排课", courseInPlan: "课程已加入", instructorPick: "保留哪些老师", instructorHint: "点老师名字即可排除他的班次。", keepOne: "至少保留一位老师。", allInstructors: "全部", addWatch: "关注这个班次", scheduleTitle: "我的课表",
+    sections: "可选班次", addSchedule: "将整门课程加入排课", courseInPlan: "课程已加入", instructorPick: "保留哪些老师", instructorHint: "点老师名字即可排除他的班次。", keepOne: "至少保留一位老师。", allInstructors: "全部", addWatch: "关注这个班次", watchShort: "关注", watchingShort: "已关注", scheduleTitle: "我的课表",
     emptySchedule: "请从找课中添加课程，再生成排课方案。", watchesTitle: "余位关注", emptyWatches: "关注一个班次后会显示在这里。",
     refresh: "立即检查", remove: "移除", added: "已将课程加入排课", watched: "已保存余位关注", conflict: "时间冲突",
     noConflict: "没有发现时间冲突", planLimit: "每个排课方案最多添加 10 门课程。", signIn: "登录后即可保存并同步余位关注。", email: "邮箱地址", emailCode: "六位验证码", sendCode: "发送验证码", verifyCode: "验证并登录", codeSent: "验证码已发送，请查收邮箱。",
     watchLimit: "最多可以关注 10 个班次，请先移除一个再添加。", emailPrivacy: "邮箱仅用于登录。验证码将在 10 分钟后失效。", wrongCode: "验证码无法验证。", emailSignedIn: "已通过邮箱登录", signOut: "退出登录",
     loading: "加载中…",
     resultFull: "已满", resultNoSections: "本学期无班次", resultSeatsUnknown: "余位未知",
+    filterOpen: "有空位", filterPrereqs: "先修课已满足", filterPrereqsNeedTaken: "先在上方填写修过的课程，才能用这个筛选。", filterCredits: "学分", filterAny: "不限", filterShowing: "显示 {n} / {m} 门", filterNone: "没有符合筛选条件的课程。", filterClear: "清除筛选",
     prereqNeeds: "先修课还没满足：{needs}", prereqMet: "你修过的课程已满足先修要求。", prereqAddTaken: "在页面上方填写修过的课程，就能检查这门课的先修要求。", prereqOrHigher: " 或更高", prereqSameTerm: "（可同学期修）", prereqOf: "任选 {k} 门：",
     error: "发生错误，请重试。", seats: "个空位", seat: "个空位", credit: "学分", creditsUnit: "学分", capacity: "共 {n} 座", waitlisted: "候补 {n} 人", fcOnly: "仅限 Freshman Connection", pickCourse: "从匹配结果中选择一门课程，查看它的班次。", waitlist: "候补人数", checked: "上次检查", status: "状态",
     freshness: "余位数据来自 UMD 课程数据，可能晚于学校官方课表。页面打开时最多每分钟检查一次。",
     open: "有空位", full: "已满", unknown: "未知", stale: "上次检查失败 · 显示已保存数据", checking: "检查中…",
     next: "下一步", back: "返回", termFallback: "无法读取学期列表，暂显示 2027 春季", timeUnknown: "部分班次缺少上课时间，无法完整检查冲突。",
-    pinSection: "指定此班次", unpinSection: "取消指定", excludeSection: "排课时排除", includeSection: "重新纳入排课",
+    pinSection: "指定此班次", unpinSection: "取消指定", pinShort: "指定", unpinShort: "已指定 ✓", excludeSection: "排课时排除", includeSection: "重新纳入排课", excludeShort: "排除", includeShort: "纳入",
     keepSection: "请至少保留一个可排班次。", seatReadAt: "余位数据读取于", seatReadHint: "这是 TerpPlan 读取数据的时间，不代表 UMD 更新数据的时间。",
     pinnedInstructorHint: "请先取消指定班次，再修改教师筛选。",
     selectedCourses: "已选课程", noSelectedCourses: "这个学期还没有添加课程。",
@@ -207,6 +210,7 @@ export default function Home() {
   // Seat counts for the courses in the results list, by "term|courseId"; null once a lookup failed or the
   // term has no live seat data. Kept for two minutes, then asked again the next time the course is listed.
   const [resultSeats, setResultSeats] = useState<Record<string, { at: number; summary: SeatSummary | null }>>({});
+  const [resultFilters, setResultFilters] = useState<ResultFilters>(NO_FILTERS);
   const [selected, setSelected] = useState<Course | null>(null);
   const [sections, setSections] = useState<Section[]>([]);
   const [courseCredits, setCourseCredits] = useState<string | null>(null);
@@ -371,6 +375,8 @@ export default function Home() {
     const courseRequestKey = term + "|" + course.course_id;
     activeCourseRef.current = courseRequestKey;
     setSelected(course); setSections([]); setCourseSeatCheckedAt(null); setCourseCredits(null); setCourseInfo(null); setLoadingDetail(true); setError(""); setMessage(""); setProfessorRatings({});
+    // On a phone the sections panel sits below the results, so without this the tap seems to do nothing.
+    if (window.matchMedia("(max-width: 1023px)").matches) window.setTimeout(() => document.querySelector(".course-detail-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
     setExcludedInstructors([]);
     setRatingsLoading(false);
     try {
@@ -461,15 +467,19 @@ export default function Home() {
   }, []);
   useEffect(() => {
     if (!restored) return;
-    const ids = [...new Set([...planCourses.map((course) => course.courseId), ...(selected ? [selected.course_id] : [])])]
-      .filter((id) => !((term + "|" + id) in prereqRules) && !prereqRequestsRef.current.has(term + "|" + id));
+    // Plan courses, the open course, and the search results (for the "prerequisites met" filter).
+    const ids = [...new Set([...planCourses.map((course) => course.courseId), ...(selected ? [selected.course_id] : []), ...results.map((course) => course.course_id)])]
+      .filter((id) => id && !((term + "|" + id) in prereqRules) && !prereqRequestsRef.current.has(term + "|" + id));
     if (!ids.length) return;
     ids.forEach((id) => prereqRequestsRef.current.add(term + "|" + id));
-    void fetch(`/api/prereqs?term=${encodeURIComponent(term)}&ids=${ids.join(",")}`)
-      .then(async (response) => response.ok ? ((await response.json()) as { rules?: Record<string, PrereqNode | null> }).rules ?? {} : {})
-      .catch(() => ({} as Record<string, PrereqNode | null>))
-      .then((rules) => setPrereqRules((current) => ({ ...current, ...Object.fromEntries(ids.map((id) => [term + "|" + id, rules[id] ?? null])) })));
-  }, [restored, planCourses, selected, term, prereqRules]);
+    for (let start = 0; start < ids.length; start += 40) {
+      const batch = ids.slice(start, start + 40);
+      void fetch(`/api/prereqs?term=${encodeURIComponent(term)}&ids=${batch.join(",")}`)
+        .then(async (response) => response.ok ? ((await response.json()) as { rules?: Record<string, PrereqNode | null> }).rules ?? {} : {})
+        .catch(() => ({} as Record<string, PrereqNode | null>))
+        .then((rules) => setPrereqRules((current) => ({ ...current, ...Object.fromEntries(batch.map((id) => [term + "|" + id, rules[id] ?? null])) })));
+    }
+  }, [restored, planCourses, selected, term, prereqRules, results]);
   const takenSet = courseSet(taken ? [...taken.completed, ...taken.inProgress] : []);
   const prereqLabels = { orHigher: t.prereqOrHigher, sameTerm: t.prereqSameTerm, of: (k: number) => t.prereqOf.replace("{k}", String(k)) };
   // What a course still needs, or null when there is nothing to say (no rule, or no courses entered yet).
@@ -624,9 +634,9 @@ export default function Home() {
       </div></header>
       {aboutOpen && <AboutDialog language={language} onClose={closeAbout} />}
 
-      <div id="top" className="mx-auto max-w-[1320px] px-5 pb-16 pt-8 sm:px-8 sm:pt-12">
-        <div className="mb-8 grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end"><div><p className="mb-3 text-[11px] font-semibold uppercase tracking-[.17em] text-[#a34a39]">{t.eyebrow}</p><h1 className="font-serif text-4xl leading-tight tracking-[-.03em] sm:text-5xl">{t.title}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#646d69]">{t.subtitle}</p></div>
-          <nav aria-label="Planning steps" className="flex flex-wrap gap-2 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-2">{(["find", "schedule", "watch"] as const).map((item, index) => <button key={item} onClick={() => setStep(item)} aria-current={step === item ? "step" : undefined} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition ${step === item ? "bg-[#273c38] text-white" : "text-[#68716e] hover:bg-[#eeece6]"}`}><span className="grid h-5 w-5 place-items-center rounded-full bg-white/15 text-[10px]">0{index + 1}</span>{t[item]}</button>)}</nav>
+      <div id="top" className="mx-auto max-w-[1320px] px-5 pb-16 pt-5 sm:px-8 sm:pt-12">
+        <div className="mb-5 grid gap-4 sm:mb-8 sm:gap-6 lg:grid-cols-[1fr_auto] lg:items-end"><div><p className="mb-2 text-[11px] font-semibold uppercase tracking-[.17em] text-[#a34a39] sm:mb-3">{t.eyebrow}</p><h1 className="font-serif text-3xl leading-tight tracking-[-.03em] sm:text-5xl">{t.title}</h1>{/* The step buttons below say the same thing; on a phone the room goes to the search box. */}<p className="mt-3 hidden max-w-xl text-sm leading-6 text-[#646d69] sm:block">{t.subtitle}</p></div>
+          <nav aria-label="Planning steps" className="grid grid-cols-3 gap-1 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-1.5 sm:flex sm:flex-wrap sm:gap-2 sm:p-2">{(["find", "schedule", "watch"] as const).map((item, index) => <button key={item} onClick={() => setStep(item)} aria-current={step === item ? "step" : undefined} className={`flex items-center justify-center gap-2 rounded-xl px-1.5 py-2 text-xs transition sm:justify-start sm:px-3 sm:text-sm ${step === item ? "bg-[#273c38] text-white" : "text-[#68716e] hover:bg-[#eeece6]"}`}><span className="hidden h-5 w-5 place-items-center rounded-full bg-white/15 text-[10px] sm:grid">0{index + 1}</span>{t[item]}</button>)}</nav>
         </div>
 
         {step === "find" && restored && <section aria-label={t.selectedCourses} className="mb-5 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] px-4 py-3 sm:px-5">
@@ -651,12 +661,24 @@ export default function Home() {
             <div hidden={findMode !== "gened"}><GenEdFinder key={genEdPreset?.key ?? 0} initialCodes={genEdPreset?.codes} fromAudit={Boolean(genEdPreset)} onAddCourse={(course) => quickAdd(course)} term={term} language={language} reference={referenceSchedule?.planKey === planKey(planCourses, term) ? referenceSchedule : null} referenceStale={referenceSchedule?.term === term && referenceSchedule.planKey !== planKey(planCourses, term)} planCourseIds={planCourses.map((course) => course.courseId)} onOpenCourse={(course) => void openCourse(course)} /></div>
             {findMode === "search" && <>
             <label id="course-search" className="block scroll-mt-6"><span className="sr-only">{t.search}</span><div className="flex items-center gap-3 rounded-xl border border-[#d9d6ce] bg-white px-4 py-3 focus-within:border-[#a34a39] focus-within:ring-2 focus-within:ring-[#a34a39]/10"><span aria-hidden="true" className="text-lg text-[#8a928e]">⌕</span><input value={query} onChange={(event) => changeSearchQuery(event.target.value)} placeholder={t.searchHint} className="w-full bg-transparent text-sm outline-none placeholder:text-[#a0a6a2]" /><kbd title={language === "en" ? "Press / to search" : "按 / 快速搜索"} className="hidden rounded border border-[#dedbd3] px-1.5 text-[11px] text-[#8a918e] sm:inline">/</kbd></div></label>
-            <div className="mt-4 divide-y divide-[#ece9e2]">{searching && <p className="py-5 text-sm text-[#737b77]">{t.loading}</p>}{!searching && query.trim().length >= 2 && !results.length && !error && <p className="py-5 text-sm leading-6 text-[#737b77]">{/^[a-z]{4}\s?\d{3}[a-z]?$/i.test(query.trim())
+            {!searching && results.length > 0 && <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+              {term === "202701" && <button type="button" aria-pressed={resultFilters.openSeats} onClick={() => setResultFilters((current) => ({ ...current, openSeats: !current.openSeats }))} className={`rounded-full border px-3 py-1.5 font-semibold ${resultFilters.openSeats ? "border-[#536d64] bg-[#edf3ef] text-[#273c38]" : "border-[#d9d6ce] text-[#48534f] hover:bg-[#f7f5f0]"}`}>{resultFilters.openSeats ? "✓ " : ""}{t.filterOpen}</button>}
+              <button type="button" aria-pressed={resultFilters.prereqsMet} disabled={!taken} title={taken ? undefined : t.filterPrereqsNeedTaken} onClick={() => setResultFilters((current) => ({ ...current, prereqsMet: !current.prereqsMet }))} className={`rounded-full border px-3 py-1.5 font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${resultFilters.prereqsMet && taken ? "border-[#536d64] bg-[#edf3ef] text-[#273c38]" : "border-[#d9d6ce] text-[#48534f] hover:bg-[#f7f5f0]"}`}>{resultFilters.prereqsMet && taken ? "✓ " : ""}{t.filterPrereqs}</button>
+              <label className="inline-flex items-center gap-1.5 text-[#48534f]">{t.filterCredits}<select value={resultFilters.credits} onChange={(event) => setResultFilters((current) => ({ ...current, credits: event.target.value as CreditFilter }))} className="rounded-lg border border-[#d9d6ce] bg-white px-2 py-1 text-xs">{(["any", "1", "2", "3", "4+"] as const).map((value) => <option key={value} value={value}>{value === "any" ? t.filterAny : value}</option>)}</select></label>
+              {!taken && <p className="basis-full text-[11px] text-[#858d89]">{t.filterPrereqsNeedTaken}</p>}
+            </div>}
+            {(() => {
+              // Results with the filters applied; the prerequisite filter needs the student's courses.
+              const shown = filterResults(results, { ...resultFilters, prereqsMet: resultFilters.prereqsMet && Boolean(taken) }, (id) => resultSeats[term + "|" + id]?.summary, prereqNeeds);
+              const active = filtersActive(resultFilters);
+              return <>
+            {active && !searching && results.length > 0 && <p className="mt-2 text-xs text-[#737b77]">{t.filterShowing.replace("{n}", String(shown.length)).replace("{m}", String(results.length))} · <button type="button" onClick={() => setResultFilters(NO_FILTERS)} className="font-semibold text-[#9a5040] hover:underline">{t.filterClear}</button></p>}
+            <div className="mt-4 divide-y divide-[#ece9e2]">{searching && <p className="py-5 text-sm text-[#737b77]">{t.loading}</p>}{active && !searching && results.length > 0 && !shown.length && <p className="py-5 text-sm text-[#737b77]">{t.filterNone}</p>}{!searching && query.trim().length >= 2 && !results.length && !error && <p className="py-5 text-sm leading-6 text-[#737b77]">{/^[a-z]{4}\s?\d{3}[a-z]?$/i.test(query.trim())
                 // A full course code with no match usually means the course is not offered this term, not a typo.
                 ? t.notOffered.replace("{course}", query.trim().replace(/\s+/g, "").toUpperCase()).replace("{term}", termLabel(term, language))
                 : t.noResults}</p>}
-              {results.map((course) => { const inPlan = planCourses.some((item) => item.courseId === course.course_id); const courseId = course.course_id; const onAdd = () => quickAdd(course); return <div key={course.course_id} className="flex items-center gap-2 pr-2"><button type="button" onClick={() => void openCourse(course)} aria-pressed={selected?.course_id === course.course_id} className={`flex min-w-0 flex-1 flex-col items-start gap-2 border-l-2 px-3 py-3.5 text-left transition hover:bg-[#f6f4ef] ${selected?.course_id === course.course_id ? "border-[#536d64] bg-[#edf3ef] text-[#273c38]" : "border-transparent"}`}><span className="min-w-0"><span className="block text-sm font-semibold">{course.course_id}</span><span className="mt-1 block text-sm leading-5 text-[#606966]">{course.name}</span><ResultFacts credits={course.credits} seats={resultSeats[term + "|" + course.course_id]?.summary} t={t} /></span><span className="text-xs font-medium text-[#a34a39]">{t.select} →</span></button><button type="button" onClick={() => onAdd()} disabled={inPlan} aria-label={inPlan ? t.inPlanShort : `${t.quickAdd} ${courseId}`} title={inPlan ? t.inPlanShort : t.quickAdd} className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${inPlan ? "border-[#cddbd1] bg-[#edf3ef] text-[#315c43]" : "border-[#536d64] text-[#273c38] hover:bg-[#edf3ef]"}`}>{inPlan ? `✓ ${t.inPlanShort}` : `+ ${t.quickAdd}`}</button></div>; })}
-            </div></>}
+              {shown.map((course) => { const inPlan = planCourses.some((item) => item.courseId === course.course_id); const courseId = course.course_id; const onAdd = () => quickAdd(course); return <div key={course.course_id} className="flex items-center gap-2 pr-2"><button type="button" onClick={() => void openCourse(course)} aria-pressed={selected?.course_id === course.course_id} className={`flex min-w-0 flex-1 flex-col items-start gap-2 border-l-2 px-3 py-3.5 text-left transition hover:bg-[#f6f4ef] ${selected?.course_id === course.course_id ? "border-[#536d64] bg-[#edf3ef] text-[#273c38]" : "border-transparent"}`}><span className="min-w-0"><span className="block text-sm font-semibold">{course.course_id}</span><span className="mt-1 block text-sm leading-5 text-[#606966]">{course.name}</span><ResultFacts credits={course.credits} seats={resultSeats[term + "|" + course.course_id]?.summary} t={t} /></span><span className="text-xs font-medium text-[#a34a39]">{t.select} →</span></button><button type="button" onClick={() => onAdd()} disabled={inPlan} aria-label={inPlan ? t.inPlanShort : `${t.quickAdd} ${courseId}`} title={inPlan ? t.inPlanShort : t.quickAdd} className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${inPlan ? "border-[#cddbd1] bg-[#edf3ef] text-[#315c43]" : "border-[#536d64] text-[#273c38] hover:bg-[#edf3ef]"}`}>{inPlan ? `✓ ${t.inPlanShort}` : `+ ${t.quickAdd}`}</button></div>; })}
+            </div></>; })()}</>}
           </div>
           <div className="course-detail-panel min-w-0 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-6"><div className="mb-5"><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{selected ? `${selected.course_id} · ${termLabel(term, language)}` : `02 · ${t.sections}`}</p><h2 className="mt-2 font-serif text-2xl">{selected?.name ?? t.sections}</h2>{selected && courseCredits && <p className="mt-1 text-sm font-medium text-[#48534f]">{courseCredits} {courseCredits === "1" ? t.credit : t.creditsUnit}</p>}{selected && courseInfo && <CourseRequirements requirements={courseInfo.requirements} description={courseInfo.description} language={language} currentCourseId={selected.course_id} onCourseClick={(courseId) => void jumpToCourse(courseId)} />}{selected && prereqRules[term + "|" + selected.course_id] && (() => { const needs = prereqNeeds(selected.course_id); return <p className={`mt-2 rounded-lg px-3 py-2 text-xs ${!needs ? "bg-[#f2f0eb] text-[#68716e]" : needs.length ? "bg-[#fff8e8] text-[#745424]" : "bg-[#eaf4ec] text-[#367047]"}`}>{!needs ? t.prereqAddTaken : needs.length ? "⚠ " + t.prereqNeeds.replace("{needs}", needs.join("; ")) : "✓ " + t.prereqMet}</p>; })()}{selected && sections.length > 0 && <button onClick={() => addToSchedule(selected)} disabled={planCourses.some((item) => item.courseId === selected.course_id)} className="mt-4 rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:cursor-default disabled:opacity-60">{planCourses.some((item) => item.courseId === selected.course_id) ? t.courseInPlan : t.addSchedule}</button>}
               {selected && courseInstructors.length > 1 && <div className="mt-4"><p className="text-xs font-medium text-[#68716e]">{t.instructorPick} <span className="font-normal text-[#8a918e]">· {excludedInstructors.length ? `${keptInstructors.length}/${courseInstructors.length}` : t.allInstructors}</span></p><div className="mt-2 flex flex-wrap gap-2">{courseInstructors.map((name) => { const kept = !excludedInstructors.includes(name); return <button key={name} type="button" onClick={() => toggleInstructor(name)} disabled={Boolean(selectedPlan?.pinnedSectionId)} aria-pressed={kept} className={`rounded-full border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${kept ? "border-[#536d64] bg-[#edf3ef] font-medium text-[#24312d]" : "border-[#e0ddd5] bg-white text-[#9aa19d] line-through"}`}>{kept ? "✓ " : ""}{name}</button>; })}</div><p className="mt-2 text-[11px] text-[#8a918e]">{selectedPlan?.pinnedSectionId ? t.pinnedInstructorHint : t.instructorHint}</p></div>}</div>
@@ -688,9 +710,9 @@ export default function Home() {
                 {/* Student comments open here, across the whole card, rather than in the narrow instructor column. */}
                 <div id={`reviews-${id}`} />
                 <div className="mt-3 flex flex-wrap gap-2 border-t border-[#ece9e2] pt-3">
-                  <button onClick={() => selected && chooseSection(selected, id, "pin")} aria-pressed={pinned} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${pinned ? "border-[#536d64] bg-[#edf3ef] text-[#24312d]" : "border-[#d9d6ce] text-[#48534f] hover:bg-[#f7f5f0]"}`}>{pinned ? t.unpinSection : t.pinSection}</button>
-                  <button onClick={() => selected && chooseSection(selected, id, "exclude")} disabled={Boolean(plan?.pinnedSectionId)} aria-pressed={excluded} className={`rounded-lg border px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${excluded ? "border-[#cfaea5] bg-[#f9efec] text-[#8f4538]" : "border-[#d9d6ce] text-[#48534f] hover:bg-[#f7f5f0]"}`}>{excluded ? t.includeSection : t.excludeSection}</button>
-                  <button onClick={() => selected && void addWatch(selected, section)} disabled={watching} className="rounded-lg border border-[#d9d6ce] px-3 py-2 text-xs font-semibold text-[#48534f] hover:bg-[#f7f5f0] disabled:cursor-default disabled:opacity-50">{watching ? (language === "en" ? "Watching" : "已关注") : t.addWatch}</button>
+                  <button onClick={() => selected && chooseSection(selected, id, "pin")} aria-pressed={pinned} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${pinned ? "border-[#536d64] bg-[#edf3ef] text-[#24312d]" : "border-[#d9d6ce] text-[#48534f] hover:bg-[#f7f5f0]"}`}><span className="sm:hidden">{pinned ? t.unpinShort : t.pinShort}</span><span className="hidden sm:inline">{pinned ? t.unpinSection : t.pinSection}</span></button>
+                  <button onClick={() => selected && chooseSection(selected, id, "exclude")} disabled={Boolean(plan?.pinnedSectionId)} aria-pressed={excluded} className={`rounded-lg border px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${excluded ? "border-[#cfaea5] bg-[#f9efec] text-[#8f4538]" : "border-[#d9d6ce] text-[#48534f] hover:bg-[#f7f5f0]"}`}><span className="sm:hidden">{excluded ? t.includeShort : t.excludeShort}</span><span className="hidden sm:inline">{excluded ? t.includeSection : t.excludeSection}</span></button>
+                  <button onClick={() => selected && void addWatch(selected, section)} disabled={watching} className="rounded-lg border border-[#d9d6ce] px-3 py-2 text-xs font-semibold text-[#48534f] hover:bg-[#f7f5f0] disabled:cursor-default disabled:opacity-50">{watching ? (language === "en" ? "Watching" : "已关注") : <><span className="sm:hidden">{t.watchShort}</span><span className="hidden sm:inline">{t.addWatch}</span></>}</button>
                 </div>
               </article>;
             })}</div>
