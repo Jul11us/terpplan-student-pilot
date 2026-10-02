@@ -122,6 +122,7 @@ type Props = {
   onRemove: (courseId: string) => void;
   // Running credit total for the plan, before any option is generated.
   creditsLabel?: string;
+  creditWarning?: string;
   // Unmet prerequisites per course, already worded (empty when met or not checked).
   prereqNeeds?: Record<string, string[]>;
   // Where the student enters the courses they've taken, shown above the course list.
@@ -396,7 +397,7 @@ export function CalendarExport({ sections, term, termName, language, incomplete 
   </div>;
 }
 
-export default function SchedulePlanner({ courses, term, termName, language, creditsLabel, prereqNeeds = {}, takenEditor, onRemove, onBack, onChosenChange, onUpdateCourse }: Props) {
+export default function SchedulePlanner({ courses, term, termName, language, creditsLabel, creditWarning, prereqNeeds = {}, takenEditor, onRemove, onBack, onChosenChange, onUpdateCourse }: Props) {
   const t = copy[language];
   const [generated, setGenerated] = useState<{ requestKey: string; prefsKey: string; options: ScheduleOption[]; warnings: PlanWarning[]; diagnostics?: PlanDiagnosis[]; repairs?: PlanRepair[] }>({ requestKey: "", prefsKey: "", options: [], warnings: [] });
   const [selectedOption, setSelectedOption] = useState(0);
@@ -537,6 +538,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
     </div>
     {!courses.length ? <p className="mt-6 rounded-xl bg-[#f2f0eb] p-5 text-sm text-[#717975]">{t.addCourse}</p> : <>
       {creditsLabel && <p className="mt-6 text-xs font-medium text-[#48534f]">{creditsLabel}</p>}
+      {creditWarning && <p role="status" className="mt-2 rounded-lg bg-[#fff8e8] px-3 py-2 text-xs leading-5 text-[#745424]">⚠ {creditWarning}</p>}
       {takenEditor && <div className="mt-2">{takenEditor}</div>}
       <div className={`${creditsLabel ? "mt-2" : "mt-6"} space-y-2`}>{courses.map((course) => <article key={course.courseId} className="flex items-center justify-between gap-4 rounded-xl border border-[#e3e0d8] bg-white px-4 py-3"><div><p className="font-semibold">{course.courseId}</p><p className="mt-0.5 text-xs text-[#737b77]">{course.courseTitle}</p>{prereqNeeds[course.courseId]?.length ? <p className="mt-1 text-xs font-medium text-[#745424]">⚠ {t.prereqNeeds.replace("{needs}", prereqNeeds[course.courseId].join("; "))}</p> : null}{course.instructors?.length ? <p className="mt-1 text-xs text-[#536d64]">{t.onlyInstructors}: {course.instructors.join(", ")}</p> : null}{course.pinnedSectionId && <p className="mt-1 text-xs font-medium text-[#315c43]">{t.pinned}: {course.pinnedSectionId}</p>}{course.excludedSectionIds?.length ? <p className="mt-1 text-xs text-[#8f4538]">{t.excludedSections}: {course.excludedSectionIds.join(", ")}</p> : null}{(course.pinnedSectionId || course.excludedSectionIds?.length) && <button onClick={onBack} className="mt-1 text-xs font-medium text-[#536d64] underline underline-offset-2">{t.changeSections}</button>}</div><button onClick={() => onRemove(course.courseId)} className="rounded-lg border border-[#dedbd3] px-3 py-2 text-xs font-medium text-[#6a736f] hover:bg-[#f6f4ef]">{t.remove}</button></article>)}</div>
       <div className="mt-5 rounded-xl border border-[#e3e0d8] bg-white p-4 sm:p-5">

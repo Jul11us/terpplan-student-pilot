@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AboutDialog from "@/app/components/about-dialog";
 import CourseRequirements, { type CourseRequirement } from "@/app/components/course-requirements";
 import GenEdFinder, { type ReferenceSchedule } from "@/app/components/gened-finder";
 import { isAsyncOnline } from "@/lib/meeting-time";
 import { GEN_ED_CATEGORIES } from "@/lib/gened-categories";
-import { creditRange, formatCreditTotal, totalPlanCredits, type CreditRange } from "@/lib/plan-credits";
+import { creditRange, creditWarning, formatCreditTotal, totalPlanCredits, type CreditRange } from "@/lib/plan-credits";
 import { planKey } from "@/lib/plan-key";
 import { courseSet, describeRequirement, unmetRequirements } from "@/lib/prereq-check";
 import type { PrereqNode } from "@/lib/programs";
@@ -24,6 +24,7 @@ import { readSavedState, STORAGE_KEY, writeSavedState } from "@/lib/saved-state"
 import { formatSeatReadTime } from "@/lib/seat-time";
 import { courseSearchView, startCourseSearch, type CourseSearchState } from "@/lib/course-search";
 import { groupSections, ownMeetings } from "@/lib/section-groups";
+import { applyTransfer, decodeTransfer, encodeTransfer, TRANSFER_PREFIX, transferCourseCount, type Transfer } from "@/lib/device-transfer";
 
 type Course = { course_id: string; name: string; department?: string; credits?: string };
 type Meeting = { days?: string | null; start_time?: string | null; end_time?: string | null; building?: string | null; room?: string | null };
@@ -72,10 +73,10 @@ const copy = {
     watchesTitle: "Seat watches", emptyWatches: "Watch a section to see it here.", refresh: "Check now", remove: "Remove",
     added: "Course added to plan", watched: "Seat watch saved", conflict: "Time conflict", noConflict: "No time conflicts found", planLimit: "A plan can include up to 10 courses.",
     signIn: "Sign in to save and sync your seat watches.", email: "Email address", emailCode: "Six-digit code", sendCode: "Email me a code", verifyCode: "Verify and sign in", codeSent: "Code sent. Check your inbox.",
-    watchLimit: "You can watch up to 10 sections. Remove one to add another.", emailPrivacy: "Your address is used to sign you in. Codes expire after 10 minutes.", wrongCode: "That code could not be verified.", emailSignedIn: "Signed in with email", signOut: "Sign out",
+    watchLimit: "You can watch up to 10 courses (40 sections). Remove one to add another.", watchAll: "Watch all {n} sections", watchingAll: "Watching all {n} sections", watchAllHint: "One email when any of them opens. Untick instructors above to leave theirs out.", watchAllTooMany: "{n} sections is more than 20. Untick instructors above to watch fewer at once.", watchGroup: "Watching {n} sections", watchGroupOpen: "{k} open", removeAll: "Remove all", emailPrivacy: "Your address is used to sign you in. Codes expire after 10 minutes.", wrongCode: "That code could not be verified.", emailSignedIn: "Signed in with email", signOut: "Sign out",
     loading: "Loading…", error: "Something went wrong. Please try again.",
     resultFull: "Full", resultNoSections: "No sections", resultSeatsUnknown: "Seats unknown",
-    filterOpen: "Open seats", filterPrereqs: "Prerequisites met", filterPrereqsNeedTaken: "Add the courses you've taken (above) to use this filter.", filterCredits: "Credits", filterAny: "Any", filterShowing: "Showing {n} of {m}", filterNone: "No matches with these filters.", filterClear: "Clear filters",
+    filterOpen: "Open seats", filterPrereqs: "Prerequisites met", filterPrereqsNeedTaken: "Add the courses you've taken (above) to use this filter.", filterCredits: "Credits", filterAny: "Any", filterShowing: "Showing {n} of {m}", filterNone: "No matches with these filters.", filterClear: "Clear filters", showMore: "Show {n} more ({m} left)", transferButton: "Continue on another device", transferCopied: "Link copied. Open it on your other device, for example by emailing or messaging it to yourself.", transferReady: "Copy this link and open it on your other device.", transferPrivacy: "It carries your plans, schedule preferences and courses taken, but not the names of personal events. Anyone with the link can see them.", transferTitle: "Plan from another device", transferBody: "This link has {courses} planned courses{taken}. Load them here? This replaces the plan saved in this browser.", transferTaken: " and {n} courses taken", transferLoad: "Load plan", transferDismiss: "Not now", transferInvalid: "This transfer link is incomplete or damaged. Make a new one on the other device.", resultsCapped: "Showing the first {n} matches. Type more of the course code or title to narrow the search.",
     prereqNeeds: "Prerequisite not met yet: {needs}", prereqMet: "Prerequisites met by the courses you've taken.", prereqAddTaken: "Add the courses you've taken (at the top of the page) to check this prerequisite.", prereqOrHigher: " or higher", prereqSameTerm: " (same term OK)", prereqOf: "{k} of",
     seats: "seats open", seat: "seat open", credit: "credit", creditsUnit: "credits", openOf: "{n} / {total} open", waitlisted: "{n} waitlisted", groupSections: "{n} sections", groupShared: "Every section meets", groupOwn: "Each section adds", groupOpenIn: "across {n} sections", fcOnly: "Freshman Connection only", pickCourse: "Pick a course from the matches to see its sections.", waitlist: "waitlist", checked: "Last checked", status: "Status", freshness: "Seat counts come from UMD course data and may lag the official Schedule of Classes. This page checks at most once a minute while open.",
     open: "Seats available", full: "Full", unknown: "Unknown", stale: "Last check failed · showing saved count", checking: "Checking…",
@@ -94,10 +95,10 @@ const copy = {
     emptySchedule: "请从找课中添加课程，再生成排课方案。", watchesTitle: "余位关注", emptyWatches: "关注一个班次后会显示在这里。",
     refresh: "立即检查", remove: "移除", added: "已将课程加入排课", watched: "已保存余位关注", conflict: "时间冲突",
     noConflict: "没有发现时间冲突", planLimit: "每个排课方案最多添加 10 门课程。", signIn: "登录后即可保存并同步余位关注。", email: "邮箱地址", emailCode: "六位验证码", sendCode: "发送验证码", verifyCode: "验证并登录", codeSent: "验证码已发送，请查收邮箱。",
-    watchLimit: "最多可以关注 10 个班次，请先移除一个再添加。", emailPrivacy: "邮箱仅用于登录。验证码将在 10 分钟后失效。", wrongCode: "验证码无法验证。", emailSignedIn: "已通过邮箱登录", signOut: "退出登录",
+    watchLimit: "最多可以关注 10 门课（共 40 个班次），请先移除一些再添加。", watchAll: "关注全部 {n} 个班次", watchingAll: "已关注全部 {n} 个班次", watchAllHint: "任意一个班次有空位就发一封邮件。取消勾选上方的老师，就不会关注那些老师的班次。", watchAllTooMany: "{n} 个班次超过了 20 个，请先取消勾选上方的一些老师。", watchGroup: "关注了 {n} 个班次", watchGroupOpen: "{k} 个有空位", removeAll: "全部移除", emailPrivacy: "邮箱仅用于登录。验证码将在 10 分钟后失效。", wrongCode: "验证码无法验证。", emailSignedIn: "已通过邮箱登录", signOut: "退出登录",
     loading: "加载中…",
     resultFull: "已满", resultNoSections: "本学期无班次", resultSeatsUnknown: "余位未知",
-    filterOpen: "有空位", filterPrereqs: "先修课已满足", filterPrereqsNeedTaken: "先在上方填写修过的课程，才能用这个筛选。", filterCredits: "学分", filterAny: "不限", filterShowing: "显示 {n} / {m} 门", filterNone: "没有符合筛选条件的课程。", filterClear: "清除筛选",
+    filterOpen: "有空位", filterPrereqs: "先修课已满足", filterPrereqsNeedTaken: "先在上方填写修过的课程，才能用这个筛选。", filterCredits: "学分", filterAny: "不限", filterShowing: "显示 {n} / {m} 门", filterNone: "没有符合筛选条件的课程。", filterClear: "清除筛选", showMore: "再显示 {n} 门（还有 {m} 门）", transferButton: "在其他设备上继续", transferCopied: "链接已复制。在另一台设备上打开它，比如用邮件或消息发给自己。", transferReady: "复制这个链接，在另一台设备上打开。", transferPrivacy: "链接里有你的排课方案、排课偏好和修过的课程，不包括个人日程的名称。拿到链接的人都能看到这些内容。", transferTitle: "来自其他设备的方案", transferBody: "这个链接里有 {courses} 门计划课程{taken}。要在这里载入吗？这会替换这个浏览器里保存的方案。", transferTaken: "和 {n} 门修过的课程", transferLoad: "载入方案", transferDismiss: "暂不", transferInvalid: "这个链接不完整或已损坏，请在另一台设备上重新生成。", resultsCapped: "只列出前 {n} 个匹配结果。输入更完整的课号或课名可以缩小范围。",
     prereqNeeds: "先修课还没满足：{needs}", prereqMet: "你修过的课程已满足先修要求。", prereqAddTaken: "在页面上方填写修过的课程，就能检查这门课的先修要求。", prereqOrHigher: " 或更高", prereqSameTerm: "（可同学期修）", prereqOf: "任选 {k} 门：",
     error: "发生错误，请重试。", seats: "个空位", seat: "个空位", credit: "学分", creditsUnit: "学分", openOf: "空位 {n} / {total}", waitlisted: "候补 {n} 人", groupSections: "{n} 个班次", groupShared: "所有班次都上", groupOwn: "各班次另外的时间", groupOpenIn: "{n} 个班次合计", fcOnly: "仅限 Freshman Connection", pickCourse: "从匹配结果中选择一门课程，查看它的班次。", waitlist: "候补人数", checked: "上次检查", status: "状态",
     freshness: "余位数据来自 UMD 课程数据，可能晚于学校官方课表。页面打开时最多每分钟检查一次。",
@@ -148,6 +149,10 @@ function minutes(raw: string | null | undefined): number | null {
   if (hour > 23 || minute > 59) return null;
   return hour * 60 + minute;
 }
+
+// Search results shown at a time, and the most the search API returns.
+const RESULT_PAGE = 40;
+const MAX_RESULTS = 120;
 
 const zhDays: Record<string, string> = { Mon: "周一", Tue: "周二", Wed: "周三", Thu: "周四", Fri: "周五", Sat: "周六", Sun: "周日" };
 
@@ -212,6 +217,7 @@ export default function Home() {
   // term has no live seat data. Kept for two minutes, then asked again the next time the course is listed.
   const [resultSeats, setResultSeats] = useState<Record<string, { at: number; summary: SeatSummary | null }>>({});
   const [resultFilters, setResultFilters] = useState<ResultFilters>(NO_FILTERS);
+  const [resultLimitState, setResultLimitState] = useState({ key: "", limit: RESULT_PAGE });
   const [selected, setSelected] = useState<Course | null>(null);
   const [sections, setSections] = useState<Section[]>([]);
   const [courseCredits, setCourseCredits] = useState<string | null>(null);
@@ -233,6 +239,10 @@ export default function Home() {
   // Plans saved in this browser, one per term; kept in a ref so switching terms can restore them.
   const savedPlansRef = useRef<Record<string, PlanCourse[]>>({});
   const [restored, setRestored] = useState(false);
+  // A plan arriving in a "continue on another device" link (#move=...), waiting for the student to accept.
+  const [transferOffer, setTransferOffer] = useState<Transfer | "invalid" | null>(null);
+  const [transferLink, setTransferLink] = useState("");
+  const [transferCopied, setTransferCopied] = useState(false);
   const termRef = useRef("");
   const applyingOtherTabRef = useRef(false);
   const [watches, setWatches] = useState<Watch[]>([]);
@@ -289,6 +299,17 @@ export default function Home() {
     setPlanCourses(savedPlansRef.current[nextTerm] ?? []);
   }, []);
 
+  // A "continue on another device" link: on load, and when one is pasted into a tab already on TerpPlan
+  // (only the #fragment changes then, so the page does not reload).
+  const readTransferLink = useCallback(() => {
+    if (!window.location.hash.startsWith(TRANSFER_PREFIX)) return;
+    void decodeTransfer(window.location.hash.slice(TRANSFER_PREFIX.length)).then((transfer) => setTransferOffer(transfer ?? "invalid"));
+  }, []);
+  useEffect(() => {
+    window.addEventListener("hashchange", readTransferLink);
+    return () => window.removeEventListener("hashchange", readTransferLink);
+  }, [readTransferLink]);
+
   // Runs once: restore what this browser saved, then load the term list.
   useEffect(() => {
     const restore = window.setTimeout(() => {
@@ -305,6 +326,7 @@ export default function Home() {
         setStep("find");
         window.history.replaceState(null, "", window.location.pathname);
       }
+      readTransferLink();
       setRestored(true);
       fetch("/api/terms").then(async (response) => {
         if (!response.ok) throw new Error("terms");
@@ -316,7 +338,7 @@ export default function Home() {
       }).catch(() => setTermUnavailable(true));
     }, 0);
     return () => window.clearTimeout(restore);
-  }, [switchTerm]);
+  }, [switchTerm, readTransferLink]);
 
   useEffect(() => {
     const initialLoad = window.setTimeout(() => loadWatches().catch(() => setError(t.error)), 0);
@@ -357,21 +379,6 @@ export default function Home() {
     setCourseCredits(null); setProfessorRatings({}); setRatingsLoading(false); setLoadingDetail(false);
   };
 
-  useEffect(() => {
-    const now = Date.now();
-    const ids = results.map((course) => course.course_id).filter((id) => id && !(resultSeats[term + "|" + id] && now - resultSeats[term + "|" + id].at < 120_000));
-    if (!ids.length) return;
-    let cancelled = false;
-    void fetch(`/api/seats?term=${encodeURIComponent(term)}&ids=${ids.slice(0, 40).join(",")}`)
-      .then(async (response) => response.ok ? ((await response.json()) as { seats?: Record<string, SeatSummary> }).seats ?? {} : {})
-      .catch(() => ({} as Record<string, SeatSummary>))
-      .then((seats) => {
-        if (cancelled) return;
-        const at = Date.now();
-        setResultSeats((current) => ({ ...current, ...Object.fromEntries(ids.slice(0, 40).map((id) => [term + "|" + id, { at, summary: seats[id] ?? null }])) }));
-      });
-    return () => { cancelled = true; };
-  }, [results, term, resultSeats]);
 
   const openCourse = async (course: Course) => {
     const courseRequestKey = term + "|" + course.course_id;
@@ -408,7 +415,7 @@ export default function Home() {
         void fetch("/api/professor-ratings", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ names }),
+          body: JSON.stringify({ names, courseId: course.course_id }),
         }).then(async (ratingsResponse) => {
           const ratingPayload = await ratingsResponse.json() as RatingsPayload;
           if (!ratingsResponse.ok) throw new Error("ratings");
@@ -499,7 +506,8 @@ export default function Home() {
         .then((rules) => setPrereqRules((current) => ({ ...current, ...Object.fromEntries(batch.map((id) => [term + "|" + id, rules[id] ?? null])) })));
     }
   }, [restored, planCourses, selected, term, prereqRules, results]);
-  const takenSet = courseSet(taken ? [...taken.completed, ...taken.inProgress] : []);
+  const takenCodes = useMemo(() => taken ? [...taken.completed, ...taken.inProgress] : null, [taken]);
+  const takenSet = courseSet(takenCodes ?? []);
   const prereqLabels = { orHigher: t.prereqOrHigher, sameTerm: t.prereqSameTerm, of: (k: number) => t.prereqOf.replace("{k}", String(k)) };
   // What a course still needs, or null when there is nothing to say (no rule, or no courses entered yet).
   const prereqNeeds = (courseId: string): string[] | null => {
@@ -508,6 +516,34 @@ export default function Home() {
     const sameTerm = courseSet(planCourses.map((course) => course.courseId).filter((id) => id !== courseId));
     return unmetRequirements(rule, takenSet, sameTerm).map((node) => describeRequirement(node, prereqLabels));
   };
+
+  // Search results with the filters applied, and how many of them are on screen ("Show more" adds 40).
+  // The count resets for a new search or a filter change.
+  const resultsKey = JSON.stringify([term, query.trim().toLowerCase(), resultFilters]);
+  const resultLimit = resultLimitState.key === resultsKey ? resultLimitState.limit : RESULT_PAGE;
+  const shownResults = useMemo(() => filterResults(results, { ...resultFilters, prereqsMet: resultFilters.prereqsMet && Boolean(taken) }, (id) => resultSeats[term + "|" + id]?.summary, prereqNeeds),
+    // prereqNeeds reads prereqRules, planCourses and taken, which are listed instead of the function itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [results, resultFilters, taken, resultSeats, term, prereqRules, planCourses]);
+  const displayedResults = shownResults.slice(0, resultLimit);
+  const seatTargets = resultFilters.openSeats ? results : displayedResults;
+
+  useEffect(() => {
+    const now = Date.now();
+    // Seats for the results on screen; with "Open seats" on, for every result, since the filter needs them.
+    const ids = seatTargets.map((course) => course.course_id).filter((id) => id && !(resultSeats[term + "|" + id] && now - resultSeats[term + "|" + id].at < 120_000));
+    if (!ids.length) return;
+    let cancelled = false;
+    void fetch(`/api/seats?term=${encodeURIComponent(term)}&ids=${ids.slice(0, 40).join(",")}`)
+      .then(async (response) => response.ok ? ((await response.json()) as { seats?: Record<string, SeatSummary> }).seats ?? {} : {})
+      .catch(() => ({} as Record<string, SeatSummary>))
+      .then((seats) => {
+        if (cancelled) return;
+        const at = Date.now();
+        setResultSeats((current) => ({ ...current, ...Object.fromEntries(ids.slice(0, 40).map((id) => [term + "|" + id, { at, summary: seats[id] ?? null }])) }));
+      });
+    return () => { cancelled = true; };
+  }, [seatTargets, term, resultSeats]);
 
   useEffect(() => {
     if (!restored) return;
@@ -522,9 +558,9 @@ export default function Home() {
     }
   }, [restored, planCourses, term, planCredits]);
 
-  const planCreditLabel = planCourses.length
-    ? formatCreditTotal(totalPlanCredits(planCourses.map((course) => course.courseId), Object.fromEntries(planCourses.map((course) => [course.courseId, planCredits[term + "|" + course.courseId]]))), language)
-    : "";
+  const planCreditTotal = totalPlanCredits(planCourses.map((course) => course.courseId), Object.fromEntries(planCourses.map((course) => [course.courseId, planCredits[term + "|" + course.courseId]])));
+  const planCreditLabel = planCourses.length ? formatCreditTotal(planCreditTotal, language) : "";
+  const planCreditWarning = planCourses.length ? creditWarning(planCreditTotal, term, language) : "";
 
   // Adds from a result list without leaving course search; the planner regenerates options in the background.
   const quickAdd = (course: Course) => {
@@ -579,6 +615,32 @@ export default function Home() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : t.error); }
   };
 
+  // "Any section opens": every listed section of the course (after the instructor choice) in one request.
+  const addWatchAll = async (course: Course, list: Section[]) => {
+    setError("");
+    try {
+      const response = await fetch("/api/watches", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ courseId: course.course_id, term, sectionIds: list.map((section) => sectionId(section, course.course_id)) }) });
+      const payload = await response.json() as ApiError;
+      if (response.status === 401) { setAuthenticated(false); setAuthProvider(null); setStep("watch"); return; }
+      if (!response.ok) throw new Error(payload.code === "watchLimit" ? t.watchLimit : payload.error || t.error);
+      setMessage("watched"); setStep("watch"); await loadWatches();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t.error); }
+  };
+
+  const makeTransferLink = async () => {
+    setTransferCopied(false);
+    const link = window.location.origin + "/" + TRANSFER_PREFIX + await encodeTransfer(readSavedState(), readTaken());
+    setTransferLink(link);
+    try { await navigator.clipboard.writeText(link); setTransferCopied(true); } catch { /* the link is shown to copy by hand */ }
+  };
+  const closeTransfer = () => { window.history.replaceState(null, "", window.location.pathname + window.location.search); setTransferOffer(null); };
+  const acceptTransfer = (transfer: Transfer) => {
+    applyTransfer(transfer);
+    // Reload so every part of the page starts from the loaded plan.
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    window.location.reload();
+  };
+
   const requestEmailCode = async () => {
     setError(""); setMessage(""); setAuthBusy(true);
     try {
@@ -607,6 +669,8 @@ export default function Home() {
     setWatches([]); setAlerts([]); setEmailCode(""); setCodeSent(false);
     await loadWatches();
   };
+
+  const removeWatches = async (list: Watch[]) => { for (const watch of list) await removeWatch(watch); };
 
   const removeWatch = async (watch: Watch) => {
     const params = new URLSearchParams({ term: watch.term, section: watch.sectionId });
@@ -658,6 +722,10 @@ export default function Home() {
           <nav aria-label="Planning steps" className="grid grid-cols-3 gap-1 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-1.5 sm:flex sm:flex-wrap sm:gap-2 sm:p-2">{(["find", "schedule", "watch"] as const).map((item, index) => <button key={item} onClick={() => setStep(item)} aria-current={step === item ? "step" : undefined} className={`flex items-center justify-center gap-2 rounded-xl px-1.5 py-2 text-xs transition sm:justify-start sm:px-3 sm:text-sm ${step === item ? "bg-[#273c38] text-white" : "text-[#68716e] hover:bg-[#eeece6]"}`}><span className="hidden h-5 w-5 place-items-center rounded-full bg-white/15 text-[10px] sm:grid">0{index + 1}</span>{t[item]}</button>)}</nav>
         </div>
 
+        {transferOffer && <section role="dialog" aria-label={t.transferTitle} className="mb-5 rounded-2xl border border-[#536d64] bg-[#edf3ef] px-4 py-3 text-sm text-[#24312d] sm:px-5">
+          {transferOffer === "invalid" ? <p>{t.transferInvalid}</p> : <><p className="font-semibold">{t.transferTitle}</p><p className="mt-1 text-xs leading-5">{t.transferBody.replace("{courses}", String(transferCourseCount(transferOffer))).replace("{taken}", transferOffer.taken ? t.transferTaken.replace("{n}", String(transferOffer.taken.completed.length + transferOffer.taken.inProgress.length)) : "")}</p></>}
+          <div className="mt-2 flex flex-wrap gap-2">{transferOffer !== "invalid" && <button type="button" onClick={() => acceptTransfer(transferOffer)} className="rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c]">{t.transferLoad}</button>}<button type="button" onClick={closeTransfer} className="rounded-lg border border-[#536d64] bg-white px-3 py-2 text-xs font-semibold text-[#273c38]">{t.transferDismiss}</button></div>
+        </section>}
         {step === "find" && restored && <section aria-label={t.selectedCourses} className="mb-5 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] px-4 py-3 sm:px-5">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <p className="shrink-0 text-xs font-semibold text-[#48534f]">{t.selectedCourses} <span className="ml-1 rounded-md bg-[#ece9e2] px-1.5 py-0.5 text-[11px] text-[#68716e]">{planCourses.length}/10</span>{planCreditLabel && <span className="ml-2 font-normal text-[#68716e]">{planCreditLabel}</span>}</p>
@@ -666,7 +734,11 @@ export default function Home() {
             </div>
             <Link href="/audit" className="basis-full text-xs font-medium text-[#a34a39] hover:underline sm:shrink-0 sm:basis-auto">{language === "en" ? "Not sure what you still need? Check your degree audit →" : "不确定还缺哪些课？查看学位审计 →"}</Link>
           </div>
+          {planCreditWarning && <p role="status" className="mt-2 rounded-lg bg-[#fff8e8] px-3 py-2 text-xs leading-5 text-[#745424]">⚠ {planCreditWarning}</p>}
           <div className="mt-2 border-t border-[#ece9e2] pt-2"><TakenCoursesEditor taken={taken} language={language} /></div>
+          <div className="mt-2 border-t border-[#ece9e2] pt-2 text-xs"><button type="button" onClick={() => void makeTransferLink()} className="font-medium text-[#a34a39] hover:underline">{t.transferButton} →</button>
+            {transferLink && <div className="mt-2"><p className="text-[#48534f]">{transferCopied ? "✓ " + t.transferCopied : t.transferReady}</p><input readOnly value={transferLink} onFocus={(event) => event.target.select()} aria-label={t.transferButton} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-xs text-[#273c38]" /><p className="mt-1 text-[11px] leading-5 text-[#858d89]">{t.transferPrivacy}</p></div>}
+          </div>
         </section>}
 
         {termUnavailable && <p className="mb-4 rounded-xl border border-[#ead8b5] bg-[#fff8e8] px-4 py-3 text-sm text-[#745424]">{t.termFallback}</p>}
@@ -677,7 +749,7 @@ export default function Home() {
           <div className="course-search-panel min-w-0 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5"><div className="mb-5 flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">01 · {t.find}</p><h2 className="mt-2 font-serif text-2xl">{t.results}</h2></div><label className="grid w-full gap-1.5 text-xs text-[#737b77]">{t.term}<select value={term} onChange={(event) => switchTerm(event.target.value)} className="w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]">{(terms.length ? terms : [term]).map((item) => <option key={item} value={item}>{termLabel(item, language)}</option>)}</select></label></div>
             <div role="tablist" className="mb-4 inline-flex rounded-xl border border-[#e0ddd5] bg-[#f2f0eb] p-1 text-xs font-medium">{(["search", "gened"] as const).map((mode) => <button key={mode} type="button" role="tab" aria-selected={findMode === mode} onClick={() => setFindMode(mode)} className={`rounded-lg px-3 py-1.5 ${findMode === mode ? "bg-white text-[#202728] shadow-sm" : "text-[#68716e] hover:text-[#202728]"}`}>{mode === "search" ? t.searchMode : t.genEdMode}</button>)}</div>
             {/* Kept mounted while hidden so the chosen category and loaded list survive switching modes. */}
-            <div hidden={findMode !== "gened"}><GenEdFinder key={genEdPreset?.key ?? 0} initialCodes={genEdPreset?.codes} fromAudit={Boolean(genEdPreset)} onAddCourse={(course) => quickAdd(course)} term={term} language={language} reference={referenceSchedule?.planKey === planKey(planCourses, term) ? referenceSchedule : null} referenceStale={referenceSchedule?.term === term && referenceSchedule.planKey !== planKey(planCourses, term)} planCourseIds={planCourses.map((course) => course.courseId)} onOpenCourse={(course) => void openCourse(course)} /></div>
+            <div hidden={findMode !== "gened"}><GenEdFinder key={genEdPreset?.key ?? 0} takenCodes={takenCodes} initialCodes={genEdPreset?.codes} fromAudit={Boolean(genEdPreset)} onAddCourse={(course) => quickAdd(course)} term={term} language={language} reference={referenceSchedule?.planKey === planKey(planCourses, term) ? referenceSchedule : null} referenceStale={referenceSchedule?.term === term && referenceSchedule.planKey !== planKey(planCourses, term)} planCourseIds={planCourses.map((course) => course.courseId)} onOpenCourse={(course) => void openCourse(course)} /></div>
             {findMode === "search" && <>
             <label id="course-search" className="block scroll-mt-6"><span className="sr-only">{t.search}</span><div className="flex items-center gap-3 rounded-xl border border-[#d9d6ce] bg-white px-4 py-3 focus-within:border-[#a34a39] focus-within:ring-2 focus-within:ring-[#a34a39]/10"><span aria-hidden="true" className="text-lg text-[#8a928e]">⌕</span><input value={query} onChange={(event) => changeSearchQuery(event.target.value)} placeholder={t.searchHint} className="w-full bg-transparent text-sm outline-none placeholder:text-[#a0a6a2]" /><kbd title={language === "en" ? "Press / to search" : "按 / 快速搜索"} className="hidden rounded border border-[#dedbd3] px-1.5 text-[11px] text-[#8a918e] sm:inline">/</kbd></div></label>
             {!searching && results.length > 0 && <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
@@ -688,7 +760,7 @@ export default function Home() {
             </div>}
             {(() => {
               // Results with the filters applied; the prerequisite filter needs the student's courses.
-              const shown = filterResults(results, { ...resultFilters, prereqsMet: resultFilters.prereqsMet && Boolean(taken) }, (id) => resultSeats[term + "|" + id]?.summary, prereqNeeds);
+              const shown = shownResults;
               const active = filtersActive(resultFilters);
               return <>
             {active && !searching && results.length > 0 && <p className="mt-2 text-xs text-[#737b77]">{t.filterShowing.replace("{n}", String(shown.length)).replace("{m}", String(results.length))} · <button type="button" onClick={() => setResultFilters(NO_FILTERS)} className="font-semibold text-[#9a5040] hover:underline">{t.filterClear}</button></p>}
@@ -696,10 +768,19 @@ export default function Home() {
                 // A full course code with no match usually means the course is not offered this term, not a typo.
                 ? t.notOffered.replace("{course}", query.trim().replace(/\s+/g, "").toUpperCase()).replace("{term}", termLabel(term, language))
                 : t.noResults}</p>}
-              {shown.map((course) => { const inPlan = planCourses.some((item) => item.courseId === course.course_id); const courseId = course.course_id; const onAdd = () => quickAdd(course); return <div key={course.course_id} className={`flex items-center gap-2 border-l-2 pr-2 transition ${selected?.course_id === course.course_id ? "border-[#536d64] bg-[#edf3ef] text-[#273c38]" : "border-transparent hover:bg-[#f6f4ef]"}`}><button type="button" onClick={() => void openCourse(course)} aria-pressed={selected?.course_id === course.course_id} className="flex min-w-0 flex-1 flex-col items-start gap-2 px-3 py-3.5 text-left"><span className="min-w-0"><span className="block text-sm font-semibold">{course.course_id}</span><span className="mt-1 block text-sm leading-5 text-[#606966]">{course.name}</span><ResultFacts credits={course.credits} seats={resultSeats[term + "|" + course.course_id]?.summary} t={t} /></span><span className="text-xs font-medium text-[#a34a39]">{t.select} →</span></button><button type="button" onClick={() => onAdd()} disabled={inPlan} aria-label={inPlan ? t.inPlanShort : `${t.quickAdd} ${courseId}`} title={inPlan ? t.inPlanShort : t.quickAdd} className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${inPlan ? "border-[#cddbd1] bg-[#edf3ef] text-[#315c43]" : "border-[#536d64] text-[#273c38] hover:bg-[#edf3ef]"}`}>{inPlan ? `✓ ${t.inPlanShort}` : `+ ${t.quickAdd}`}</button></div>; })}
-            </div></>; })()}</>}
+              {displayedResults.map((course) => { const inPlan = planCourses.some((item) => item.courseId === course.course_id); const courseId = course.course_id; const onAdd = () => quickAdd(course); return <div key={course.course_id} className={`flex items-center gap-2 border-l-2 pr-2 transition ${selected?.course_id === course.course_id ? "border-[#536d64] bg-[#edf3ef] text-[#273c38]" : "border-transparent hover:bg-[#f6f4ef]"}`}><button type="button" onClick={() => void openCourse(course)} aria-pressed={selected?.course_id === course.course_id} className="flex min-w-0 flex-1 flex-col items-start gap-2 px-3 py-3.5 text-left"><span className="min-w-0"><span className="block text-sm font-semibold">{course.course_id}</span><span className="mt-1 block text-sm leading-5 text-[#606966]">{course.name}</span><ResultFacts credits={course.credits} seats={resultSeats[term + "|" + course.course_id]?.summary} t={t} /></span><span className="text-xs font-medium text-[#a34a39]">{t.select} →</span></button><button type="button" onClick={() => onAdd()} disabled={inPlan} aria-label={inPlan ? t.inPlanShort : `${t.quickAdd} ${courseId}`} title={inPlan ? t.inPlanShort : t.quickAdd} className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${inPlan ? "border-[#cddbd1] bg-[#edf3ef] text-[#315c43]" : "border-[#536d64] text-[#273c38] hover:bg-[#edf3ef]"}`}>{inPlan ? `✓ ${t.inPlanShort}` : `+ ${t.quickAdd}`}</button></div>; })}
+            </div>
+            {!searching && shown.length > displayedResults.length && <button type="button" onClick={() => setResultLimitState({ key: resultsKey, limit: resultLimit + RESULT_PAGE })} className="mt-3 w-full rounded-lg border border-[#d9d6ce] px-3 py-2 text-xs font-semibold text-[#48534f] hover:bg-[#f7f5f0]">{t.showMore.replace("{n}", String(Math.min(RESULT_PAGE, shown.length - displayedResults.length))).replace("{m}", String(shown.length - displayedResults.length))}</button>}
+            {!searching && results.length >= MAX_RESULTS && shown.length <= displayedResults.length && <p className="mt-3 text-[11px] leading-5 text-[#858d89]">{t.resultsCapped.replace("{n}", String(MAX_RESULTS))}</p>}
+            </>; })()}</>}
           </div>
           <div className="course-detail-panel min-w-0 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-6"><div className="mb-5"><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{selected ? `${selected.course_id} · ${termLabel(term, language)}` : `02 · ${t.sections}`}</p><h2 className="mt-2 font-serif text-2xl">{selected?.name ?? t.sections}</h2>{selected && courseCredits && <p className="mt-1 text-sm font-medium text-[#48534f]">{courseCredits} {courseCredits === "1" ? t.credit : t.creditsUnit}</p>}{selected && courseInfo && <CourseRequirements requirements={courseInfo.requirements} description={courseInfo.description} language={language} currentCourseId={selected.course_id} onCourseClick={(courseId) => void jumpToCourse(courseId)} />}{selected && prereqRules[term + "|" + selected.course_id] && (() => { const needs = prereqNeeds(selected.course_id); return <p className={`mt-2 rounded-lg px-3 py-2 text-xs ${!needs ? "bg-[#f2f0eb] text-[#68716e]" : needs.length ? "bg-[#fff8e8] text-[#745424]" : "bg-[#eaf4ec] text-[#367047]"}`}>{!needs ? t.prereqAddTaken : needs.length ? "⚠ " + t.prereqNeeds.replace("{needs}", needs.join("; ")) : "✓ " + t.prereqMet}</p>; })()}{selected && sections.length > 0 && <button onClick={() => addToSchedule(selected)} disabled={planCourses.some((item) => item.courseId === selected.course_id)} className="mt-4 rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:cursor-default disabled:opacity-60">{planCourses.some((item) => item.courseId === selected.course_id) ? t.courseInPlan : t.addSchedule}</button>}
+              {selected && visibleSections.length > 1 && (() => {
+                const ids = visibleSections.map((section) => sectionId(section, selected.course_id));
+                const all = ids.every((id) => watches.some((item) => item.term === term && item.sectionId === id));
+                const tooMany = ids.length > 20;
+                return <div className="mt-2"><button type="button" onClick={() => void addWatchAll(selected, visibleSections)} disabled={all || tooMany} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef] disabled:cursor-default disabled:opacity-60">{(all ? t.watchingAll : t.watchAll).replace("{n}", String(ids.length))}</button><p className="mt-1.5 text-[11px] leading-5 text-[#858d89]">{tooMany ? t.watchAllTooMany.replace("{n}", String(ids.length)) : t.watchAllHint}</p></div>;
+              })()}
               {selected && courseInstructors.length > 1 && <div className="mt-4"><p className="text-xs font-medium text-[#68716e]">{t.instructorPick} <span className="font-normal text-[#8a918e]">· {excludedInstructors.length ? `${keptInstructors.length}/${courseInstructors.length}` : t.allInstructors}</span></p><div className="mt-2 flex flex-wrap gap-2">{courseInstructors.map((name) => { const kept = !excludedInstructors.includes(name); return <button key={name} type="button" onClick={() => toggleInstructor(name)} disabled={Boolean(selectedPlan?.pinnedSectionId)} aria-pressed={kept} className={`rounded-full border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${kept ? "border-[#536d64] bg-[#edf3ef] font-medium text-[#24312d]" : "border-[#e0ddd5] bg-white text-[#9aa19d] line-through"}`}>{kept ? "✓ " : ""}{name}</button>; })}</div><p className="mt-2 text-[11px] text-[#8a918e]">{selectedPlan?.pinnedSectionId ? t.pinnedInstructorHint : t.instructorHint}</p></div>}</div>
             {!selected && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm leading-6 text-[#717975]">{results.length ? t.pickCourse : t.noResults}</p>}{loadingDetail && <p className="py-8 text-sm text-[#737b77]">{t.loading}</p>}
             {selected && !loadingDetail && !sections.length && !error && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm text-[#717975]">{language === "en" ? "No sections listed for this term." : "本学期没有列出班次。"}</p>}
@@ -782,14 +863,22 @@ export default function Home() {
         </section>}
 
         {/* Mounted (hidden) outside step 02 too, so options regenerate while courses are added from search. */}
-        {restored && <div hidden={step !== "schedule"}><SchedulePlanner onChosenChange={rememberSchedule} courses={planCourses} prereqNeeds={Object.fromEntries(planCourses.map((course) => [course.courseId, prereqNeeds(course.courseId) ?? []]))} takenEditor={<TakenCoursesEditor taken={taken} language={language} />} creditsLabel={planCreditLabel} term={term} termName={termLabel(term, "en")} language={language} onUpdateCourse={(courseId, patch) => setPlanCourses((current) => current.map((course) => course.courseId === courseId ? { ...course, ...patch } : course))} onRemove={(courseId) => setPlanCourses((current) => current.filter((course) => course.courseId !== courseId))} onBack={() => setStep("find")} /></div>}
+        {restored && <div hidden={step !== "schedule"}><SchedulePlanner onChosenChange={rememberSchedule} courses={planCourses} prereqNeeds={Object.fromEntries(planCourses.map((course) => [course.courseId, prereqNeeds(course.courseId) ?? []]))} takenEditor={<TakenCoursesEditor taken={taken} language={language} />} creditsLabel={planCreditLabel} creditWarning={planCreditWarning} term={term} termName={termLabel(term, "en")} language={language} onUpdateCourse={(courseId, patch) => setPlanCourses((current) => current.map((course) => course.courseId === courseId ? { ...course, ...patch } : course))} onRemove={(courseId) => setPlanCourses((current) => current.filter((course) => course.courseId !== courseId))} onBack={() => setStep("find")} /></div>}
 
         {step === "watch" && <section className="mx-auto max-w-4xl rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-8"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">03 · {t.watch}</p><h2 className="mt-2 font-serif text-3xl">{t.watchesTitle}</h2></div><button onClick={() => void refreshWatches()} disabled={checking || !watches.length} className="rounded-lg bg-[#273c38] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{checking ? t.checking : t.refresh}</button></div>
           {authenticated === false && <div className="mt-6 rounded-xl border border-[#e3dfd6] bg-white p-5"><p className="text-sm font-medium">{t.signIn}</p><label className="mt-4 grid gap-1.5 text-xs font-medium text-[#68716e]">{t.email}<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm text-[#202728] outline-none focus:border-[#a34a39]" /></label>{codeSent && <label className="mt-3 grid gap-1.5 text-xs font-medium text-[#68716e]">{t.emailCode}<input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={emailCode} onChange={(event) => setEmailCode(event.target.value.replace(/\D/g, "").slice(0, 6))} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm tracking-[.2em] text-[#202728] outline-none focus:border-[#a34a39]" /></label>}<p className="mt-2 text-xs leading-5 text-[#858d89]">{t.emailPrivacy}</p><div className="mt-4 flex flex-wrap gap-2">{!codeSent ? <button onClick={() => void requestEmailCode()} disabled={authBusy || !email.trim()} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.sendCode}</button> : <><button onClick={() => void verifyEmailCode()} disabled={authBusy || emailCode.length !== 6} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.verifyCode}</button><button onClick={() => void requestEmailCode()} disabled={authBusy} className="rounded-lg border border-[#dedbd3] px-4 py-2.5 text-sm font-medium text-[#68716e] disabled:opacity-50">{t.sendCode}</button></>}</div></div>}
           {authenticated === true && authProvider === "email" && <div className="mt-6 flex items-center justify-between rounded-xl border border-[#e3dfd6] bg-white px-4 py-3"><span className="text-xs text-[#68716e]">{t.emailSignedIn}</span><button onClick={() => void signOutEmail()} className="text-xs font-medium text-[#8b5148] hover:underline">{t.signOut}</button></div>}
           {authenticated === true && authProvider === "email" && <SeatEmailToggle language={language} defaultEmail={email} />}
           {authenticated !== false && !watches.length && <p className="mt-6 rounded-xl bg-[#f2f0eb] p-5 text-sm text-[#717975]">{t.emptyWatches}</p>}{alerts.length > 0 && <div role="status" className="mt-5 rounded-xl border border-[#bdd4c1] bg-[#edf6ef] p-4 text-sm font-semibold text-[#315c43]">{language === "en" ? "Seats opened: " : "发现空位："}{alerts.join(", ")}</div>}
-          {watches.length > 0 && <div className="mt-5 space-y-3">{watches.map((watch) => <article key={`${watch.term}-${watch.sectionId}`} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="font-semibold">{watch.courseId} · {watch.courseTitle}</p><p className="mt-1 text-sm text-[#626c67]">{watch.sectionId} <span className="mx-1 text-[#b5bab6]">/</span> {formatMeetings(watch.meetings)}</p><p className="mt-2 text-xs text-[#8a918e]">{t.seatReadAt}: {formatSeatReadTime(watch.lastSuccessAt, language) ?? t.unknown}</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${watch.status === "ok" && (watch.openSeats ?? 0) > 0 ? "bg-[#eaf4ec] text-[#367047]" : watch.status === "stale" || watch.status === "failed" ? "bg-[#fff0ec] text-[#8c352c]" : "bg-[#f1efe9] text-[#68716e]"}`}>{watch.status === "stale" || watch.status === "failed" ? t.stale : watch.openSeats === null ? t.unknown : watch.openSeats > 0 ? t.open : t.full}</span><button onClick={() => void removeWatch(watch)} className="text-xs font-medium text-[#8b5148] hover:underline">{t.remove}</button></div></div><div className="mt-3 text-xs text-[#707874]">{t.status}: {seatLabel(watch.openSeats)}{watch.waitlist !== null ? ` · ${t.waitlist}: ${watch.waitlist}` : ""}</div></article>)}</div>}
+          {watches.length > 0 && <div className="mt-5 space-y-3">{[...watches.reduce((groups, watch) => groups.set(watch.term + "|" + watch.courseId, [...(groups.get(watch.term + "|" + watch.courseId) ?? []), watch]), new Map<string, Watch[]>()).values()].map((group) => {
+            const watch = group[0]!;
+            if (group.length === 1) return <article key={`${watch.term}-${watch.sectionId}`} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="font-semibold">{watch.courseId} · {watch.courseTitle}</p><p className="mt-1 text-sm text-[#626c67]">{watch.sectionId} <span className="mx-1 text-[#b5bab6]">/</span> {formatMeetings(watch.meetings)}</p><p className="mt-2 text-xs text-[#8a918e]">{t.seatReadAt}: {formatSeatReadTime(watch.lastSuccessAt, language) ?? t.unknown}</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${watch.status === "ok" && (watch.openSeats ?? 0) > 0 ? "bg-[#eaf4ec] text-[#367047]" : watch.status === "stale" || watch.status === "failed" ? "bg-[#fff0ec] text-[#8c352c]" : "bg-[#f1efe9] text-[#68716e]"}`}>{watch.status === "stale" || watch.status === "failed" ? t.stale : watch.openSeats === null ? t.unknown : watch.openSeats > 0 ? t.open : t.full}</span><button onClick={() => void removeWatch(watch)} className="text-xs font-medium text-[#8b5148] hover:underline">{t.remove}</button></div></div><div className="mt-3 text-xs text-[#707874]">{t.status}: {seatLabel(watch.openSeats)}{watch.waitlist !== null ? ` · ${t.waitlist}: ${watch.waitlist}` : ""}</div></article>;
+            const openCount = group.filter((item) => item.status === "ok" && (item.openSeats ?? 0) > 0).length;
+            return <article key={`${watch.term}-${watch.courseId}`} className="rounded-xl border border-[#e3e0d8] bg-white p-4">
+              <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="font-semibold">{watch.courseId} · {watch.courseTitle}</p><p className="mt-1 text-xs text-[#626c67]">{t.watchGroup.replace("{n}", String(group.length))}{openCount ? <span className="ml-1 font-semibold text-[#367047]">· {t.watchGroupOpen.replace("{k}", String(openCount))}</span> : null}</p><p className="mt-1 text-xs text-[#8a918e]">{t.seatReadAt}: {formatSeatReadTime(watch.lastSuccessAt, language) ?? t.unknown}</p></div><button onClick={() => void removeWatches(group)} className="text-xs font-medium text-[#8b5148] hover:underline">{t.removeAll}</button></div>
+              <ul className="mt-3 divide-y divide-[#ece9e2] border-t border-[#ece9e2]">{group.map((item) => <li key={item.sectionId} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2 text-xs"><span className="min-w-0 text-[#48534f]"><span className="font-semibold">{item.sectionId}</span> <span className="text-[#737b77]">{formatMeetings(item.meetings)}</span></span><span className="flex items-center gap-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${item.status === "ok" && (item.openSeats ?? 0) > 0 ? "bg-[#eaf4ec] text-[#367047]" : item.status === "stale" || item.status === "failed" ? "bg-[#fff0ec] text-[#8c352c]" : "bg-[#f1efe9] text-[#68716e]"}`}>{item.status === "stale" || item.status === "failed" ? t.stale : item.openSeats === null ? t.unknown : item.openSeats > 0 ? t.open : t.full}</span><button onClick={() => void removeWatch(item)} className="font-medium text-[#8b5148] hover:underline">{t.remove}</button></span></li>)}</ul>
+            </article>;
+          })}</div>}
           {watches.length > 0 && <p className="mt-3 text-xs leading-5 text-[#858d89]">{t.seatReadHint}</p>}
           <p className="mt-5 border-t border-[#ece9e2] pt-4 text-xs leading-5 text-[#858d89]">{t.freshness}</p>
         </section>}

@@ -1,4 +1,9 @@
+import spring2027Catalog from "@/data/202701-catalog.json";
 import { getGenEdCourses, isGenEdCode } from "@/lib/gened";
+import type { CatalogItem } from "@/lib/umd";
+
+// Prerequisite rules (only the bundled Spring 2027 catalog has them), for the "prerequisites met" filter.
+const rules = new Map((spring2027Catalog as CatalogItem[]).map((course) => [course.course_id, course.pr ?? null]));
 
 // A category takes a few Testudo requests to build, and each Worker instance has its own memory,
 // so finished lists are also kept in Cloudflare's edge cache, which all instances in a location share.
@@ -18,7 +23,7 @@ export async function GET(request: Request) {
   if (!isGenEdCode(code)) return Response.json({ error: "Choose a Gen Ed category." }, { status: 400 });
 
   const cache = edgeCache();
-  const cacheKey = new Request(`${url.origin}/api/gened?term=${term}&code=${code}`);
+  const cacheKey = new Request(`${url.origin}/api/gened?term=${term}&code=${code}&v=2`);
   try {
     const hit = await cache?.match(cacheKey);
     // The header shows whether the shared cache is working on this host.
@@ -28,7 +33,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const { courses, seatCheckedAt } = await getGenEdCourses(term, code);
+    const { courses: listed, seatCheckedAt } = await getGenEdCourses(term, code);
+    const courses = term === "202701" ? listed.map((course) => ({ ...course, pr: rules.get(course.course_id) ?? null })) : listed;
     const response = Response.json({ term, code, courses, seatCheckedAt }, { headers: { "Cache-Control": `public, max-age=0, s-maxage=${EDGE_CACHE_SECONDS}`, "X-TerpPlan-Cache": cache ? "miss" : "none" } });
     try {
       await cache?.put(cacheKey, response.clone());

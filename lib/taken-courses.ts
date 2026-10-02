@@ -19,16 +19,21 @@ export function parseCourseCodes(text: string): string[] {
 
 export function readTaken(): TakenCourses | null {
   try {
-    const value = JSON.parse(window.localStorage.getItem(TAKEN_KEY) ?? "null") as Partial<TakenCourses> | null;
-    if (!value || typeof value !== "object") return null;
-    const list = (items: unknown) => Array.isArray(items) ? items.filter((item): item is string => typeof item === "string" && CODE.test(item)) : [];
-    const completed = list(value.completed);
-    const inProgress = list(value.inProgress);
-    if (!completed.length && !inProgress.length) return null;
-    return { completed, inProgress, source: value.source === "audit" ? "audit" : "manual", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : "" };
+    return parseTaken(JSON.parse(window.localStorage.getItem(TAKEN_KEY) ?? "null"));
   } catch {
     return null;
   }
+}
+
+// Checks a stored (or transferred) value; null when it holds no usable course codes.
+export function parseTaken(raw: unknown): TakenCourses | null {
+  const value = raw as Partial<TakenCourses> | null;
+  if (!value || typeof value !== "object") return null;
+  const list = (items: unknown) => Array.isArray(items) ? items.filter((item): item is string => typeof item === "string" && CODE.test(item)) : [];
+  const completed = list(value.completed);
+  const inProgress = list(value.inProgress);
+  if (!completed.length && !inProgress.length) return null;
+  return { completed, inProgress, source: value.source === "audit" ? "audit" : "manual", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : "" };
 }
 
 export function writeTaken(value: Omit<TakenCourses, "updatedAt"> | null) {

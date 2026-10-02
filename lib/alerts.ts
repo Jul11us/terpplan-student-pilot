@@ -6,8 +6,12 @@ import { SITE_URL } from "@/lib/site-config";
 
 type Db = ReturnType<typeof getDb>;
 
-// Caps that keep one account from exhausting the shared sending quota.
-export const MAX_WATCHES_PER_USER = 10;
+// Caps that keep one account from exhausting the shared sending quota. The background check reads each
+// course once however many of its sections are watched, so the main cap is on courses; watching "any
+// section" of a course adds several sections at once.
+export const MAX_WATCHED_COURSES_PER_USER = 10;
+export const MAX_WATCHES_PER_USER = 40;
+export const MAX_SECTIONS_PER_REQUEST = 20;
 const MAX_EMAILS_PER_USER_PER_DAY = 20;
 // An opening older than this is probably gone; drop it rather than send a stale email.
 const PENDING_TTL_MS = 60 * 60_000;

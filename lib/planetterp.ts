@@ -7,7 +7,12 @@ export type ProfessorSummary = {
   averageRating: number | null;
   reviewCount: number | null;
   sourceUrl: string | null;
+  // Average GPA this instructor gave, from PlanetTerp's grade data: in this course when there is any,
+  // otherwise across all their courses. Only filled when a course is given.
+  gpa?: GpaSummary | null;
 };
+
+export type GpaSummary = { gpa: number; students: number; scope: "course" | "all" };
 
 export type ReviewHighlight = {
   courseId: string | null;
@@ -203,5 +208,56 @@ export async function getProfessorReviews(name: string, courseId: string): Promi
     };
   } catch {
     return { name: normalized, matched: false, status: "failed", averageRating: null, reviewCount: null, sourceUrl: null, highlights: [] };
+  }
+}
+
+// UMD grade points. W and "Other" are not graded and are left out, as on PlanetTerp.
+const GRADE_POINTS: Record<string, number> = { "A+": 4, A: 4, "A-": 3.7, "B+": 3.3, B: 3, "B-": 2.7, "C+": 2.3, C: 2, "C-": 1.7, "D+": 1.3, D: 1, "D-": 0.7, F: 0 };
+
+export function averageGpa(rows: unknown[]): { gpa: number; students: number } | null {
+  let points = 0, students = 0;
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    for (const [grade, value] of Object.entries(GRADE_POINTS)) {
+      const n = Number((row as Record<string, unknown>)[grade]);
+      if (Number.isFinite(n) && n > 0) { points += value * n; students += n; }
+    }
+  }
+  return students ? { gpa: Math.round((points / students) * 100) / 100, students } : null;
+}
+
+const gradeCache = new Map<string, { expiresAt: number; value: unknown[] }>();
+
+async function fetchGrades(params: Record<string, string>) {
+  const key = JSON.stringify(params);
+  const cached = gradeCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const response = await fetch(API_BASE + "/grades?" + new URLSearchParams(params).toString(), {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(7_000),
+    cache: "no-store",
+  });
+  // An unknown professor or course is a 4xx with an error message, which means "no grades".
+  if (response.status >= 400 && response.status < 500) {
+    gradeCache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, value: [] });
+    return [];
+  }
+  if (!response.ok) throw new Error("PlanetTerp returned " + response.status + ".");
+  const payload: unknown = await response.json();
+  const value = Array.isArray(payload) ? payload : [];
+  gradeCache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, value });
+  return value;
+}
+
+export async function getProfessorGpa(name: string, courseId: string): Promise<GpaSummary | null> {
+  const professor = name.trim();
+  if (!professor || isInstructorTba(professor)) return null;
+  try {
+    const inCourse = averageGpa(await fetchGrades({ course: courseId, professor }));
+    if (inCourse) return { ...inCourse, scope: "course" };
+    const overall = averageGpa(await fetchGrades({ professor }));
+    return overall ? { ...overall, scope: "all" } : null;
+  } catch {
+    return null;
   }
 }

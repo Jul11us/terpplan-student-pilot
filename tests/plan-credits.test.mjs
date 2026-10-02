@@ -31,3 +31,21 @@ test("fixed total reads as a single number", () => {
   assert.equal(formatCreditTotal(total, "en"), "7 credits");
   assert.equal(formatCreditTotal(totalPlanCredits(["A"], { A: { min: 1, max: 1 } }), "en"), "1 credit");
 });
+
+test("credit warnings follow UMD's limits for each kind of term", async () => {
+  const { creditWarning } = await import("../lib/plan-credits.ts");
+  const total = (min, max = min) => ({ min, max, unknown: [], pending: [] });
+  assert.equal(creditWarning(total(16), "202701", "en"), "");
+  assert.match(creditWarning(total(17), "202701", "en"), /before the first day of classes/);
+  assert.match(creditWarning(total(18), "202608", "zh"), /开学第一天之前最多只能注册 16 学分/);
+  assert.match(creditWarning(total(21), "202701", "en"), /20-credit limit/);
+  // A 1–6 credit course only counts its minimum.
+  assert.equal(creditWarning(total(15, 20), "202701", "en"), "");
+  assert.equal(creditWarning(total(4), "202605", "en"), "");
+  assert.match(creditWarning(total(9), "202605", "en"), /8 per six-week session and 4 per three-week session/);
+  assert.doesNotMatch(creditWarning(total(9), "202605", "en"), /Over|needs approval/);
+  assert.match(creditWarning(total(16), "202605", "zh"), /当前合计覆盖整个暑期/);
+  assert.match(creditWarning(total(17), "202605", "en"), /16-credit limit/);
+  assert.match(creditWarning(total(5), "202612", "en"), /4-credit limit/);
+  assert.equal(creditWarning(total(30), "abc", "en"), "");
+});

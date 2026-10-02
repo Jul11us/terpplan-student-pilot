@@ -2,7 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { currentUser, authRequired } from "@/lib/auth";
 import { getDb } from "@/db";
 import { watches } from "@/db/schema";
-import { MAX_WATCHES_PER_USER } from "@/lib/alerts";
+import { MAX_SECTIONS_PER_REQUEST, MAX_WATCHED_COURSES_PER_USER, MAX_WATCHES_PER_USER } from "@/lib/alerts";
 import { DEFAULT_TERM, getCourse, parseCount, sectionId } from "@/lib/umd";
 
 export async function GET(request: Request) {
@@ -21,7 +21,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await currentUser(request);
   if (!user) return authRequired();
-  let payload: { courseId?: string; term?: string; sectionId?: string };
+  // One section (sectionId), or several sections of the same course (sectionIds) for "any section opens".
+  let payload: { courseId?: string; term?: string; sectionId?: string; sectionIds?: unknown };
   try {
     payload = await request.json();
   } catch {
@@ -29,37 +30,36 @@ export async function POST(request: Request) {
   }
   const courseId = (payload.courseId ?? "").trim().toUpperCase();
   const term = payload.term ?? DEFAULT_TERM;
-  const wantedSection = (payload.sectionId ?? "").trim().toUpperCase();
-  if (!/^[A-Z]{4}\d{3}[A-Z0-9]*$/.test(courseId) || !/^\d{6}$/.test(term) || !wantedSection) {
+  const requested: unknown[] = Array.isArray(payload.sectionIds) ? payload.sectionIds : [payload.sectionId];
+  const wantedSections = [...new Set(requested.filter((id): id is string => typeof id === "string").map((id) => id.trim().toUpperCase()).filter(Boolean))];
+  if (!/^[A-Z]{4}\d{3}[A-Z0-9]*$/.test(courseId) || !/^\d{6}$/.test(term) || !wantedSections.length) {
     return Response.json({ error: "Choose a course and section first." }, { status: 400 });
+  }
+  if (wantedSections.length > MAX_SECTIONS_PER_REQUEST) {
+    return Response.json({ error: `Choose up to ${MAX_SECTIONS_PER_REQUEST} sections at a time.` }, { status: 400 });
   }
 
   try {
     const detail = await getCourse(courseId, term);
-    const section = detail?.sections.find((item) => sectionId(item, courseId) === wantedSection);
-    if (!detail || !section) return Response.json({ error: "That section is no longer listed for this term." }, { status: 404 });
+    const found = wantedSections.map((wanted) => detail?.sections.find((item) => sectionId(item, courseId) === wanted));
+    if (!detail || found.some((section) => !section)) return Response.json({ error: "That section is no longer listed for this term." }, { status: 404 });
     const db = getDb();
-    const existing = await db.select({ sectionId: watches.sectionId, term: watches.term }).from(watches).where(eq(watches.userId, user.id));
-    if (existing.length >= MAX_WATCHES_PER_USER && !existing.some((item) => item.term === term && item.sectionId === wantedSection)) {
-      return Response.json({ error: `You can watch up to ${MAX_WATCHES_PER_USER} sections. Remove one to add another.`, code: "watchLimit" }, { status: 409 });
+    const existing = await db.select({ sectionId: watches.sectionId, term: watches.term, courseId: watches.courseId }).from(watches).where(eq(watches.userId, user.id));
+    const added = wantedSections.filter((wanted) => !existing.some((item) => item.term === term && item.sectionId === wanted));
+    const courses = new Set([...existing.map((item) => item.term + "|" + item.courseId), term + "|" + courseId]);
+    if (added.length && (courses.size > MAX_WATCHED_COURSES_PER_USER || existing.length + added.length > MAX_WATCHES_PER_USER)) {
+      return Response.json({ error: `You can watch up to ${MAX_WATCHED_COURSES_PER_USER} courses (${MAX_WATCHES_PER_USER} sections). Remove one to add another.`, code: "watchLimit" }, { status: 409 });
     }
-    const [saved] = await db.insert(watches).values({
-      userId: user.id,
-      courseId,
-      courseTitle: String(detail.course.name ?? courseId),
-      term,
-      sectionId: wantedSection,
-      meetings: JSON.stringify(section.meetings ?? []),
-      instructors: JSON.stringify(section.instructors ?? []),
-      seats: parseCount(section.seats),
-      openSeats: parseCount(section.open_seats),
-      waitlist: parseCount(section.waitlist),
-      status: parseCount(section.open_seats) === null ? "unknown" : "ok",
-      lastSuccessAt: detail.seatCheckedAt,
-    }).onConflictDoUpdate({
-      target: [watches.userId, watches.term, watches.sectionId],
-      set: {
+    const savedRows = [];
+    for (const [index, section] of found.entries()) {
+      const wantedSection = wantedSections[index];
+      if (!section || !wantedSection) continue;
+      const [saved] = await db.insert(watches).values({
+        userId: user.id,
+        courseId,
         courseTitle: String(detail.course.name ?? courseId),
+        term,
+        sectionId: wantedSection,
         meetings: JSON.stringify(section.meetings ?? []),
         instructors: JSON.stringify(section.instructors ?? []),
         seats: parseCount(section.seats),
@@ -67,9 +67,22 @@ export async function POST(request: Request) {
         waitlist: parseCount(section.waitlist),
         status: parseCount(section.open_seats) === null ? "unknown" : "ok",
         lastSuccessAt: detail.seatCheckedAt,
-      },
-    }).returning();
-    return Response.json({ watch: { ...saved, meetings: JSON.parse(saved.meetings), instructors: JSON.parse(saved.instructors) } }, { status: 201 });
+      }).onConflictDoUpdate({
+        target: [watches.userId, watches.term, watches.sectionId],
+        set: {
+          courseTitle: String(detail.course.name ?? courseId),
+          meetings: JSON.stringify(section.meetings ?? []),
+          instructors: JSON.stringify(section.instructors ?? []),
+          seats: parseCount(section.seats),
+          openSeats: parseCount(section.open_seats),
+          waitlist: parseCount(section.waitlist),
+          status: parseCount(section.open_seats) === null ? "unknown" : "ok",
+          lastSuccessAt: detail.seatCheckedAt,
+        },
+      }).returning();
+      savedRows.push({ ...saved, meetings: JSON.parse(saved.meetings), instructors: JSON.parse(saved.instructors) });
+    }
+    return Response.json({ watch: savedRows[0], watches: savedRows }, { status: 201 });
   } catch (error) {
     console.error("Failed to save seat watch", error);
     return Response.json({ error: "Could not save this seat watch. Try again." }, { status: 503 });

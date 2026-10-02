@@ -2,6 +2,8 @@ import { courseIdIsValid, DEFAULT_TERM, getCourse, type CatalogItem, umdJson } f
 import spring2027Catalog from "@/data/202701-catalog.json";
 
 type CacheEntry = { expiresAt: number; courses: CatalogItem[] };
+// The page shows 40 at a time; the rest are there for "Show more" and for its result filters.
+export const MAX_RESULTS = 120;
 const catalogCache = new Map<string, CacheEntry>();
 
 // Course codes beat titles: "MATH" should list MATH courses before AMSC "Mathematical Modeling".
@@ -22,7 +24,7 @@ function matchCourses(courses: CatalogItem[], query: string, compactQuery: strin
     })
     .map((course) => ({ course, rank: rank(course) }))
     .sort((a, b) => a.rank - b.rank || a.course.course_id.localeCompare(b.course.course_id, "en", { numeric: true }))
-    .slice(0, 40)
+    .slice(0, MAX_RESULTS)
     // Prerequisite rules are for the planner (/api/prereqs), not for the results list.
     .map(({ course }) => ({ course_id: course.course_id, name: course.name, department: course.department, credits: course.credits }));
 }

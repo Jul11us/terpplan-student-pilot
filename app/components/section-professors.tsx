@@ -34,6 +34,10 @@ const labels = {
     disclaimer: "Selected excerpts from student-submitted PlanetTerp reviews. See the source for the full set.",
     stars: "{n}/5",
     searchPlanetTerp: "Search PlanetTerp",
+    gpa: "Avg GPA {gpa}",
+    gpaCourse: "Average GPA this instructor gave in {course}: {gpa} across {n} students (PlanetTerp grade data, all past terms).",
+    gpaAll: "No {course} grades from this instructor yet. Average GPA across all their courses: {gpa} from {n} students (PlanetTerp grade data).",
+    gpaAllShort: "all courses",
   },
   zh: {
     average: "PlanetTerp 教师平均分",
@@ -52,6 +56,10 @@ const labels = {
     disclaimer: "以下为 PlanetTerp 学生评论的精选摘录。完整评论请查看来源页面。",
     stars: "{n}/5 分",
     searchPlanetTerp: "在 PlanetTerp 搜索",
+    gpa: "平均 GPA {gpa}",
+    gpaCourse: "这位老师在 {course} 给出的平均 GPA：{gpa}，共 {n} 名学生（PlanetTerp 成绩数据，过去所有学期）。",
+    gpaAll: "还没有这位老师 {course} 的成绩数据。这位老师所有课程的平均 GPA：{gpa}，共 {n} 名学生（PlanetTerp 成绩数据）。",
+    gpaAllShort: "所有课程",
   },
 } as const;
 
@@ -130,6 +138,7 @@ export default function SectionProfessors({ names, courseId, ratings, language, 
                   {rating?.status === "unmatched" ? t.unmatched : rating?.status === "failed" || rating?.status === "limited" ? t.unavailable : t.noRating}
                 </span>
               )}
+              {!isTba && rating?.gpa && <span title={(rating.gpa.scope === "course" ? t.gpaCourse : t.gpaAll).replace("{course}", courseId).replace("{gpa}", rating.gpa.gpa.toFixed(2)).replace("{n}", String(rating.gpa.students))} className="cursor-help rounded-full bg-[#edf3ef] px-2 py-1 text-[#315c43]">{t.gpa.replace("{gpa}", rating.gpa.gpa.toFixed(2))}{rating.gpa.scope === "all" ? ` · ${t.gpaAllShort}` : ""}</span>}
               {/* TerpPlan could not tell which PlanetTerp page is this instructor's (or there is none), so let the
                   student look: PlanetTerp opens the professor directly when the search has one match. */}
               {!isTba && rating?.status === "unmatched" && <a href={`https://planetterp.com/search?query=${encodeURIComponent(name.trim())}`} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#9a5040] underline-offset-2 hover:underline">{t.searchPlanetTerp} ↗</a>}

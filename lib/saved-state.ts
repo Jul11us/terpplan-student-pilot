@@ -74,23 +74,28 @@ function preferences(value: unknown): SavedPreferences | undefined {
   };
 }
 
+// Checks every field of a stored (or transferred) state; anything unusable is dropped.
+export function parseSavedState(value: unknown): SavedState {
+  if (!value || typeof value !== "object") return { plans: {} };
+  const parsed = value as Record<string, unknown>;
+  const plans: Record<string, SavedPlanCourse[]> = {};
+  if (parsed.plans && typeof parsed.plans === "object") {
+    for (const [term, courses] of Object.entries(parsed.plans as Record<string, unknown>)) {
+      if (/^\d{6}$/.test(term)) plans[term] = planCourses(courses);
+    }
+  }
+  return {
+    language: parsed.language === "zh" || parsed.language === "en" ? parsed.language : undefined,
+    term: typeof parsed.term === "string" && /^\d{6}$/.test(parsed.term) ? parsed.term : undefined,
+    plans,
+    preferences: preferences(parsed.preferences),
+  };
+}
+
 export function readSavedState(): SavedState {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { plans: {} };
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const plans: Record<string, SavedPlanCourse[]> = {};
-    if (parsed.plans && typeof parsed.plans === "object") {
-      for (const [term, courses] of Object.entries(parsed.plans as Record<string, unknown>)) {
-        if (/^\d{6}$/.test(term)) plans[term] = planCourses(courses);
-      }
-    }
-    return {
-      language: parsed.language === "zh" || parsed.language === "en" ? parsed.language : undefined,
-      term: typeof parsed.term === "string" && /^\d{6}$/.test(parsed.term) ? parsed.term : undefined,
-      plans,
-      preferences: preferences(parsed.preferences),
-    };
+    return raw ? parseSavedState(JSON.parse(raw)) : { plans: {} };
   } catch {
     return { plans: {} };
   }
