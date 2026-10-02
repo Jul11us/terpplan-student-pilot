@@ -1,3 +1,4 @@
+import { tightWalks } from "@/lib/campus-walk";
 import { isAsyncOnline } from "@/lib/meeting-time";
 import { isInstructorTba, normalizeProfessorName, type ProfessorSummary } from "@/lib/planetterp";
 import { normalizeBusyBlocks, validBuffer, type BusyBlock } from "@/lib/personal-schedule";
@@ -59,6 +60,8 @@ export type ScheduleOption = {
   score: number;
   professorRating: number | null;
   gapMinutes: number;
+  // Times a week the estimated walk to the next class is longer than the gap before it.
+  tightWalkCount: number;
   earliestStart: string | null;
   latestEnd: string | null;
   campusDays: string[];
@@ -108,6 +111,12 @@ const MAX_OPTIONS = 3;
 const CANDIDATE_POOL = 60;
 // A full section cannot be registered for, so it should only win when nothing open fits.
 const FULL_SECTION_PENALTY = 2.5;
+// Back-to-back classes whose buildings are further apart than the gap allows (estimated walk, see campus-walk).
+// Each day it happens costs a base amount plus more for every minute short, so a 2-minute shortfall
+// weighs less than a 10-minute one, and three days a week weighs three times one day. Being late is
+// treated as worse than waiting: 4 minutes short costs about as much as 100 extra minutes of gaps.
+const TIGHT_WALK_PENALTY = 0.4;
+const TIGHT_WALK_PER_MINUTE = 0.1;
 const DAY_TOKENS: Array<[string, (typeof DAYS)[number]]> = [
   ["MONDAY", "Mon"], ["MON", "Mon"], ["MO", "Mon"], ["M", "Mon"],
   ["TUESDAY", "Tue"], ["TUES", "Tue"], ["TUE", "Tue"], ["TU", "Tue"],
@@ -323,9 +332,12 @@ function summarize(sections: ScheduledSection[], preferences: ReturnType<typeof 
   }
   const outsideMinutes = Math.max(0, knownMinutes - insideMinutes);
   if (preferences.interval) unknownCount += unknownSectionIds.length;
+  const walks = tightWalks(sections);
+  const walkPenalty = walks.reduce((sum, walk) => sum + TIGHT_WALK_PENALTY + TIGHT_WALK_PER_MINUTE * (walk.walkMinutes - walk.gapMinutes), 0);
   const score = 0.4 + (professorRating ?? 0) - 0.008 * gapMinutes - 0.7 * earlyCount - 0.35 * unknownCount
     - (preferences.interval ? 0.05 * (outsideMinutes + 90 * unknownSectionIds.length) : 0)
-    - FULL_SECTION_PENALTY * fullSectionIds.length;
+    - FULL_SECTION_PENALTY * fullSectionIds.length
+    - walkPenalty;
   const campusDays = DAYS.filter((day) => sections.some((section) => (section.meetings ?? []).some((meeting) => dayNames(meeting.days).includes(day))));
   const totalCredits = sections.reduce((sum, section) => sum + (section.credits ?? 0), 0);
   return {
@@ -334,6 +346,7 @@ function summarize(sections: ScheduledSection[], preferences: ReturnType<typeof 
     score,
     professorRating,
     gapMinutes,
+    tightWalkCount: walks.length,
     earliestStart: earliestStart === null ? null : formatClock(earliestStart),
     latestEnd: latestEnd === null ? null : formatClock(latestEnd),
     campusDays,
@@ -406,7 +419,7 @@ function searchOptions(
       if (seen.has(key)) return;
       seen.add(key);
       pool.push(summarize([...chosen], parsed));
-      pool.sort((a, b) => b.score - a.score || a.selectedSections.map((section) => section.section_id).join("|").localeCompare(b.selectedSections.map((section) => section.section_id).join("|")));
+      pool.sort((a, b) => a.fullSectionIds.length - b.fullSectionIds.length || b.score - a.score || a.selectedSections.map((section) => section.section_id).join("|").localeCompare(b.selectedSections.map((section) => section.section_id).join("|")));
       if (pool.length > CANDIDATE_POOL) pool.pop();
       return;
     }
@@ -442,7 +455,7 @@ function searchOptions(
       options.push(option);
     }
   }
-  options.sort((a, b) => b.score - a.score);
+  options.sort((a, b) => a.fullSectionIds.length - b.fullSectionIds.length || b.score - a.score);
   if (!options.length) warnings.push({ code: "noConflictFree" });
   if (truncated) warnings.push({ code: "searchLimit" });
   if (options.length && options.every((option) => option.fullSectionIds.length)) {

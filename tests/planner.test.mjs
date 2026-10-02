@@ -147,3 +147,36 @@ test("restores commitments and buffer and keeps old saved plans compatible", () 
     assert.equal(readSavedState().plans["202701"][0].courseId, "CMSC131");
   } finally { globalThis.window = previous; }
 });
+
+test("ranks a schedule you can walk between above one that crosses campus in ten minutes", () => {
+  const at = (building, start, end) => ({ days: "MWF", start_time: start, end_time: end, classtype: "Lecture", building, room: "0100" });
+  const cmsc = course("CMSC131", [{ section_id: "CMSC131-0101", open_seats: 4, instructors: [], meetings: [at("IRB", "10:00", "10:50")] }]);
+  const engl = course("ENGL101", [
+    // Both open, no instructor, same time: the only difference is where the class meets.
+    { section_id: "ENGL101-0101", open_seats: 4, instructors: [], meetings: [at("TYD", "11:00", "11:50")] },
+    { section_id: "ENGL101-0102", open_seats: 4, instructors: [], meetings: [at("CSI", "11:00", "11:50")] },
+  ]);
+  const result = generateOptions([cmsc, engl], {}, {});
+  const near = result.options.find((option) => option.selectedSections.some((s) => s.section_id === "ENGL101-0102"));
+  const far = result.options.find((option) => option.selectedSections.some((s) => s.section_id === "ENGL101-0101"));
+  assert.ok(near && far);
+  assert.equal(result.options[0], near);
+  assert.equal(near.tightWalkCount, 0);
+  assert.equal(far.tightWalkCount, 3);
+  assert.ok(near.score - far.score > 0.6, `penalty ${near.score - far.score}`);
+});
+
+test("walking penalties do not promote full schedules or evict an open schedule from the candidate pool", () => {
+  const at = (building, start, end) => ({ days: "MWF", start_time: start, end_time: end, classtype: "Lecture", building, room: "0100" });
+  const cmsc = course("CMSC131", [{ section_id: "CMSC131-0101", open_seats: 4, instructors: [], meetings: [at("IRB", "10:00", "10:50")] }]);
+  for (const fullCount of [1, 65]) {
+    const engl = course("ENGL101", [
+      { section_id: "ENGL101-0101", open_seats: 4, instructors: [], meetings: [at("TYD", "10:50", "11:40")] },
+      ...Array.from({ length: fullCount }, (_, index) => ({ section_id: `ENGL101-${1000 + index}`, open_seats: 0, instructors: [], meetings: [at("CSI", "10:50", "11:40")] })),
+    ]);
+    const result = generateOptions([cmsc, engl], {}, {});
+    assert.equal(result.options[0].fullSectionIds.length, 0, `open schedule stays first with ${fullCount} full alternatives`);
+    assert.ok(result.options[0].selectedSections.some((item) => item.section_id === "ENGL101-0101"));
+    assert.ok(!result.warnings.some((warning) => warning.code === "allOptionsFull"));
+  }
+});

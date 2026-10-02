@@ -57,6 +57,7 @@ const copy = {
     weekdays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
     pinned: "Required section", excludedSections: "Excluded sections", changeSections: "Change in course search",
     seatReadAt: "Seat data read", seatReadHint: "This is when TerpPlan read the source, not when UMD updated it.",
+    tightWalks: "Hard-to-reach classes", times: "a week",
     openMap: "Open in Google Maps", walkTitle: "Classes that may be hard to reach in time",
     walkLine: "{day}: {from} ({fromBuilding}) ends {end}, {to} ({toBuilding}) starts {start}. {gap} min between them, about {walk} min walk.",
     walkNote: "Walking time is a rough estimate from the distance between buildings (about 80 m a minute along paths), not a route. Tap a building in the timetable to see it on a map.",
@@ -92,6 +93,7 @@ const copy = {
     weekdays: ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
     pinned: "指定班次", excludedSections: "已排除班次", changeSections: "返回找课修改班次",
     seatReadAt: "余位数据读取于", seatReadHint: "这是 TerpPlan 读取数据的时间，不代表 UMD 更新数据的时间。",
+    tightWalks: "课间来不及走", times: "处/周",
     openMap: "在 Google 地图中打开", walkTitle: "这些课之间可能来不及走过去",
     walkLine: "{day}：{from}（{fromBuilding}）{end} 下课，{to}（{toBuilding}）{start} 上课。课间 {gap} 分钟，步行约 {walk} 分钟。",
     walkNote: "步行时间是按楼与楼之间的距离粗略估算的（沿路约每分钟 80 米），不是实际路线。点课表里的教学楼可以在地图上查看。",
@@ -523,7 +525,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
         <span className="mt-3 block text-xs leading-5 text-[#626c67]">{option.selectedSections.map((section) => section.section_id).join(" · ")}</span>
         {missingFrom(option).length ? <span className="mt-2 mr-1 inline-block rounded-full bg-[#8f4538] px-2 py-0.5 text-[11px] font-semibold text-white">{t.incompleteTag}: {missingFrom(option).join(", ")}</span> : null}
         {option.fullSectionIds?.length ? <span className="mt-2 inline-block rounded-full bg-[#f5e9e5] px-2 py-0.5 text-[11px] font-semibold text-[#8f4538]">{t.fullIn}: {option.fullSectionIds.join(", ")}</span> : null}
-        <span className="mt-3 block text-xs text-[#737b77]">{t.rating}: {option.professorRating === null ? "—" : option.professorRating.toFixed(2) + " / 5"} · {t.gaps}: {option.gapMinutes} {t.minutes}</span>
+        <span className="mt-3 block text-xs text-[#737b77]">{t.rating}: {option.professorRating === null ? "—" : option.professorRating.toFixed(2) + " / 5"} · {t.gaps}: {option.gapMinutes} {t.minutes}{option.tightWalkCount ? <span className="text-[#8f4538]"> · {t.tightWalks}: {option.tightWalkCount} {t.times}</span> : null}</span>
         <span className="mt-1 block text-xs text-[#737b77]">{t.days}: {option.campusDays.map((day) => t.weekdays[DAYS.indexOf(day as (typeof DAYS)[number])] ?? day).join(", ") || "—"}{option.earliestStart ? " · " + t.firstClass + " " + option.earliestStart : ""}</span>
         {option.timeFitPercent !== null && <span className="mt-1 block text-xs text-[#737b77]">{t.fit}: {Math.round(option.timeFitPercent)}%</span>}
       </button>)}</div>
