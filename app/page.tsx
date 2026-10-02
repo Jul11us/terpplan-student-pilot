@@ -21,6 +21,7 @@ import type { ProfessorSummary } from "@/lib/planetterp";
 import { roomLabel } from "@/lib/room";
 import { readSavedState, STORAGE_KEY, writeSavedState } from "@/lib/saved-state";
 import { formatSeatReadTime } from "@/lib/seat-time";
+import { courseSearchView, startCourseSearch, type CourseSearchState } from "@/lib/course-search";
 
 type Course = { course_id: string; name: string; department?: string; credits?: string };
 type Meeting = { days?: string | null; start_time?: string | null; end_time?: string | null; building?: string | null; room?: string | null };
@@ -201,11 +202,11 @@ export default function Home() {
   // Last schedule option viewed in the planner, kept per term, for Gen Ed conflict checks.
   const [referenceSchedule, setReferenceSchedule] = useState<ReferenceSchedule | null>(null);
   const rememberSchedule = useCallback((schedule: ReferenceSchedule) => setReferenceSchedule(schedule), []);
-  const [results, setResults] = useState<Course[]>([]);
+  const [searchState, setSearchState] = useState<CourseSearchState>({ key: "", status: "ready", results: [], error: "" });
+  const { results, searching, error: searchError } = courseSearchView(searchState, query, term);
   // Seat counts for the courses in the results list, by "term|courseId"; null once a lookup failed or the
   // term has no live seat data. Kept for two minutes, then asked again the next time the course is listed.
   const [resultSeats, setResultSeats] = useState<Record<string, { at: number; summary: SeatSummary | null }>>({});
-  const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<Course | null>(null);
   const [sections, setSections] = useState<Section[]>([]);
   const [courseCredits, setCourseCredits] = useState<string | null>(null);
@@ -253,7 +254,8 @@ export default function Home() {
   }, []);
   const [aboutOpen, setAboutOpen] = useState(false);
   const closeAbout = useCallback(() => setAboutOpen(false), []);
-  const [error, setError] = useState("");
+  const [actionError, setError] = useState("");
+  const error = actionError || searchError;
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [authProvider, setAuthProvider] = useState<"email" | null>(null);
   const [email, setEmail] = useState("");
@@ -339,21 +341,15 @@ export default function Home() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  useEffect(() => {
-    const text = query.trim();
-    if (text.length < 2) return;
-    const timeout = window.setTimeout(async () => {
-      setSearching(true); setError("");
-      try {
-        const response = await fetch(`/api/search?q=${encodeURIComponent(text)}&term=${encodeURIComponent(term)}`);
-        const payload = await response.json() as SearchPayload;
-        if (!response.ok) throw new Error(payload.error || t.error);
-        setResults(payload.results ?? []);
-      } catch (cause) { setError(cause instanceof Error ? cause.message : t.error); setResults([]); }
-      finally { setSearching(false); }
-    }, 250);
-    return () => window.clearTimeout(timeout);
-  }, [query, term, t.error]);
+  useEffect(() => startCourseSearch(query, term, setSearchState, t.error), [query, term, t.error]);
+
+  const changeSearchQuery = (value: string) => {
+    setQuery(value); setError("");
+    // A new typed search must not keep another course's details or late detail responses.
+    activeCourseRef.current = "";
+    setSelected(null); setSections([]); setCourseSeatCheckedAt(null); setCourseInfo(null);
+    setCourseCredits(null); setProfessorRatings({}); setRatingsLoading(false); setLoadingDetail(false);
+  };
 
   useEffect(() => {
     const now = Date.now();
@@ -654,7 +650,7 @@ export default function Home() {
             {/* Kept mounted while hidden so the chosen category and loaded list survive switching modes. */}
             <div hidden={findMode !== "gened"}><GenEdFinder key={genEdPreset?.key ?? 0} initialCodes={genEdPreset?.codes} fromAudit={Boolean(genEdPreset)} onAddCourse={(course) => quickAdd(course)} term={term} language={language} reference={referenceSchedule?.planKey === planKey(planCourses, term) ? referenceSchedule : null} referenceStale={referenceSchedule?.term === term && referenceSchedule.planKey !== planKey(planCourses, term)} planCourseIds={planCourses.map((course) => course.courseId)} onOpenCourse={(course) => void openCourse(course)} /></div>
             {findMode === "search" && <>
-            <label id="course-search" className="block scroll-mt-6"><span className="sr-only">{t.search}</span><div className="flex items-center gap-3 rounded-xl border border-[#d9d6ce] bg-white px-4 py-3 focus-within:border-[#a34a39] focus-within:ring-2 focus-within:ring-[#a34a39]/10"><span aria-hidden="true" className="text-lg text-[#8a928e]">⌕</span><input value={query} onChange={(event) => { setQuery(event.target.value); if (event.target.value.trim().length < 2) setResults([]); }} placeholder={t.searchHint} className="w-full bg-transparent text-sm outline-none placeholder:text-[#a0a6a2]" /><kbd title={language === "en" ? "Press / to search" : "按 / 快速搜索"} className="hidden rounded border border-[#dedbd3] px-1.5 text-[11px] text-[#8a918e] sm:inline">/</kbd></div></label>
+            <label id="course-search" className="block scroll-mt-6"><span className="sr-only">{t.search}</span><div className="flex items-center gap-3 rounded-xl border border-[#d9d6ce] bg-white px-4 py-3 focus-within:border-[#a34a39] focus-within:ring-2 focus-within:ring-[#a34a39]/10"><span aria-hidden="true" className="text-lg text-[#8a928e]">⌕</span><input value={query} onChange={(event) => changeSearchQuery(event.target.value)} placeholder={t.searchHint} className="w-full bg-transparent text-sm outline-none placeholder:text-[#a0a6a2]" /><kbd title={language === "en" ? "Press / to search" : "按 / 快速搜索"} className="hidden rounded border border-[#dedbd3] px-1.5 text-[11px] text-[#8a918e] sm:inline">/</kbd></div></label>
             <div className="mt-4 divide-y divide-[#ece9e2]">{searching && <p className="py-5 text-sm text-[#737b77]">{t.loading}</p>}{!searching && query.trim().length >= 2 && !results.length && !error && <p className="py-5 text-sm leading-6 text-[#737b77]">{/^[a-z]{4}\s?\d{3}[a-z]?$/i.test(query.trim())
                 // A full course code with no match usually means the course is not offered this term, not a typo.
                 ? t.notOffered.replace("{course}", query.trim().replace(/\s+/g, "").toUpperCase()).replace("{term}", termLabel(term, language))
