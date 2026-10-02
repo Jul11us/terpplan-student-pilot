@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import type { ProfessorReviews, ProfessorSummary } from "@/lib/planetterp";
 
 type Props = {
@@ -10,6 +11,9 @@ type Props = {
   language: "en" | "zh";
   ratingsLoading: boolean;
   compact?: boolean;
+  // Id of an element (full width, below the section row) to show the open comments in, instead of the
+  // narrow instructor column.
+  panelTargetId?: string;
 };
 
 const labels = {
@@ -28,6 +32,7 @@ const labels = {
     otherCourse: "Another course",
     source: "All reviews on PlanetTerp",
     disclaimer: "Selected excerpts from student-submitted PlanetTerp reviews. See the source for the full set.",
+    stars: "{n}/5",
   },
   zh: {
     average: "PlanetTerp 教师平均分",
@@ -44,14 +49,22 @@ const labels = {
     otherCourse: "其他课程",
     source: "在 PlanetTerp 查看全部评论",
     disclaimer: "以下为 PlanetTerp 学生评论的精选摘录。完整评论请查看来源页面。",
+    stars: "{n}/5 分",
   },
 } as const;
+
+// "Jul 2025" / "2025年7月" from PlanetTerp's ISO timestamp; nothing if it cannot be read.
+function reviewMonth(value: string | null, language: "en" | "zh") {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(language === "zh" ? "zh-CN" : "en-US", { year: "numeric", month: "short", timeZone: "UTC" });
+}
 
 function keyFor(name: string) {
   return name.trim().replace(/\s+/g, " ").toLocaleLowerCase("en-US");
 }
 
-export default function SectionProfessors({ names, courseId, ratings, language, ratingsLoading, compact = false }: Props) {
+export default function SectionProfessors({ names, courseId, ratings, language, ratingsLoading, compact = false, panelTargetId }: Props) {
   const t = labels[language];
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
@@ -125,24 +138,30 @@ export default function SectionProfessors({ names, courseId, ratings, language, 
                 {ratingsLoading ? t.ratingLoading : isOpen ? t.hide : t.show}
               </button>}
             </div>
-            {isOpen && <div className="mt-2 rounded-lg border border-[#e7e4dc] bg-[#faf9f6] p-3">
+            {isOpen && (() => {
+              // Looked up at render: the panel only opens after a click, when the target is in the page.
+              const target = panelTargetId && typeof document !== "undefined" ? document.getElementById(panelTargetId) : null;
+              const panel = <div className={`rounded-lg border border-[#e7e4dc] bg-[#faf9f6] p-3 text-xs ${target ? "mt-3" : "mt-2"}`}>
+              {target && <p className="mb-2 font-semibold text-[#3e4945]">{name} · {t.reviews}</p>}
               {loadingKey === key && <p className="text-[#68716e]">{t.loading}</p>}
               {data?.status === "failed" && <p className="text-[#8c352c]">{t.failed}</p>}
               {data?.status === "unmatched" && <p className="text-[#68716e]">{t.unmatched}</p>}
               {data && data.status !== "failed" && data.status !== "unmatched" && data.highlights.length === 0 && <p className="text-[#68716e]">{t.empty}</p>}
               {data && data.highlights.length > 0 && <>
                 <p className="mb-3 leading-5 text-[#858d89]">{t.disclaimer}</p>
-                <div className="space-y-3">
-                  {data.highlights.map((item, index) => <div key={index} className="border-t border-[#e7e4dc] pt-3 first:border-0 first:pt-0">
+                <div className={target ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3" : "space-y-3"}>
+                  {data.highlights.map((item, index) => <div key={index} className={target ? "rounded-md border border-[#ece9e2] bg-white p-3" : "border-t border-[#e7e4dc] pt-3 first:border-0 first:pt-0"}>
                     <p className="mb-1 text-[11px] text-[#858d89]">
-                      {item.courseId ?? courseId}{item.rating !== null ? " · " + item.rating : ""}{item.created ? " · " + item.created : ""}{item.otherCourse ? " · " + t.otherCourse : ""}
+                      {[item.courseId ?? courseId, item.rating !== null ? "★ " + t.stars.replace("{n}", String(item.rating)) : null, reviewMonth(item.created, language), item.otherCourse ? t.otherCourse : null].filter(Boolean).join(" · ")}
                     </p>
                     <p className="whitespace-pre-wrap leading-5 text-[#3e4945]">{item.excerpt}</p>
                   </div>)}
                 </div>
                 {data.sourceUrl && <a className="mt-3 inline-block font-semibold text-[#9a5040] hover:underline" href={data.sourceUrl} target="_blank" rel="noreferrer">{t.source} ↗</a>}
               </>}
-            </div>}
+            </div>;
+              return target ? createPortal(panel, target) : panel;
+            })()}
           </div>
         );
       })}

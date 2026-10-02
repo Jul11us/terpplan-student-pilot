@@ -10,6 +10,7 @@ import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { formatSeatReadTime } from "@/lib/seat-time";
 import { isAsyncOnline } from "@/lib/meeting-time";
 import { buildingFor, mapsUrl, tightWalks } from "@/lib/campus-walk";
+import { optionHighlights } from "@/lib/option-highlights";
 import { planKey } from "@/lib/plan-key";
 import { sharePath } from "@/lib/shared-schedule";
 import { anonymousBusyBlocks, type BusyBlock } from "@/lib/personal-schedule";
@@ -30,6 +31,10 @@ const copy = {
     generate: "Generate schedules", generating: "Finding conflict-free schedules…", preferences: "Schedule preferences",
     earliest: "Earliest class start", excluded: "Avoid these days", window: "Preferred time window",
     start: "From", end: "To", strict: "Keep every class inside this window", options: "Top schedule options",
+    ranking: "Ordered by instructor ratings, gaps between classes, early starts and walks between buildings. Options with full sections come last.",
+    scoreHow: "How this score is built", scoreTotal: "Score", scoreNote: "Higher is better. The score only compares these options with each other.",
+    scorePart: { base: "Starting points", rating: "Average instructor rating", gaps: "Between-class gaps ({count} min × −0.008)", early: "Classes before 9am ({count} × −0.70)", unknown: "Unknown times or unrated instructors ({count} × −0.35)", window: "Time outside your preferred window ({count} min)", full: "Full sections ({count} × −2.50)", walks: "Hard-to-reach classes ({count} a week)" },
+    highlight: { noRush: "No rushing between buildings", rating: "Highest-rated instructors", days: "Fewest days on campus", gaps: "Fewest gaps between classes", lateStart: "Latest first class", window: "Best fit for your time window", balanced: "Best overall balance", onlyOne: "The only schedule that fits" },
     option: "Option", score: "Score", rating: "Instructor rating", gaps: "Between-class gaps", days: "Campus days", firstClass: "earliest class",
     openOnly: "Only use sections with open seats", fullIn: "Full", seatsUnknown: "Seats unknown", full: "Full", seat: "seat open", seatsOpen: "seats open",
     windowHint: "Classes outside this window lower the ranking; tick the box to exclude them.",
@@ -67,6 +72,10 @@ const copy = {
     generate: "生成排课方案", generating: "正在寻找无时间冲突的方案…", preferences: "排课偏好",
     earliest: "最早上课时间", excluded: "希望避开的日期", window: "偏好上课时间段",
     start: "开始", end: "结束", strict: "所有课程都必须在此时间段内", options: "推荐方案",
+    ranking: "按教师评分、课间空档、早课和换楼步行时间排序；有已满班次的方案排在最后。",
+    scoreHow: "分数是怎么算的", scoreTotal: "综合分", scoreNote: "分数越高越好，只用来比较这几个方案。",
+    scorePart: { base: "基础分", rating: "教师平均评分", gaps: "课间空档（{count} 分钟 × −0.008）", early: "早上 9 点前的课（{count} 节 × −0.70）", unknown: "时间待定或没有评分的老师（{count} 项 × −0.35）", window: "超出时间偏好（{count} 分钟）", full: "已满班次（{count} 个 × −2.50）", walks: "课间来不及走（每周 {count} 处）" },
+    highlight: { noRush: "不用赶场换楼", rating: "教师评分最高", days: "到校天数最少", gaps: "课间空档最少", lateStart: "第一节课最晚", window: "最符合时间偏好", balanced: "综合最均衡", onlyOne: "唯一能排下的方案" },
     option: "方案", score: "综合分", rating: "教师评分", gaps: "课间空档", days: "到校天数", firstClass: "最早上课",
     openOnly: "只使用有空位的班次", fullIn: "已满", seatsUnknown: "余位未知", full: "已满", seat: "个空位", seatsOpen: "个空位",
     windowHint: "时间段外的课程会降低排名；勾选后会直接排除。",
@@ -211,6 +220,19 @@ function meetingType(raw: string | null | undefined) {
   if (type === "lab") return "lab";
   if (!type || type === "lecture") return "lecture";
   return null;
+}
+
+// The parts of one option's score, as the planner computed them; they add up to the score shown.
+function ScoreBreakdown({ option, language }: { option: ScheduleOption; language: Language }) {
+  const t = copy[language];
+  const parts = (option.scoreParts ?? []).filter((part) => part.key === "base" || part.key === "rating" || Math.abs(part.points) >= 0.005);
+  const signed = (value: number) => (value < 0 ? "−" : "+") + Math.abs(value).toFixed(2);
+  return <div className="mt-3 rounded-lg border border-[#dfe5e1] bg-white/80 p-3 text-[11px] leading-5 text-[#48534f]">
+    <p className="font-semibold text-[#273c38]">{t.scoreHow}</p>
+    <ul className="mt-1">{parts.map((part) => <li key={part.key} className="flex justify-between gap-3"><span>{fill(t.scorePart[part.key], { count: part.count ?? 0 })}</span><span className="tabular-nums">{signed(part.points)}</span></li>)}</ul>
+    <p className="mt-1 flex justify-between gap-3 border-t border-[#e6e4de] pt-1 font-semibold text-[#273c38]"><span>{t.scoreTotal}</span><span className="tabular-nums">{option.score.toFixed(2)}</span></p>
+    <p className="mt-1 text-[#737b77]">{t.scoreNote}</p>
+  </div>;
 }
 
 const fill = (template: string, values: Record<string, string | number>) => template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ""));
@@ -393,6 +415,10 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
     instructorFilters: Object.fromEntries(courses.filter((course) => course.instructors?.length).map((course) => [course.courseId, course.instructors])),
     sectionFilters: Object.fromEntries(courses.filter((course) => course.pinnedSectionId || course.excludedSectionIds?.length).map((course) => [course.courseId, { pinnedSectionId: course.pinnedSectionId, excludedSectionIds: course.excludedSectionIds }])) };
   const options = generated.requestKey === requestKey ? generated.options : [];
+  const highlights = optionHighlights(options);
+  // Which card's score explanation is open, for this set of options only.
+  const [scoreHelpFor, setScoreHelpFor] = useState<{ requestKey: string; index: number } | null>(null);
+  const scoreHelp = scoreHelpFor?.requestKey === requestKey ? scoreHelpFor.index : null;
   const warnings = generated.requestKey === requestKey ? generated.warnings : [];
 
   const windowValid = !((windowStart || windowEnd || strictTime) && (!windowStart || !windowEnd || windowStart >= windowEnd));
@@ -519,17 +545,24 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
     {courses.length > 0 && options.length === 0 && !loading && !error && warnings.length > 0 && <p className="mt-4 text-sm text-[#68716e]">{t.noOptions}</p>}
     {options.length > 0 && <div className="mt-8">
       <h3 className="font-serif text-2xl">{t.options}</h3>
+      <p className="mt-1 text-xs text-[#737b77]">{t.ranking}</p>
       {prefsChanged && windowValid && <p role="status" className="mt-3 rounded-xl border border-[#d9e3dc] bg-[#f4f8f5] px-4 py-3 text-sm text-[#315c43]">{t.updating}</p>}
       {prefsChanged && !windowValid && <p role="status" className="mt-3 rounded-xl border border-[#ead8b5] bg-[#fff8e8] px-4 py-3 text-sm text-[#745424]">{t.staleOptions}</p>}
-      <div className="mt-4 grid gap-3 lg:grid-cols-3">{options.map((option, index) => <button type="button" key={option.selectedSections.map((section) => section.section_id).join("|")} onClick={() => { setSelectedOption(index); setShareUrl(""); setShareCopied(false); }} aria-pressed={selectedOption === index} className={`rounded-xl border p-4 text-left transition ${selectedOption === index ? "border-[#536d64] bg-[#edf3ef] ring-2 ring-[#536d64]/15" : "border-[#e3e0d8] bg-white hover:border-[#b9c5be]"}`}>
-        <span className="flex items-center justify-between"><strong>{t.option} {index + 1}</strong><span className="text-xs text-[#737b77]">{t.score} {option.score.toFixed(2)}</span></span>
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">{options.map((option, index) => <div key={option.selectedSections.map((section) => section.section_id).join("|")} className={`relative rounded-xl border p-4 text-left transition ${selectedOption === index ? "border-[#536d64] bg-[#edf3ef] ring-2 ring-[#536d64]/15" : "border-[#e3e0d8] bg-white hover:border-[#b9c5be]"}`}>
+        {/* The card selects the option; the score's info button sits above it and only opens the explanation. */}
+        <button type="button" onClick={() => { setSelectedOption(index); setShareUrl(""); setShareCopied(false); }} aria-pressed={selectedOption === index} aria-label={`${t.option} ${index + 1}`} className="absolute inset-0 rounded-xl" />
+        <div className="pointer-events-none relative">
+        <span className="flex items-center justify-between gap-2"><strong>{t.option} {index + 1}</strong><span className="flex items-center gap-1.5 text-xs text-[#737b77]">{t.score} {option.score.toFixed(2)}<button type="button" onClick={() => setScoreHelpFor(scoreHelp === index ? null : { requestKey, index })} aria-expanded={scoreHelp === index} aria-label={t.scoreHow} title={t.scoreHow} className="pointer-events-auto grid h-4 w-4 place-items-center rounded-full border border-[#9aa59f] text-[10px] font-bold leading-none text-[#59635f] hover:border-[#536d64] hover:text-[#273c38]">i</button></span></span>
+        {scoreHelp === index && <ScoreBreakdown option={option} language={language} />}
+        {highlights[index]?.length ? <span className="mt-2 flex flex-wrap gap-1.5">{highlights[index].map((key) => <span key={key} className="rounded-full bg-[#e6efe9] px-2 py-0.5 text-[11px] font-semibold text-[#315c43]">{t.highlight[key]}</span>)}</span> : null}
         <span className="mt-3 block text-xs leading-5 text-[#626c67]">{option.selectedSections.map((section) => section.section_id).join(" · ")}</span>
         {missingFrom(option).length ? <span className="mt-2 mr-1 inline-block rounded-full bg-[#8f4538] px-2 py-0.5 text-[11px] font-semibold text-white">{t.incompleteTag}: {missingFrom(option).join(", ")}</span> : null}
         {option.fullSectionIds?.length ? <span className="mt-2 inline-block rounded-full bg-[#f5e9e5] px-2 py-0.5 text-[11px] font-semibold text-[#8f4538]">{t.fullIn}: {option.fullSectionIds.join(", ")}</span> : null}
         <span className="mt-3 block text-xs text-[#737b77]">{t.rating}: {option.professorRating === null ? "—" : option.professorRating.toFixed(2) + " / 5"} · {t.gaps}: {option.gapMinutes} {t.minutes}{option.tightWalkCount ? <span className="text-[#8f4538]"> · {t.tightWalks}: {option.tightWalkCount} {t.times}</span> : null}</span>
         <span className="mt-1 block text-xs text-[#737b77]">{t.days}: {option.campusDays.map((day) => t.weekdays[DAYS.indexOf(day as (typeof DAYS)[number])] ?? day).join(", ") || "—"}{option.earliestStart ? " · " + t.firstClass + " " + option.earliestStart : ""}</span>
         {option.timeFitPercent !== null && <span className="mt-1 block text-xs text-[#737b77]">{t.fit}: {Math.round(option.timeFitPercent)}%</span>}
-      </button>)}</div>
+        </div>
+      </div>)}</div>
       {chosen && <div className="mt-6">
         {chosenMissing.length > 0 && <div role="alert" className="mb-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]"><p className="font-semibold">{t.incompleteTitle}</p><p className="mt-1 text-xs leading-5">{t.incompleteBody} <strong>{chosenMissing.join(", ")}</strong></p></div>}
         <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h4 className="font-semibold">{t.calendar}</h4><p className="mt-1 text-xs text-[#737b77]">{chosen.selectedSections.map((section) => section.section_id).join(" · ")}</p></div><span className="text-xs text-[#737b77]">{t.rating}: {chosen.professorRating === null ? "—" : chosen.professorRating.toFixed(2) + " / 5"}{chosen.totalCredits ? " · " + chosen.totalCredits + " " + (chosen.totalCredits === 1 ? t.credit : t.credits) : ""}</span></div>

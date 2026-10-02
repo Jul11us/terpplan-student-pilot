@@ -180,3 +180,12 @@ test("walking penalties do not promote full schedules or evict an open schedule 
     assert.ok(!result.warnings.some((warning) => warning.code === "allOptionsFull"));
   }
 });
+
+test("score parts explain the score and add up to it", () => {
+  const result = generateOptions([a, b], {}, {});
+  for (const option of result.options) {
+    const sum = option.scoreParts.reduce((total, part) => total + part.points, 0);
+    assert.ok(Math.abs(sum - option.score) < 1e-9);
+    assert.equal(option.scoreParts.find((part) => part.key === "gaps").count, option.gapMinutes);
+  }
+});

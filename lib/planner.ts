@@ -54,10 +54,19 @@ export type ScheduledSection = PlanSection & {
   seatCheckedAt?: string;
 };
 
+export type ScorePart = {
+  key: "base" | "rating" | "gaps" | "early" | "unknown" | "window" | "full" | "walks";
+  points: number;
+  // How many of the thing were counted (minutes for gaps, meetings for early classes, ...), when it helps explain.
+  count?: number;
+};
+
 export type ScheduleOption = {
   selectedSections: ScheduledSection[];
   totalCredits: number;
   score: number;
+  // What the score is made of, so the page can explain it. points add up to score.
+  scoreParts: ScorePart[];
   professorRating: number | null;
   gapMinutes: number;
   // Times a week the estimated walk to the next class is longer than the gap before it.
@@ -334,16 +343,24 @@ function summarize(sections: ScheduledSection[], preferences: ReturnType<typeof 
   if (preferences.interval) unknownCount += unknownSectionIds.length;
   const walks = tightWalks(sections);
   const walkPenalty = walks.reduce((sum, walk) => sum + TIGHT_WALK_PENALTY + TIGHT_WALK_PER_MINUTE * (walk.walkMinutes - walk.gapMinutes), 0);
-  const score = 0.4 + (professorRating ?? 0) - 0.008 * gapMinutes - 0.7 * earlyCount - 0.35 * unknownCount
-    - (preferences.interval ? 0.05 * (outsideMinutes + 90 * unknownSectionIds.length) : 0)
-    - FULL_SECTION_PENALTY * fullSectionIds.length
-    - walkPenalty;
+  const scoreParts: ScorePart[] = [
+    { key: "base", points: 0.4 },
+    { key: "rating", points: professorRating ?? 0 },
+    { key: "gaps", points: -0.008 * gapMinutes, count: gapMinutes },
+    { key: "early", points: -0.7 * earlyCount, count: earlyCount },
+    { key: "unknown", points: -0.35 * unknownCount, count: unknownCount },
+    { key: "window", points: preferences.interval ? -0.05 * (outsideMinutes + 90 * unknownSectionIds.length) : 0, count: Math.round(outsideMinutes) },
+    { key: "full", points: -FULL_SECTION_PENALTY * fullSectionIds.length, count: fullSectionIds.length },
+    { key: "walks", points: -walkPenalty, count: walks.length },
+  ];
+  const score = scoreParts.reduce((sum, part) => sum + part.points, 0);
   const campusDays = DAYS.filter((day) => sections.some((section) => (section.meetings ?? []).some((meeting) => dayNames(meeting.days).includes(day))));
   const totalCredits = sections.reduce((sum, section) => sum + (section.credits ?? 0), 0);
   return {
     selectedSections: sections,
     totalCredits,
     score,
+    scoreParts,
     professorRating,
     gapMinutes,
     tightWalkCount: walks.length,

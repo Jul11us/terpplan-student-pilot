@@ -42,9 +42,10 @@ export async function GET(request: Request) {
     if (!results.length && courseIdIsValid(exactId)) {
       try {
         const detail = await getCourse(exactId, term);
-        const course = detail?.course as { name?: unknown; department?: unknown } | undefined;
+        const course = detail?.course as { name?: unknown; department?: unknown; credits?: unknown; max_credits?: unknown } | undefined;
         if (course && typeof course.name === "string") {
-          return Response.json({ results: [{ course_id: exactId, name: course.name, department: typeof course.department === "string" ? course.department : exactId.slice(0, 4) }], term });
+          const credits = typeof course.credits === "number" ? String(course.credits) + (typeof course.max_credits === "number" ? `–${course.max_credits}` : "") : undefined;
+          return Response.json({ results: [{ course_id: exactId, name: course.name, department: typeof course.department === "string" ? course.department : exactId.slice(0, 4), credits }], term });
         }
       } catch {
         // Fall through to the empty result; the page then says the course is not offered this term.

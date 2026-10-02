@@ -9,6 +9,7 @@ import { isAsyncOnline } from "@/lib/meeting-time";
 import { GEN_ED_CATEGORIES } from "@/lib/gened-categories";
 import { creditRange, formatCreditTotal, totalPlanCredits, type CreditRange } from "@/lib/plan-credits";
 import { planKey } from "@/lib/plan-key";
+import type { SeatSummary } from "@/lib/seat-summary";
 import SchedulePlanner from "@/app/components/schedule-planner";
 import SeatEmailToggle from "@/app/components/seat-email-toggle";
 import SectionProfessors from "@/app/components/section-professors";
@@ -17,7 +18,7 @@ import { roomLabel } from "@/lib/room";
 import { readSavedState, STORAGE_KEY, writeSavedState } from "@/lib/saved-state";
 import { formatSeatReadTime } from "@/lib/seat-time";
 
-type Course = { course_id: string; name: string; department?: string };
+type Course = { course_id: string; name: string; department?: string; credits?: string };
 type Meeting = { days?: string | null; start_time?: string | null; end_time?: string | null; building?: string | null; room?: string | null };
 type Section = {
   section_id?: string;
@@ -55,7 +56,7 @@ type CheckPayload = ApiError & { watches?: Watch[]; alerts?: { courseId: string;
 
 const copy = {
   en: {
-    eyebrow: "UNIVERSITY OF MARYLAND · STUDENT PILOT", title: "Plan your next semester.",
+    eyebrow: "UNIVERSITY OF MARYLAND · STUDENT PILOT", title: "Plan your next semester",
     subtitle: "Find a course, build a schedule, and keep an eye on open seats.", find: "Find a course",
     schedule: "Build a schedule", watch: "Watch seats", search: "Search course code or title",
     searchHint: "e.g. CMSC131 or Calculus", term: "Term", results: "Course matches", select: "View sections",
@@ -66,6 +67,7 @@ const copy = {
     signIn: "Sign in to save and sync your seat watches.", email: "Email address", emailCode: "Six-digit code", sendCode: "Email me a code", verifyCode: "Verify and sign in", codeSent: "Code sent. Check your inbox.",
     watchLimit: "You can watch up to 10 sections. Remove one to add another.", emailPrivacy: "Your address is used to sign you in. Codes expire after 10 minutes.", wrongCode: "That code could not be verified.", emailSignedIn: "Signed in with email", signOut: "Sign out",
     loading: "Loading…", error: "Something went wrong. Please try again.",
+    resultFull: "Full", resultNoSections: "No sections", resultSeatsUnknown: "Seats unknown",
     seats: "seats open", seat: "seat open", credit: "credit", creditsUnit: "credits", capacity: "{n} seats total", waitlisted: "{n} waitlisted", fcOnly: "Freshman Connection only", pickCourse: "Pick a course from the matches to see its sections.", waitlist: "waitlist", checked: "Last checked", status: "Status", freshness: "Seat counts come from UMD course data and may lag the official Schedule of Classes. This page checks at most once a minute while open.",
     open: "Seats available", full: "Full", unknown: "Unknown", stale: "Last check failed · showing saved count", checking: "Checking…",
     next: "Next step", back: "Back", termFallback: "Term list unavailable — showing Spring 2027",
@@ -76,7 +78,7 @@ const copy = {
     selectedCourses: "Courses in your plan", noSelectedCourses: "No courses added for this term yet.",
   },
   zh: {
-    eyebrow: "马里兰大学 · 学生试用", title: "规划下一学期。", subtitle: "找课程、排进课表，并关注空余名额。",
+    eyebrow: "马里兰大学 · 学生试用", title: "规划下一学期", subtitle: "找课程、排进课表，并关注空余名额。",
     find: "找课程", schedule: "排课", watch: "关注余位", search: "搜索课程编号或名称", searchHint: "例如 CMSC131 或 Calculus",
     term: "学期", results: "匹配课程", select: "查看班次", quickAdd: "加入", inPlanShort: "已加入", searchMode: "搜索课程", genEdMode: "按 Gen Ed 查找", noResults: "暂无匹配结果。请按课程编号或名称搜索。", notOffered: "{term}没有开设 {course}。这门课可能在其他学期开设，可以在上方切换学期查看。",
     sections: "可选班次", addSchedule: "将整门课程加入排课", courseInPlan: "课程已加入", instructorPick: "保留哪些老师", instructorHint: "点老师名字即可排除他的班次。", keepOne: "至少保留一位老师。", allInstructors: "全部", addWatch: "关注这个班次", scheduleTitle: "我的课表",
@@ -85,6 +87,7 @@ const copy = {
     noConflict: "没有发现时间冲突", planLimit: "每个排课方案最多添加 10 门课程。", signIn: "登录后即可保存并同步余位关注。", email: "邮箱地址", emailCode: "六位验证码", sendCode: "发送验证码", verifyCode: "验证并登录", codeSent: "验证码已发送，请查收邮箱。",
     watchLimit: "最多可以关注 10 个班次，请先移除一个再添加。", emailPrivacy: "邮箱仅用于登录。验证码将在 10 分钟后失效。", wrongCode: "验证码无法验证。", emailSignedIn: "已通过邮箱登录", signOut: "退出登录",
     loading: "加载中…",
+    resultFull: "已满", resultNoSections: "本学期无班次", resultSeatsUnknown: "余位未知",
     error: "发生错误，请重试。", seats: "个空位", seat: "个空位", credit: "学分", creditsUnit: "学分", capacity: "共 {n} 座", waitlisted: "候补 {n} 人", fcOnly: "仅限 Freshman Connection", pickCourse: "从匹配结果中选择一门课程，查看它的班次。", waitlist: "候补人数", checked: "上次检查", status: "状态",
     freshness: "余位数据来自 UMD 课程数据，可能晚于学校官方课表。页面打开时最多每分钟检查一次。",
     open: "有空位", full: "已满", unknown: "未知", stale: "上次检查失败 · 显示已保存数据", checking: "检查中…",
@@ -163,6 +166,21 @@ function creditsText(course: CoursePayload["course"]) {
   return max && !text.includes("–") ? `${text}–${max}` : text;
 }
 
+// Credits and open seats under a search result, so a course can be judged before it is opened.
+function ResultFacts({ credits, seats, t }: { credits?: string; seats: SeatSummary | null | undefined; t: (typeof copy)["en"] | (typeof copy)["zh"] }) {
+  const creditText = credits ? `${credits} ${credits === "1" ? t.credit : t.creditsUnit}` : null;
+  let seatText: string | null = null;
+  let tone = "text-[#737b77]";
+  if (seats) {
+    if (!seats.sections) seatText = t.resultNoSections;
+    else if (seats.openSeats > 0) { seatText = `${seats.openSeats} ${seats.openSeats === 1 ? t.seat : t.seats}`; tone = "text-[#367047]"; }
+    else if (seats.unknownSections > 0) seatText = t.resultSeatsUnknown;
+    else { seatText = t.resultFull; tone = "text-[#8f4538]"; }
+  }
+  if (!creditText && !seatText) return null;
+  return <span className="mt-1 block text-xs text-[#737b77]">{creditText}{creditText && seatText ? " · " : ""}{seatText && <span className={`font-medium ${tone}`}>{seatText}</span>}</span>;
+}
+
 export default function Home() {
   const [language, setLanguage] = useState<"en" | "zh">("en");
   const t = copy[language];
@@ -178,6 +196,9 @@ export default function Home() {
   const [referenceSchedule, setReferenceSchedule] = useState<ReferenceSchedule | null>(null);
   const rememberSchedule = useCallback((schedule: ReferenceSchedule) => setReferenceSchedule(schedule), []);
   const [results, setResults] = useState<Course[]>([]);
+  // Seat counts for the courses in the results list, by "term|courseId"; null once a lookup failed or the
+  // term has no live seat data. Kept for two minutes, then asked again the next time the course is listed.
+  const [resultSeats, setResultSeats] = useState<Record<string, { at: number; summary: SeatSummary | null }>>({});
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<Course | null>(null);
   const [sections, setSections] = useState<Section[]>([]);
@@ -327,6 +348,22 @@ export default function Home() {
     }, 250);
     return () => window.clearTimeout(timeout);
   }, [query, term, t.error]);
+
+  useEffect(() => {
+    const now = Date.now();
+    const ids = results.map((course) => course.course_id).filter((id) => id && !(resultSeats[term + "|" + id] && now - resultSeats[term + "|" + id].at < 120_000));
+    if (!ids.length) return;
+    let cancelled = false;
+    void fetch(`/api/seats?term=${encodeURIComponent(term)}&ids=${ids.slice(0, 40).join(",")}`)
+      .then(async (response) => response.ok ? ((await response.json()) as { seats?: Record<string, SeatSummary> }).seats ?? {} : {})
+      .catch(() => ({} as Record<string, SeatSummary>))
+      .then((seats) => {
+        if (cancelled) return;
+        const at = Date.now();
+        setResultSeats((current) => ({ ...current, ...Object.fromEntries(ids.slice(0, 40).map((id) => [term + "|" + id, { at, summary: seats[id] ?? null }])) }));
+      });
+    return () => { cancelled = true; };
+  }, [results, term, resultSeats]);
 
   const openCourse = async (course: Course) => {
     const courseRequestKey = term + "|" + course.course_id;
@@ -580,7 +617,7 @@ export default function Home() {
                 // A full course code with no match usually means the course is not offered this term, not a typo.
                 ? t.notOffered.replace("{course}", query.trim().replace(/\s+/g, "").toUpperCase()).replace("{term}", termLabel(term, language))
                 : t.noResults}</p>}
-              {results.map((course) => { const inPlan = planCourses.some((item) => item.courseId === course.course_id); const courseId = course.course_id; const onAdd = () => quickAdd(course); return <div key={course.course_id} className="flex items-center gap-2 pr-2"><button type="button" onClick={() => void openCourse(course)} aria-pressed={selected?.course_id === course.course_id} className={`flex min-w-0 flex-1 flex-col items-start gap-2 border-l-2 px-3 py-3.5 text-left transition hover:bg-[#f6f4ef] ${selected?.course_id === course.course_id ? "border-[#536d64] bg-[#edf3ef] text-[#273c38]" : "border-transparent"}`}><span className="min-w-0"><span className="block text-sm font-semibold">{course.course_id}</span><span className="mt-1 block text-sm leading-5 text-[#606966]">{course.name}</span></span><span className="text-xs font-medium text-[#a34a39]">{t.select} →</span></button><button type="button" onClick={() => onAdd()} disabled={inPlan} aria-label={inPlan ? t.inPlanShort : `${t.quickAdd} ${courseId}`} title={inPlan ? t.inPlanShort : t.quickAdd} className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${inPlan ? "border-[#cddbd1] bg-[#edf3ef] text-[#315c43]" : "border-[#536d64] text-[#273c38] hover:bg-[#edf3ef]"}`}>{inPlan ? `✓ ${t.inPlanShort}` : `+ ${t.quickAdd}`}</button></div>; })}
+              {results.map((course) => { const inPlan = planCourses.some((item) => item.courseId === course.course_id); const courseId = course.course_id; const onAdd = () => quickAdd(course); return <div key={course.course_id} className="flex items-center gap-2 pr-2"><button type="button" onClick={() => void openCourse(course)} aria-pressed={selected?.course_id === course.course_id} className={`flex min-w-0 flex-1 flex-col items-start gap-2 border-l-2 px-3 py-3.5 text-left transition hover:bg-[#f6f4ef] ${selected?.course_id === course.course_id ? "border-[#536d64] bg-[#edf3ef] text-[#273c38]" : "border-transparent"}`}><span className="min-w-0"><span className="block text-sm font-semibold">{course.course_id}</span><span className="mt-1 block text-sm leading-5 text-[#606966]">{course.name}</span><ResultFacts credits={course.credits} seats={resultSeats[term + "|" + course.course_id]?.summary} t={t} /></span><span className="text-xs font-medium text-[#a34a39]">{t.select} →</span></button><button type="button" onClick={() => onAdd()} disabled={inPlan} aria-label={inPlan ? t.inPlanShort : `${t.quickAdd} ${courseId}`} title={inPlan ? t.inPlanShort : t.quickAdd} className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${inPlan ? "border-[#cddbd1] bg-[#edf3ef] text-[#315c43]" : "border-[#536d64] text-[#273c38] hover:bg-[#edf3ef]"}`}>{inPlan ? `✓ ${t.inPlanShort}` : `+ ${t.quickAdd}`}</button></div>; })}
             </div></>}
           </div>
           <div className="course-detail-panel min-w-0 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-6"><div className="mb-5"><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{selected ? `${selected.course_id} · ${termLabel(term, language)}` : `02 · ${t.sections}`}</p><h2 className="mt-2 font-serif text-2xl">{selected?.name ?? t.sections}</h2>{selected && courseCredits && <p className="mt-1 text-sm font-medium text-[#48534f]">{courseCredits} {courseCredits === "1" ? t.credit : t.creditsUnit}</p>}{selected && courseInfo && <CourseRequirements requirements={courseInfo.requirements} description={courseInfo.description} language={language} currentCourseId={selected.course_id} onCourseClick={(courseId) => void jumpToCourse(courseId)} />}{selected && sections.length > 0 && <button onClick={() => addToSchedule(selected)} disabled={planCourses.some((item) => item.courseId === selected.course_id)} className="mt-4 rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:cursor-default disabled:opacity-60">{planCourses.some((item) => item.courseId === selected.course_id) ? t.courseInPlan : t.addSchedule}</button>}
@@ -602,7 +639,7 @@ export default function Home() {
               return <article key={id} className={`rounded-xl border bg-white p-4 ${pinned ? "border-[#536d64] ring-1 ring-[#536d64]/20" : excluded ? "border-[#e7e4dc] opacity-70" : "border-[#e7e4dc]"}`}>
                 <div className="section-comparison-grid">
                   <div className="min-w-0"><h3 className="text-sm font-semibold">{id}{/-FC[A-Z0-9]*$/.test(id) && <span className="ml-2 rounded-full bg-[#f3ecdc] px-2 py-0.5 align-middle text-[10px] font-semibold text-[#7a5a24]">{t.fcOnly}</span>}</h3><div className="mt-2 space-y-1.5 text-xs leading-5 text-[#525d59]">{section.meetings?.length ? section.meetings.map((meeting, index) => <p key={index}>{displayTime(meeting, language)}</p>) : <p>{formatMeetings(section.meetings)}</p>}</div></div>
-                  <div className="min-w-0">{section.instructors?.length ? <SectionProfessors compact names={section.instructors} courseId={selected?.course_id ?? ""} ratings={professorRatings} ratingsLoading={ratingsLoading} language={language} /> : <p className="text-xs text-[#737b77]">{language === "en" ? "Instructor TBA" : "教师待定"}</p>}</div>
+                  <div className="min-w-0">{section.instructors?.length ? <SectionProfessors compact panelTargetId={`reviews-${id}`} names={section.instructors} courseId={selected?.course_id ?? ""} ratings={professorRatings} ratingsLoading={ratingsLoading} language={language} /> : <p className="text-xs text-[#737b77]">{language === "en" ? "Instructor TBA" : "教师待定"}</p>}</div>
                   <div className="min-w-0"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${open === null ? "bg-[#f1efe9] text-[#68716e]" : open > 0 ? "bg-[#eaf4ec] text-[#367047]" : "bg-[#f5e9e5] text-[#8f4538]"}`}>{seatLabel(section.open_seats)}</span>{(() => {
                     // Capacity tells "nobody registered yet" (30 of 30 open) apart from "one seat left".
                     const total = count(section.seats), waiting = count(section.waitlist);
@@ -610,6 +647,8 @@ export default function Home() {
                     return parts.length ? <p className="mt-1 text-[11px] text-[#737b77]">{parts.join(" · ")}</p> : null;
                   })()}</div>
                 </div>
+                {/* Student comments open here, across the whole card, rather than in the narrow instructor column. */}
+                <div id={`reviews-${id}`} />
                 <div className="mt-3 flex flex-wrap gap-2 border-t border-[#ece9e2] pt-3">
                   <button onClick={() => selected && chooseSection(selected, id, "pin")} aria-pressed={pinned} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${pinned ? "border-[#536d64] bg-[#edf3ef] text-[#24312d]" : "border-[#d9d6ce] text-[#48534f] hover:bg-[#f7f5f0]"}`}>{pinned ? t.unpinSection : t.pinSection}</button>
                   <button onClick={() => selected && chooseSection(selected, id, "exclude")} disabled={Boolean(plan?.pinnedSectionId)} aria-pressed={excluded} className={`rounded-lg border px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${excluded ? "border-[#cfaea5] bg-[#f9efec] text-[#8f4538]" : "border-[#d9d6ce] text-[#48534f] hover:bg-[#f7f5f0]"}`}>{excluded ? t.includeSection : t.excludeSection}</button>
