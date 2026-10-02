@@ -259,8 +259,13 @@ export function WeeklyCalendar({ sections: courseSections, language, busyBlocks 
   const sections: ScheduledSection[] = [...courseSections, ...busyBlocks.map((block) => ({ course_id: `personal-${block.id}`, section_id: `personal-${block.id}`, course_title: block.label || (language === "zh" ? "固定日程" : "Commitment"), credits: null, instructorRatings: [], meetings: [{ days: block.days.join(" "), start_time: block.start, end_time: block.end }] }))];
   const knownStarts = sections.flatMap((section) => (section.meetings ?? []).flatMap((meeting) => minutes(meeting.start_time) === null ? [] : [minutes(meeting.start_time)!]));
   const knownEnds = sections.flatMap((section) => (section.meetings ?? []).flatMap((meeting) => minutes(meeting.end_time) === null ? [] : [minutes(meeting.end_time)!]));
-  const firstMinute = Math.floor(Math.min(8 * 60, ...knownStarts) / 60) * 60;
-  const lastMinute = Math.min(24 * 60, Math.ceil(Math.max(22 * 60, ...knownEnds) / 60) * 60);
+  // The grid covers the hours that have classes (at least five), not a fixed 8am–10pm, so a schedule of
+  // late-morning classes is not a short strip above a tall empty column.
+  const firstMinute = knownStarts.length ? Math.floor(Math.min(...knownStarts) / 60) * 60 : 8 * 60;
+  const lastMinute = Math.min(24 * 60, Math.max(firstMinute + 5 * 60, knownEnds.length ? Math.ceil(Math.max(...knownEnds) / 60) * 60 : 17 * 60));
+  // Saturday and Sunday columns only when something meets then.
+  const weekend = new Set(sections.flatMap((section) => (section.meetings ?? []).flatMap((meeting) => isAsyncOnline(meeting) ? [] : dayNames(meeting.days))));
+  const gridDays = DAYS.filter((day) => (day !== "Sat" && day !== "Sun") || weekend.has(day));
   const pixelsPerMinute = 1;
   const height = (lastMinute - firstMinute) * pixelsPerMinute;
   const unknown = new Set<string>();
@@ -294,14 +299,14 @@ export function WeeklyCalendar({ sections: courseSections, language, busyBlocks 
         </span>
       </div>)}</div>
     </div>)}</div>
-    <div className="hidden min-w-[900px] grid-cols-[58px_repeat(7,minmax(0,1fr))] sm:grid">
+    <div className="hidden sm:grid" style={{ gridTemplateColumns: `58px repeat(${gridDays.length}, minmax(0, 1fr))`, minWidth: 58 + gridDays.length * 120 }}>
       <div className="sticky top-0 z-10 bg-white p-3 text-center text-[11px] text-[#8a918e]">ET</div>
-      {DAYS.map((day, index) => <div key={day} className="sticky top-0 z-10 border-l border-[#e6e4de] bg-white p-3 text-center text-xs font-semibold text-[#59635f]">{t.weekdays[index]}</div>)}
+      {gridDays.map((day) => <div key={day} className="sticky top-0 z-10 border-l border-[#e6e4de] bg-white p-3 text-center text-xs font-semibold text-[#59635f]">{t.weekdays[DAYS.indexOf(day)]}</div>)}
       <div className="relative" style={{ height }}>
         {/* Labels sit centred on their hour line, except the first and last, which would be half hidden under the day header or past the bottom edge. */}
         {Array.from({ length: (lastMinute - firstMinute) / 60 + 1 }, (_, index) => <span key={index} className={`absolute right-2 text-[10px] text-[#858d89] ${index === 0 ? "translate-y-0.5" : index === (lastMinute - firstMinute) / 60 ? "-translate-y-full" : "-translate-y-1/2"}`} style={{ top: index * 60 }}>{displayClock(firstMinute + index * 60)}</span>)}
       </div>
-      {DAYS.map((day) => <div key={day} className={columnClass} style={{ height }}>
+      {gridDays.map((day) => <div key={day} className={columnClass} style={{ height }}>
         {sections.flatMap((section) => (section.meetings ?? []).flatMap((meeting, index) => {
           const start = minutes(meeting.start_time);
           const end = minutes(meeting.end_time);
@@ -384,7 +389,7 @@ export function CalendarExport({ sections, term, termName, language, incomplete 
   return <div className="mb-3 rounded-xl border border-[#e3e0d8] bg-white p-3 sm:p-4">
     <div className="flex flex-wrap items-center gap-3">
       <button onClick={download} disabled={!calendar} className="rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:opacity-50">{t.exportCalendar}</button>
-      <p className="min-w-0 flex-1 text-[11px] leading-5 text-[#737b77]">{calendar ? t.exportHelp : t.exportUnavailable}</p>
+      <p className="w-full text-[11px] leading-5 text-[#737b77] sm:w-auto sm:min-w-0 sm:flex-1">{calendar ? t.exportHelp : t.exportUnavailable}</p>
     </div>
     {calendar && <p className="mt-2 text-[11px] leading-5 text-[#858d89]">{t.exportNote}</p>}
     {skipped.length > 0 && <p className="mt-2 text-[11px] text-[#745424]">{t.exportSkipped} {skipped.join(", ")}</p>}
@@ -584,7 +589,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
         <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h4 className="font-semibold">{t.calendar}</h4><p className="mt-1 text-xs text-[#737b77]">{chosen.selectedSections.map((section) => section.section_id).join(" · ")}</p></div><span className="text-xs text-[#737b77]">{t.rating}: {chosen.professorRating === null ? "—" : chosen.professorRating.toFixed(2) + " / 5"}{chosen.totalCredits ? " · " + chosen.totalCredits + " " + (chosen.totalCredits === 1 ? t.credit : t.credits) : ""}</span></div>
         <CalendarExport key={chosen.selectedSections.map((section) => section.section_id).join("|")} sections={chosen.selectedSections} term={term} termName={termName} language={language} incomplete={chosenMissing.length > 0} />
         <div className="mb-3 rounded-xl border border-[#e3e0d8] bg-white p-3 sm:p-4">
-          <div className="flex flex-wrap items-center gap-3"><button type="button" onClick={() => void shareSchedule()} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]">{shareCopied ? t.shareCopied : t.shareSchedule}</button><p className="min-w-0 flex-1 text-[11px] leading-5 text-[#737b77]">{t.shareHint}</p></div>
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3"><button type="button" onClick={() => void shareSchedule()} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]">{shareCopied ? t.shareCopied : t.shareSchedule}</button><p className="w-full text-[11px] leading-5 text-[#737b77] sm:w-auto sm:min-w-0 sm:flex-1">{t.shareHint}</p></div>
           {shareUrl && <div className="mt-3"><label htmlFor="share-schedule-url" className="text-[11px] font-medium text-[#68716e]">{shareCopied ? t.shareReady : t.shareCopyFailed}</label><input id="share-schedule-url" readOnly value={shareUrl} onFocus={(event) => event.target.select()} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-[#fbfaf8] px-3 py-2 text-xs text-[#273c38]" /></div>}
         </div>
         <p className="mb-2 text-xs leading-5 text-[#737b77]">{language === "zh" ? "点击课表中的课程可查看备选班次。个人日程仅显示在这里，不包含在分享链接或日历导出中。" : "Click a class to review alternative sections. Personal commitments appear here and are excluded from share links and calendar exports."}</p>

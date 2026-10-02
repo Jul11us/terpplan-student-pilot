@@ -23,6 +23,7 @@ import { roomLabel } from "@/lib/room";
 import { readSavedState, STORAGE_KEY, writeSavedState } from "@/lib/saved-state";
 import { formatSeatReadTime } from "@/lib/seat-time";
 import { courseSearchView, startCourseSearch, type CourseSearchState } from "@/lib/course-search";
+import { groupSections, ownMeetings } from "@/lib/section-groups";
 
 type Course = { course_id: string; name: string; department?: string; credits?: string };
 type Meeting = { days?: string | null; start_time?: string | null; end_time?: string | null; building?: string | null; room?: string | null };
@@ -76,7 +77,7 @@ const copy = {
     resultFull: "Full", resultNoSections: "No sections", resultSeatsUnknown: "Seats unknown",
     filterOpen: "Open seats", filterPrereqs: "Prerequisites met", filterPrereqsNeedTaken: "Add the courses you've taken (above) to use this filter.", filterCredits: "Credits", filterAny: "Any", filterShowing: "Showing {n} of {m}", filterNone: "No matches with these filters.", filterClear: "Clear filters",
     prereqNeeds: "Prerequisite not met yet: {needs}", prereqMet: "Prerequisites met by the courses you've taken.", prereqAddTaken: "Add the courses you've taken (at the top of the page) to check this prerequisite.", prereqOrHigher: " or higher", prereqSameTerm: " (same term OK)", prereqOf: "{k} of",
-    seats: "seats open", seat: "seat open", credit: "credit", creditsUnit: "credits", capacity: "{n} seats total", waitlisted: "{n} waitlisted", fcOnly: "Freshman Connection only", pickCourse: "Pick a course from the matches to see its sections.", waitlist: "waitlist", checked: "Last checked", status: "Status", freshness: "Seat counts come from UMD course data and may lag the official Schedule of Classes. This page checks at most once a minute while open.",
+    seats: "seats open", seat: "seat open", credit: "credit", creditsUnit: "credits", capacity: "{n} seats total", waitlisted: "{n} waitlisted", groupSections: "{n} sections", groupShared: "Every section meets", groupOwn: "Each section adds", groupOpenIn: "open across {n} sections", fcOnly: "Freshman Connection only", pickCourse: "Pick a course from the matches to see its sections.", waitlist: "waitlist", checked: "Last checked", status: "Status", freshness: "Seat counts come from UMD course data and may lag the official Schedule of Classes. This page checks at most once a minute while open.",
     open: "Seats available", full: "Full", unknown: "Unknown", stale: "Last check failed · showing saved count", checking: "Checking…",
     next: "Next step", back: "Back", termFallback: "Term list unavailable — showing Spring 2027",
     timeUnknown: "Some meeting times are missing, so the conflict check is incomplete.",
@@ -98,7 +99,7 @@ const copy = {
     resultFull: "已满", resultNoSections: "本学期无班次", resultSeatsUnknown: "余位未知",
     filterOpen: "有空位", filterPrereqs: "先修课已满足", filterPrereqsNeedTaken: "先在上方填写修过的课程，才能用这个筛选。", filterCredits: "学分", filterAny: "不限", filterShowing: "显示 {n} / {m} 门", filterNone: "没有符合筛选条件的课程。", filterClear: "清除筛选",
     prereqNeeds: "先修课还没满足：{needs}", prereqMet: "你修过的课程已满足先修要求。", prereqAddTaken: "在页面上方填写修过的课程，就能检查这门课的先修要求。", prereqOrHigher: " 或更高", prereqSameTerm: "（可同学期修）", prereqOf: "任选 {k} 门：",
-    error: "发生错误，请重试。", seats: "个空位", seat: "个空位", credit: "学分", creditsUnit: "学分", capacity: "共 {n} 座", waitlisted: "候补 {n} 人", fcOnly: "仅限 Freshman Connection", pickCourse: "从匹配结果中选择一门课程，查看它的班次。", waitlist: "候补人数", checked: "上次检查", status: "状态",
+    error: "发生错误，请重试。", seats: "个空位", seat: "个空位", credit: "学分", creditsUnit: "学分", capacity: "共 {n} 座", waitlisted: "候补 {n} 人", groupSections: "{n} 个班次", groupShared: "所有班次都上", groupOwn: "各班次另外的时间", groupOpenIn: "{n} 个班次合计空位", fcOnly: "仅限 Freshman Connection", pickCourse: "从匹配结果中选择一门课程，查看它的班次。", waitlist: "候补人数", checked: "上次检查", status: "状态",
     freshness: "余位数据来自 UMD 课程数据，可能晚于学校官方课表。页面打开时最多每分钟检查一次。",
     open: "有空位", full: "已满", unknown: "未知", stale: "上次检查失败 · 显示已保存数据", checking: "检查中…",
     next: "下一步", back: "返回", termFallback: "无法读取学期列表，暂显示 2027 春季", timeUnknown: "部分班次缺少上课时间，无法完整检查冲突。",
@@ -707,23 +708,25 @@ export default function Home() {
               <span>{language === "en" ? "Instructor & rating" : "教师与评分"}</span>
               <span>{language === "en" ? "Availability" : "余位"}</span>
             </div>}
-            <div className="space-y-2">{visibleSections.map((section) => {
+            {(() => {
+              const plan = planCourses.find((item) => item.courseId === selected?.course_id);
+              const seatsOf = (section: Section, inline = false) => {
+                const open = count(section.open_seats);
+                // Capacity tells "nobody registered yet" (30 of 30 open) apart from "one seat left".
+                const total = count(section.seats), waiting = count(section.waitlist);
+                const parts = [total !== null ? t.capacity.replace("{n}", String(total)) : "", waiting ? t.waitlisted.replace("{n}", String(waiting)) : ""].filter(Boolean);
+                return <><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${open === null ? "bg-[#f1efe9] text-[#68716e]" : open > 0 ? "bg-[#eaf4ec] text-[#367047]" : "bg-[#f5e9e5] text-[#8f4538]"}`}>{seatLabel(section.open_seats)}</span>{parts.length ? <p className={`text-[11px] text-[#737b77] ${inline ? "row-capacity" : "mt-1"}`}>{parts.join(" · ")}</p> : null}</>;
+              };
+              const sectionCard = (section: Section) => {
               const id = sectionId(section, selected?.course_id ?? "");
               const watching = watches.some((item) => item.sectionId === id && item.term === term);
-              const open = count(section.open_seats);
-              const plan = planCourses.find((item) => item.courseId === selected?.course_id);
               const pinned = plan?.pinnedSectionId === id;
               const excluded = plan?.excludedSectionIds?.includes(id) ?? false;
               return <article key={id} className={`rounded-xl border bg-white p-4 ${pinned ? "border-[#536d64] ring-1 ring-[#536d64]/20" : excluded ? "border-[#e7e4dc] opacity-70" : "border-[#e7e4dc]"}`}>
                 <div className="section-comparison-grid">
                   <div className="min-w-0"><h3 className="text-sm font-semibold">{id}{/-FC[A-Z0-9]*$/.test(id) && <span className="ml-2 rounded-full bg-[#f3ecdc] px-2 py-0.5 align-middle text-[10px] font-semibold text-[#7a5a24]">{t.fcOnly}</span>}</h3><div className="mt-2 space-y-1.5 text-xs leading-5 text-[#525d59]">{section.meetings?.length ? section.meetings.map((meeting, index) => <p key={index}>{displayTime(meeting, language)}</p>) : <p>{formatMeetings(section.meetings)}</p>}</div></div>
                   <div className="min-w-0">{section.instructors?.length ? <SectionProfessors compact panelTargetId={`reviews-${id}`} names={section.instructors} courseId={selected?.course_id ?? ""} ratings={professorRatings} ratingsLoading={ratingsLoading} language={language} /> : <p className="text-xs text-[#737b77]">{language === "en" ? "Instructor TBA" : "教师待定"}</p>}</div>
-                  <div className="min-w-0"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${open === null ? "bg-[#f1efe9] text-[#68716e]" : open > 0 ? "bg-[#eaf4ec] text-[#367047]" : "bg-[#f5e9e5] text-[#8f4538]"}`}>{seatLabel(section.open_seats)}</span>{(() => {
-                    // Capacity tells "nobody registered yet" (30 of 30 open) apart from "one seat left".
-                    const total = count(section.seats), waiting = count(section.waitlist);
-                    const parts = [total !== null ? t.capacity.replace("{n}", String(total)) : "", waiting ? t.waitlisted.replace("{n}", String(waiting)) : ""].filter(Boolean);
-                    return parts.length ? <p className="mt-1 text-[11px] text-[#737b77]">{parts.join(" · ")}</p> : null;
-                  })()}</div>
+                  <div className="min-w-0">{seatsOf(section)}</div>
                 </div>
                 {/* Student comments open here, across the whole card, rather than in the narrow instructor column. */}
                 <div id={`reviews-${id}`} />
@@ -733,7 +736,44 @@ export default function Home() {
                   <button onClick={() => selected && void addWatch(selected, section)} disabled={watching} className="rounded-lg border border-[#d9d6ce] px-3 py-2 text-xs font-semibold text-[#48534f] hover:bg-[#f7f5f0] disabled:cursor-default disabled:opacity-50">{watching ? (language === "en" ? "Watching" : "已关注") : <><span className="sm:hidden">{t.watchShort}</span><span className="hidden sm:inline">{t.addWatch}</span></>}</button>
                 </div>
               </article>;
-            })}</div>
+              };
+              // One row inside a grouped card: the section's own times, its buttons and its seats.
+              const sectionRow = (section: Section, shared: Meeting[]) => {
+                const id = sectionId(section, selected?.course_id ?? "");
+                const watching = watches.some((item) => item.sectionId === id && item.term === term);
+                const pinned = plan?.pinnedSectionId === id;
+                const excluded = plan?.excludedSectionIds?.includes(id) ?? false;
+                const own = ownMeetings(section, shared);
+                const button = "rounded-lg border px-2.5 py-1.5 text-xs font-semibold";
+                return <li key={id} className={`section-row-grid -mx-2 rounded-lg px-2 py-2.5 ${pinned ? "bg-[#edf3ef]" : excluded ? "opacity-60" : ""}`}>
+                  <div className="row-times flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5"><h4 className="text-sm font-semibold">{id}{/-FC[A-Z0-9]*$/.test(id) && <span className="ml-2 rounded-full bg-[#f3ecdc] px-2 py-0.5 align-middle text-[10px] font-semibold text-[#7a5a24]">{t.fcOnly}</span>}</h4>{own.length > 0 && <div className="text-xs leading-5 text-[#525d59]">{own.map((meeting, index) => <p key={index}>{displayTime(meeting, language)}</p>)}</div>}</div>
+                  <div className="row-actions flex flex-wrap gap-1.5">
+                    <button onClick={() => selected && chooseSection(selected, id, "pin")} aria-pressed={pinned} title={pinned ? t.unpinSection : t.pinSection} className={`${button} ${pinned ? "border-[#536d64] bg-[#edf3ef] text-[#24312d]" : "border-[#d9d6ce] bg-white text-[#48534f] hover:bg-[#f7f5f0]"}`}>{pinned ? t.unpinShort : t.pinShort}</button>
+                    <button onClick={() => selected && chooseSection(selected, id, "exclude")} disabled={Boolean(plan?.pinnedSectionId)} aria-pressed={excluded} title={excluded ? t.includeSection : t.excludeSection} className={`${button} disabled:cursor-not-allowed disabled:opacity-50 ${excluded ? "border-[#cfaea5] bg-[#f9efec] text-[#8f4538]" : "border-[#d9d6ce] bg-white text-[#48534f] hover:bg-[#f7f5f0]"}`}>{excluded ? t.includeShort : t.excludeShort}</button>
+                    <button onClick={() => selected && void addWatch(selected, section)} disabled={watching} title={t.addWatch} className={`${button} border-[#d9d6ce] bg-white text-[#48534f] hover:bg-[#f7f5f0] disabled:cursor-default disabled:opacity-50`}>{watching ? t.watchingShort : t.watchShort}</button>
+                  </div>
+                  <div className="row-seats min-w-0">{seatsOf(section, true)}</div>
+                </li>;
+              };
+              return <div className="space-y-2">{groupSections(visibleSections).map((group) => {
+                if (group.sections.length < 2) return sectionCard(group.sections[0]);
+                const ids = group.sections.map((section) => sectionId(section, selected?.course_id ?? ""));
+                const firstId = ids[0], lastNumber = ids[ids.length - 1].split("-").pop();
+                const known = group.sections.map((section) => count(section.open_seats)).filter((value): value is number => value !== null);
+                const openTotal = known.reduce((sum, value) => sum + value, 0);
+                const instructors = group.sections[0].instructors ?? [];
+                return <article key={group.key} className="rounded-xl border border-[#e7e4dc] bg-white p-4">
+                  <div className="section-comparison-grid">
+                    <div className="min-w-0"><h3 className="text-sm font-semibold">{firstId} – {lastNumber} <span className="ml-1 rounded-full bg-[#f1efe9] px-2 py-0.5 align-middle text-[10px] font-semibold text-[#68716e]">{t.groupSections.replace("{n}", String(ids.length))}</span></h3>{group.shared.length > 0 && <div className="mt-2 text-xs leading-5 text-[#525d59]"><p className="text-[11px] font-medium text-[#858d89]">{t.groupShared}</p>{group.shared.map((meeting, index) => <p key={index}>{displayTime(meeting, language)}</p>)}</div>}</div>
+                    <div className="min-w-0"><SectionProfessors compact panelTargetId={`reviews-${firstId}`} names={instructors} courseId={selected?.course_id ?? ""} ratings={professorRatings} ratingsLoading={ratingsLoading} language={language} /></div>
+                    <div className="min-w-0">{known.length > 0 && <><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${openTotal > 0 ? "bg-[#eaf4ec] text-[#367047]" : "bg-[#f5e9e5] text-[#8f4538]"}`}>{seatLabel(openTotal)}</span><p className="mt-1 text-[11px] text-[#737b77]">{t.groupOpenIn.replace("{n}", String(ids.length))}</p></>}</div>
+                  </div>
+                  <div id={`reviews-${firstId}`} />
+                  {group.sections.some((section) => ownMeetings(section, group.shared).length > 0) && <p className="mt-3 text-[11px] font-medium text-[#858d89]">{t.groupOwn}</p>}
+                  <ul className="mt-1 divide-y divide-[#ece9e2] border-t border-[#ece9e2]">{group.sections.map((section) => sectionRow(section, group.shared))}</ul>
+                </article>;
+              })}</div>;
+            })()}
             {sections.length > 0 && formatSeatReadTime(courseSeatCheckedAt, language) && <p className="mt-4 text-xs text-[#707874]">{t.seatReadAt}: <time dateTime={courseSeatCheckedAt ?? undefined}>{formatSeatReadTime(courseSeatCheckedAt, language)}</time></p>}
             {sections.length > 0 && <p className="mt-2 text-xs leading-5 text-[#858d89]">{t.seatReadHint}</p>}
             <p className="mt-5 border-t border-[#ece9e2] pt-4 text-xs leading-5 text-[#858d89]">{t.freshness}</p>

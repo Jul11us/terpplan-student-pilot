@@ -148,6 +148,20 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* A section row inside a grouped card: times and seats side by side, buttons below; on a wide panel
+   the three line up under the card's columns (times, instructor, availability). */
+.section-row-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "times seats" "actions actions";
+  gap: 0.5rem 0.75rem;
+  align-items: start;
+}
+.section-row-grid .row-times { grid-area: times; }
+.section-row-grid .row-actions { grid-area: actions; }
+.section-row-grid .row-seats { grid-area: seats; text-align: right; }
+.section-row-grid .row-capacity { margin-top: 0.25rem; }
+
 .section-comparison-heading {
   display: none;
   padding: 0.75rem 1rem;
@@ -177,6 +191,16 @@ select:not([multiple]) {
   .section-comparison-grid {
     grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(110px, 0.65fr);
   }
+
+  .section-row-grid {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(110px, 0.65fr);
+    grid-template-areas: "times actions seats";
+    gap: 1rem;
+    align-items: center;
+  }
+
+  .section-row-grid .row-seats { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; text-align: left; }
+  .section-row-grid .row-capacity { margin-top: 0; }
 
   .section-comparison-heading {
     display: grid;
