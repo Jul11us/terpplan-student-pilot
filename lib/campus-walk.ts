@@ -5,7 +5,8 @@
 import buildings from "@/data/umd-buildings.json";
 import { isAsyncOnline, meetingDays, meetingMinutes, type MeetingTime } from "@/lib/meeting-time";
 
-export type Building = { name: string; lat: number; lng: number };
+// `map` is the Google Maps search for the building's name, checked to open that building (see scripts/build-buildings.mjs).
+export type Building = { name: string; lat: number; lng: number; map: string };
 
 const BUILDINGS = buildings as Record<string, Building>;
 const PATH_FACTOR = 1.3;
@@ -17,8 +18,9 @@ export function buildingFor(code: string | null | undefined): (Building & { code
   return building ? { ...building, code: key } : null;
 }
 
+// Searches by name so Google shows the building's place card, not a bare coordinate.
 export function mapsUrl(building: Building) {
-  return `https://www.google.com/maps/search/?api=1&query=${building.lat},${building.lng}`;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(building.map)}`;
 }
 
 function meters(a: Building, b: Building) {

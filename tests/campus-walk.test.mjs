@@ -15,7 +15,8 @@ test("finds buildings by Testudo code, including ones umd.io lists without a cod
   assert.equal(buildingFor(null), null);
   const tydings = buildingFor("TYD");
   assert.ok(tydings);
-  assert.equal(mapsUrl(tydings), `https://www.google.com/maps/search/?api=1&query=${tydings.lat},${tydings.lng}`);
+  assert.equal(mapsUrl(tydings), "https://www.google.com/maps/search/?api=1&query=Tydings%20Hall%2C%20College%20Park%2C%20MD");
+  assert.match(mapsUrl(buildingFor("KEY")), /query=Francis%20Scott%20Key%20Hall%20University%20of%20Maryland$/);
 });
 
 test("estimates a cross-campus walk longer than a walk next door", () => {

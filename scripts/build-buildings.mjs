@@ -20,6 +20,34 @@ const EXTRA = {
   PSC: { name: "Physical Sciences Complex", lat: 38.99092, lng: -76.94134 },
 };
 
+// Map links search Google Maps by building name, so the place card shows the building rather than a
+// coordinate. "<name>, College Park, MD" opens the right place for most buildings (checked 2026-10-01
+// against our coordinates and Google's place name); these need other wording. Shoemaker has two
+// duplicate Google entries, so it always opens a short list headed by the building.
+const MAP_QUERY = {
+  ARC: "Architecture Building, University of Maryland, College Park, MD",
+  BAL: "Baltimore Hall, University of Maryland, College Park, MD",
+  CAM: "Cambridge Hall University of Maryland",
+  CCC: "Cambridge Community Center University of Maryland",
+  DEN: "Denton Hall University of Maryland",
+  FDA: "FDA Wiley Building, 5001 Campus Dr, College Park, MD",
+  GLF: "Golf Course Clubhouse, University of Maryland, College Park, MD",
+  HJP: "H.J. Patterson Hall, University of Maryland, College Park, MD",
+  ICC: "College Park Marriott Hotel & Conference Center, Hyattsville, MD",
+  IPT: "Institute for Physical Science and Technology University of Maryland",
+  KEY: "Francis Scott Key Hall University of Maryland",
+  PGG: "Prince Georges Hall University of Maryland",
+  SFSC: "UMGC Student and Faculty Services Center, Adelphi, MD",
+  SHM: "Shoemaker Bldg, College Park, MD 20742",
+  SPH: "School of Public Health, University of Maryland, College Park, MD",
+  TAL: "Talbot Hall, University of Maryland, College Park, MD",
+};
+// No wording opened a single place for these (no classes met in them in the Spring 2027 sample);
+// the search still names the building and lists matches on campus.
+const MAP_LIST_ONLY = new Set(["CSS", "FRD", "HAR", "SHR", "PGUC", "SCUB 3", "SCUB 4"]);
+const mapQuery = (code, name) => MAP_QUERY[code]
+  ?? (MAP_LIST_ONLY.has(code) ? `${name.replace(/\s*\(Residence Hall\)$/, "")}, University of Maryland, College Park, MD` : `${name}, College Park, MD`);
+
 const response = await fetch("https://api.umd.io/v1/map/buildings");
 if (!response.ok) throw new Error(`umd.io returned ${response.status}`);
 const buildings = await response.json();
@@ -38,6 +66,8 @@ for (const [code, id] of Object.entries(BY_ID)) {
   out[code] = entry(building);
 }
 Object.assign(out, EXTRA);
+
+for (const [code, building] of Object.entries(out)) building.map = mapQuery(code, building.name);
 
 const sorted = Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
 writeFileSync(new URL("../data/umd-buildings.json", import.meta.url), JSON.stringify(sorted, null, 0).replace(/},"/g, '},\n"') + "\n");
