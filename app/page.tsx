@@ -7,6 +7,7 @@ import CourseRequirements, { type CourseRequirement } from "@/app/components/cou
 import GenEdFinder, { type ReferenceSchedule } from "@/app/components/gened-finder";
 import { isAsyncOnline } from "@/lib/meeting-time";
 import { GEN_ED_CATEGORIES } from "@/lib/gened-categories";
+import { creditRange, formatCreditTotal, totalPlanCredits, type CreditRange } from "@/lib/plan-credits";
 import { planKey } from "@/lib/plan-key";
 import SchedulePlanner from "@/app/components/schedule-planner";
 import SeatEmailToggle from "@/app/components/seat-email-toggle";
@@ -191,6 +192,10 @@ export default function Home() {
   const [ratingsLoading, setRatingsLoading] = useState(false);
   const activeCourseRef = useRef("");
   const planCoursesRef = useRef<PlanCourse[]>([]);
+  // Credits per "term|courseId" for the plan total; null once a lookup failed. Filled by opening a course
+  // or, for courses restored from storage or added straight from a result list, by a lookup below.
+  const [planCredits, setPlanCredits] = useState<Record<string, CreditRange | null>>({});
+  const creditRequestsRef = useRef(new Set<string>());
   // Plans saved in this browser, one per term; kept in a ref so switching terms can restore them.
   const savedPlansRef = useRef<Record<string, PlanCourse[]>>({});
   const [restored, setRestored] = useState(false);
@@ -336,6 +341,7 @@ export default function Home() {
       if (activeCourseRef.current !== courseRequestKey) return;
       setCourseSeatCheckedAt(payload.seatCheckedAt ?? null);
       setCourseCredits(creditsText(payload.course));
+      setPlanCredits((current) => ({ ...current, [courseRequestKey]: creditRange(payload.course) }));
       setCourseInfo({ requirements: Array.isArray(payload.course?.requirements) ? payload.course.requirements : [], description: payload.course?.description ?? null });
       setSections([...(payload.sections ?? [])].sort((a: Section, b: Section) => sectionId(a, course.course_id).localeCompare(sectionId(b, course.course_id), "en", { numeric: true })));
       const names = [...new Set((payload.sections ?? []).flatMap((section: Section) => section.instructors ?? []))];
@@ -399,6 +405,23 @@ export default function Home() {
   };
 
   useEffect(() => { planCoursesRef.current = planCourses; }, [planCourses]);
+
+  useEffect(() => {
+    if (!restored) return;
+    for (const { courseId } of planCourses) {
+      const key = term + "|" + courseId;
+      if (key in planCredits || creditRequestsRef.current.has(key)) continue;
+      creditRequestsRef.current.add(key);
+      void fetch(`/api/course?id=${encodeURIComponent(courseId)}&term=${encodeURIComponent(term)}`)
+        .then(async (response) => response.ok ? creditRange(((await response.json()) as CoursePayload).course) : null)
+        .catch(() => null)
+        .then((range) => setPlanCredits((current) => key in current ? current : { ...current, [key]: range }));
+    }
+  }, [restored, planCourses, term, planCredits]);
+
+  const planCreditLabel = planCourses.length
+    ? formatCreditTotal(totalPlanCredits(planCourses.map((course) => course.courseId), Object.fromEntries(planCourses.map((course) => [course.courseId, planCredits[term + "|" + course.courseId]]))), language)
+    : "";
 
   // Adds from a result list without leaving course search; the planner regenerates options in the background.
   const quickAdd = (course: Course) => {
@@ -534,7 +557,7 @@ export default function Home() {
 
         {step === "find" && restored && <section aria-label={t.selectedCourses} className="mb-5 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] px-4 py-3 sm:px-5">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <p className="shrink-0 text-xs font-semibold text-[#48534f]">{t.selectedCourses} <span className="ml-1 rounded-md bg-[#ece9e2] px-1.5 py-0.5 text-[11px] text-[#68716e]">{planCourses.length}/10</span></p>
+            <p className="shrink-0 text-xs font-semibold text-[#48534f]">{t.selectedCourses} <span className="ml-1 rounded-md bg-[#ece9e2] px-1.5 py-0.5 text-[11px] text-[#68716e]">{planCourses.length}/10</span>{planCreditLabel && <span className="ml-2 font-normal text-[#68716e]">{planCreditLabel}</span>}</p>
             <div className="flex min-w-0 basis-full flex-wrap gap-2 sm:basis-auto sm:flex-1">
               {planCourses.length ? planCourses.map((course) => <span key={course.courseId} title={`${course.courseId} · ${course.courseTitle}`} className="rounded-lg border border-[#cddbd1] bg-[#edf3ef] px-2.5 py-1.5 text-xs font-semibold text-[#315c43]">{course.courseId}</span>) : <p className="text-xs text-[#8a918e]">{t.noSelectedCourses}</p>}
             </div>
@@ -601,7 +624,7 @@ export default function Home() {
         </section>}
 
         {/* Mounted (hidden) outside step 02 too, so options regenerate while courses are added from search. */}
-        {restored && <div hidden={step !== "schedule"}><SchedulePlanner onChosenChange={rememberSchedule} courses={planCourses} term={term} termName={termLabel(term, "en")} language={language} onUpdateCourse={(courseId, patch) => setPlanCourses((current) => current.map((course) => course.courseId === courseId ? { ...course, ...patch } : course))} onRemove={(courseId) => setPlanCourses((current) => current.filter((course) => course.courseId !== courseId))} onBack={() => setStep("find")} /></div>}
+        {restored && <div hidden={step !== "schedule"}><SchedulePlanner onChosenChange={rememberSchedule} courses={planCourses} creditsLabel={planCreditLabel} term={term} termName={termLabel(term, "en")} language={language} onUpdateCourse={(courseId, patch) => setPlanCourses((current) => current.map((course) => course.courseId === courseId ? { ...course, ...patch } : course))} onRemove={(courseId) => setPlanCourses((current) => current.filter((course) => course.courseId !== courseId))} onBack={() => setStep("find")} /></div>}
 
         {step === "watch" && <section className="mx-auto max-w-4xl rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-8"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">03 · {t.watch}</p><h2 className="mt-2 font-serif text-3xl">{t.watchesTitle}</h2></div><button onClick={() => void refreshWatches()} disabled={checking || !watches.length} className="rounded-lg bg-[#273c38] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{checking ? t.checking : t.refresh}</button></div>
           {authenticated === false && <div className="mt-6 rounded-xl border border-[#e3dfd6] bg-white p-5"><p className="text-sm font-medium">{t.signIn}</p><label className="mt-4 grid gap-1.5 text-xs font-medium text-[#68716e]">{t.email}<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm text-[#202728] outline-none focus:border-[#a34a39]" /></label>{codeSent && <label className="mt-3 grid gap-1.5 text-xs font-medium text-[#68716e]">{t.emailCode}<input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={emailCode} onChange={(event) => setEmailCode(event.target.value.replace(/\D/g, "").slice(0, 6))} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm tracking-[.2em] text-[#202728] outline-none focus:border-[#a34a39]" /></label>}<p className="mt-2 text-xs leading-5 text-[#858d89]">{t.emailPrivacy}</p><div className="mt-4 flex flex-wrap gap-2">{!codeSent ? <button onClick={() => void requestEmailCode()} disabled={authBusy || !email.trim()} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.sendCode}</button> : <><button onClick={() => void verifyEmailCode()} disabled={authBusy || emailCode.length !== 6} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.verifyCode}</button><button onClick={() => void requestEmailCode()} disabled={authBusy} className="rounded-lg border border-[#dedbd3] px-4 py-2.5 text-sm font-medium text-[#68716e] disabled:opacity-50">{t.sendCode}</button></>}</div></div>}
