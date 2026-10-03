@@ -180,40 +180,40 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
 
   return <div>
     {fromAudit && initialCodes.length > 0 && <p className="mb-3 rounded-lg bg-[#edf3ef] px-3 py-2 text-xs leading-5 text-[#315c43]">{t.fromAudit(initialCodes.join(", "))}</p>}
-    <div className="flex items-center justify-between gap-3"><p className="text-xs font-medium text-[#68716e]">{t.category}</p>{codes.length > 0 && <button type="button" onClick={() => setCodes([])} className="text-[11px] font-medium text-[#8b5148] hover:underline">{t.clear}</button>}</div>
+    <div className="flex items-center justify-between gap-3"><p className="text-xs font-medium text-[#5d6561]">{t.category}</p>{codes.length > 0 && <button type="button" onClick={() => setCodes([])} className="text-[11px] font-medium text-[#8b5148] hover:underline">{t.clear}</button>}</div>
     <div className="mt-2 flex flex-wrap gap-1.5">{GEN_ED_CATEGORIES.map((item) => {
       const on = codes.includes(item.code);
-      return <button key={item.code} type="button" aria-pressed={on} title={item[language]} onClick={() => toggleCode(item.code)} className={`rounded-lg border px-2.5 py-1.5 text-left text-xs transition ${on ? "border-[#273c38] bg-[#273c38] text-white" : "border-[#dedbd3] bg-white text-[#48534f] hover:border-[#9aa8a1]"}`}><span className="font-semibold">{item.code}</span><span className={`ml-1 ${on ? "text-white/80" : "text-[#89908c]"}`}>{item[language]}</span></button>;
+      return <button key={item.code} type="button" aria-pressed={on} title={item[language]} onClick={() => toggleCode(item.code)} className={`rounded-lg border px-2.5 py-1.5 text-left text-xs transition ${on ? "border-[#273c38] bg-[#273c38] text-white" : "border-[#dedbd3] bg-white text-[#48534f] hover:border-[#9aa8a1]"}`}><span className="font-semibold">{item.code}</span><span className={`ml-1 ${on ? "text-white/80" : "text-[#646c68]"}`}>{item[language]}</span></button>;
     })}</div>
     {codes.length > 1 && <label className="mt-3 flex items-start gap-2 text-xs text-[#48534f]"><input type="checkbox" className="mt-0.5" checked={matchAll} onChange={(event) => setMatchAll(event.target.checked)} />{t.matchAll}</label>}
-    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-[#68716e]">
+    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-[#5d6561]">
       <label className="inline-flex items-center gap-2"><input type="checkbox" checked={fitsOnly} onChange={(event) => setFitsOnly(event.target.checked)} />{t.fitsOnly}</label>
       <label className="inline-flex items-center gap-2"><input type="checkbox" checked={openOnly} onChange={(event) => setOpenOnly(event.target.checked)} />{t.openOnly}</label>
       <label className="inline-flex items-center gap-2"><input type="checkbox" checked={hideHonors} onChange={(event) => setHideHonors(event.target.checked)} />{t.hideHonors}</label>
     </div>
-    <div className="mt-3 rounded-lg border border-[#e3e0d8] bg-[#f6f4ef] p-3 text-xs text-[#68716e]">
+    <div className="mt-3 rounded-lg border border-[#e3e0d8] bg-[#f6f4ef] p-3 text-xs text-[#5d6561]">
       <p className="font-semibold text-[#48534f]">{t.lighter}</p>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
         <label className="inline-flex items-center gap-2"><input type="checkbox" checked={noPrereq} onChange={(event) => setNoPrereq(event.target.checked)} />{t.noPrereq}</label>
         <label className="inline-flex items-center gap-2"><input type="checkbox" checked={lowerLevel} onChange={(event) => setLowerLevel(event.target.checked)} />{t.lowerLevel}</label>
         <label className={`inline-flex items-center gap-2 ${canCheckPrereqs ? "" : "opacity-60"}`}><input type="checkbox" disabled={!canCheckPrereqs} checked={prereqsMet && canCheckPrereqs} onChange={(event) => setPrereqsMet(event.target.checked)} />{t.prereqsMet}</label>
       </div>
-      {!canCheckPrereqs && <p className="mt-1.5 text-[11px] leading-5 text-[#858d89]">{term !== "202701" ? t.prereqsMetNoRules : t.prereqsMetNeedTaken}</p>}
+      {!canCheckPrereqs && <p className="mt-1.5 text-[11px] leading-5 text-[#646c68]">{term !== "202701" ? t.prereqsMetNoRules : t.prereqsMetNeedTaken}</p>}
       <button type="button" aria-pressed={sortByGpa} onClick={() => setSortByGpa((value) => !value)} className={`mt-2 rounded-lg border px-2.5 py-1.5 font-medium ${sortByGpa ? "border-[#273c38] bg-[#273c38] text-white" : "border-[#d9d6ce] bg-white text-[#273c38]"}`}>{sortByGpa ? t.sortDefault : t.sortGpa}</button>
-      {sortByGpa && <p className="mt-2 text-[11px] leading-5 text-[#858d89]">{gpaLoading ? t.gpaLoading : gpaError ? t.gpaError : t.gpaNote}</p>}
+      {sortByGpa && <p className="mt-2 text-[11px] leading-5 text-[#646c68]">{gpaLoading ? t.gpaLoading : gpaError ? t.gpaError : t.gpaNote}</p>}
     </div>
-    <p className="mt-2 text-[11px] leading-5 text-[#858d89]">{referenceStale && !referenceForTerm ? <span className="font-medium text-[#745424]">{t.staleReference}</span> : referenceForTerm ? <>{t.against} <span className="font-medium text-[#48534f]">{referenceForTerm.sectionIds.join(" · ")}</span></> : t.noReference} {t.fcNote}</p>
+    <p className="mt-2 text-[11px] leading-5 text-[#646c68]">{referenceStale && !referenceForTerm ? <span className="font-medium text-[#745424]">{t.staleReference}</span> : referenceForTerm ? <>{t.against} <span className="font-medium text-[#48534f]">{referenceForTerm.sectionIds.join(" · ")}</span></> : t.noReference} {t.fcNote}</p>
 
-    {loading && <p className="py-5 text-sm text-[#737b77]">{t.loading}</p>}
-    {!codes.length && <p className="py-5 text-sm text-[#737b77]">{t.choose}</p>}
+    {loading && <p className="py-5 text-sm text-[#646c68]">{t.loading}</p>}
+    {!codes.length && <p className="py-5 text-sm text-[#646c68]">{t.choose}</p>}
     {neededKeys.some((key) => failed[key]) && !current && <p role="alert" className="py-5 text-sm text-[#8c352c]">{t.error}</p>}
     {current && <>
-      <p className="mt-4 text-[11px] text-[#858d89]">{t.count(shown.length, current.courses.length)}{current.seatCheckedAt ? ` · ${formatSeatReadTime(current.seatCheckedAt, language)}` : ""}</p>
-      {!shown.length && <p className="py-5 text-sm text-[#737b77]">{t.empty}</p>}
+      <p className="mt-4 text-[11px] text-[#646c68]">{t.count(shown.length, current.courses.length)}{current.seatCheckedAt ? ` · ${formatSeatReadTime(current.seatCheckedAt, language)}` : ""}</p>
+      {!shown.length && <p className="py-5 text-sm text-[#646c68]">{t.empty}</p>}
       <div className="mt-1 divide-y divide-[#ece9e2]">{shown.map(({ course, matched, fitting, online, tba }) => { const inPlan = planCourseIds.includes(course.course_id); const courseId = course.course_id; const onAdd = () => onAddCourse({ course_id: course.course_id, name: course.name }); return <div key={course.course_id} className="flex items-start gap-2 pr-1"><button type="button" onClick={() => onOpenCourse({ course_id: course.course_id, name: course.name })} className="flex min-w-0 flex-1 flex-col items-start gap-2 py-3.5 text-left hover:bg-[#f6f4ef]">
         <span className="min-w-0">
           <span className="block text-sm font-semibold">{course.course_id}<span className="mt-1 block font-normal leading-5 text-[#606966]">{course.name}</span></span>
-          <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-[#89908c]">
+          <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-[#646c68]">
             {course.credits && <span>{course.credits} {t.credits}</span>}
             {typeof gpa[course.course_id] === "number" && <span className="font-medium text-[#536d64]">{t.avgGpa} {gpa[course.course_id]!.toFixed(2)}</span>}
             {codes.length > 1 && matched > 1 && <span className="rounded bg-[#a34a39] px-1.5 py-0.5 font-semibold text-white">{t.counts(matched)}</span>}
@@ -222,7 +222,7 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
           </span>
         </span>
         <span className="text-xs">
-          <span className={`block font-semibold ${fitting ? "text-[#367047]" : "text-[#8f4538]"}`}>{fitting ? t.fitting(fitting) : t.none}</span>{online > 0 && <span className="block text-[11px] text-[#536d64]">{t.online(online)}</span>}{tba > 0 && <span className="block text-[11px] text-[#8a918e]">{t.tba(tba)}</span>}
+          <span className={`block font-semibold ${fitting ? "text-[#367047]" : "text-[#8f4538]"}`}>{fitting ? t.fitting(fitting) : t.none}</span>{online > 0 && <span className="block text-[11px] text-[#536d64]">{t.online(online)}</span>}{tba > 0 && <span className="block text-[11px] text-[#646c68]">{t.tba(tba)}</span>}
           <span className="mt-1 block text-[#a34a39]">{t.view}</span>
         </span>
       </button><span className="pt-3.5"><button type="button" onClick={() => onAdd()} disabled={inPlan} aria-label={inPlan ? t.inPlanShort : `${t.quickAdd} ${courseId}`} title={inPlan ? t.inPlanShort : t.quickAdd} className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${inPlan ? "border-[#cddbd1] bg-[#edf3ef] text-[#315c43]" : "border-[#536d64] text-[#273c38] hover:bg-[#edf3ef]"}`}>{inPlan ? `✓ ${t.inPlanShort}` : `+ ${t.quickAdd}`}</button></span></div>; })}</div>

@@ -71,16 +71,16 @@ export default function SeatEmailToggle({ language, defaultEmail }: { language: 
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
         <p className="text-sm font-semibold">{t.title}</p>
-        <p className="mt-1 text-xs leading-5 text-[#68716e]">{!status.configured ? t.notConfigured : status.enabled ? t.on : t.off}</p>
+        <p className="mt-1 text-xs leading-5 text-[#5d6561]">{!status.configured ? t.notConfigured : status.enabled ? t.on : t.off}</p>
       </div>
       {status.configured && status.enabled && <button onClick={() => void update(false)} disabled={busy} className="rounded-lg border border-[#dedbd3] px-3 py-2 text-xs font-medium text-[#8b5148] hover:bg-[#f7f5f0] disabled:opacity-50">{t.disable}</button>}
     </div>
     {status.configured && !status.enabled && <div className="mt-3">
       <p className="rounded-lg bg-[#f6f4ef] px-3 py-2 text-xs leading-5 text-[#59635f]">{t.consent}</p>
-      <label className="mt-3 grid gap-1.5 text-xs font-medium text-[#68716e]">{t.confirmEmail}<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm text-[#202728] outline-none focus:border-[#a34a39]" /></label>
+      <label className="mt-3 grid gap-1.5 text-xs font-medium text-[#5d6561]">{t.confirmEmail}<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm text-[#202728] outline-none focus:border-[#a34a39] focus:ring-2 focus:ring-[#a34a39]/30" /></label>
       <button onClick={() => void update(true)} disabled={busy || !email.trim()} className="mt-3 rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{t.enable}</button>
     </div>}
-    {status.configured && <p className="mt-3 text-[11px] leading-5 text-[#858d89]">{t.lag}</p>}
+    {status.configured && <p className="mt-3 text-[11px] leading-5 text-[#646c68]">{t.lag}</p>}
     {error && <p role="alert" className="mt-2 text-xs text-[#8c352c]">{error}</p>}
   </div>;
 }

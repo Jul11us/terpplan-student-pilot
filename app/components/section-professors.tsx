@@ -132,9 +132,9 @@ export default function SectionProfessors({ names, courseId, ratings, language, 
                   {t.average}: {rating.averageRating.toFixed(2)} / 5
                 </span>
               ) : ratingsLoading && !rating ? (
-                <span className="text-[#89908c]">{t.ratingLoading}</span>
+                <span className="text-[#646c68]">{t.ratingLoading}</span>
               ) : (
-                <span className="text-[#89908c]">
+                <span className="text-[#646c68]">
                   {rating?.status === "unmatched" ? t.unmatched : rating?.status === "failed" || rating?.status === "limited" ? t.unavailable : t.noRating}
                 </span>
               )}
@@ -157,15 +157,15 @@ export default function SectionProfessors({ names, courseId, ratings, language, 
               const target = panelTargetId && typeof document !== "undefined" ? document.getElementById(panelTargetId) : null;
               const panel = <div className={`rounded-lg border border-[#e7e4dc] bg-[#faf9f6] p-3 text-xs ${target ? "mt-3" : "mt-2"}`}>
               {target && <p className="mb-2 font-semibold text-[#3e4945]">{name} · {t.reviews}</p>}
-              {loadingKey === key && <p className="text-[#68716e]">{t.loading}</p>}
+              {loadingKey === key && <p className="text-[#5d6561]">{t.loading}</p>}
               {data?.status === "failed" && <p className="text-[#8c352c]">{t.failed}</p>}
-              {data?.status === "unmatched" && <p className="text-[#68716e]">{t.unmatched}</p>}
-              {data && data.status !== "failed" && data.status !== "unmatched" && data.highlights.length === 0 && <p className="text-[#68716e]">{t.empty}</p>}
+              {data?.status === "unmatched" && <p className="text-[#5d6561]">{t.unmatched}</p>}
+              {data && data.status !== "failed" && data.status !== "unmatched" && data.highlights.length === 0 && <p className="text-[#5d6561]">{t.empty}</p>}
               {data && data.highlights.length > 0 && <>
-                <p className="mb-3 leading-5 text-[#858d89]">{t.disclaimer}</p>
+                <p className="mb-3 leading-5 text-[#646c68]">{t.disclaimer}</p>
                 <div className={target ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3" : "space-y-3"}>
                   {data.highlights.map((item, index) => <div key={index} className={target ? "rounded-md border border-[#ece9e2] bg-white p-3" : "border-t border-[#e7e4dc] pt-3 first:border-0 first:pt-0"}>
-                    <p className="mb-1 text-[11px] text-[#858d89]">
+                    <p className="mb-1 text-[11px] text-[#646c68]">
                       {[item.courseId ?? courseId, item.rating !== null ? "★ " + t.stars.replace("{n}", String(item.rating)) : null, reviewMonth(item.created, language), item.otherCourse ? t.otherCourse : null].filter(Boolean).join(" · ")}
                     </p>
                     <p className="whitespace-pre-wrap leading-5 text-[#3e4945]">{item.excerpt}</p>

@@ -5,7 +5,7 @@ import { analyticsEnabled } from "@/lib/site-config";
 
 type Language = "en" | "zh";
 
-const CONTACT_EMAIL = "terpplan@proton.me";
+import { CONTACT_EMAIL } from "@/lib/site-config";
 
 const copy = {
   en: {
@@ -73,7 +73,7 @@ export default function AboutDialog({ language, onClose }: { language: Language;
     <section role="dialog" aria-modal="true" aria-labelledby="about-title" onClick={(event) => event.stopPropagation()} className="w-full max-w-lg rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-6 text-[#202728] shadow-xl sm:p-8">
       <div className="flex items-start justify-between gap-4">
         <h2 id="about-title" className="font-serif text-2xl">{t.title}</h2>
-        <button ref={closeRef} onClick={onClose} aria-label={t.close} className="rounded-lg border border-[#dcd9d0] px-2.5 py-1 text-sm text-[#68716e] hover:bg-white">✕</button>
+        <button ref={closeRef} onClick={onClose} aria-label={t.close} className="rounded-lg border border-[#dcd9d0] px-2.5 py-1 text-sm text-[#5d6561] hover:bg-white">✕</button>
       </div>
       <p className="mt-4 text-sm leading-6 text-[#48534f]">{t.intro}</p>
       <p className="mt-3 rounded-xl border border-[#ead8b5] bg-[#fff8e8] px-4 py-3 text-xs leading-5 text-[#745424]">{t.unofficial}</p>

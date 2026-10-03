@@ -39,3 +39,30 @@ export function filterResults<T extends { course_id: string; credits?: string }>
     return true;
   });
 }
+
+export type ResultSort = "match" | "seats" | "gpa" | "credits";
+
+const minCredits = (credits: string | undefined) => {
+  const value = Number((credits ?? "").split(/[–-]/)[0]);
+  return Number.isFinite(value) && value > 0 ? value : null;
+};
+
+// Reorders the (filtered) results. "match" keeps the search's own order; for the others, courses whose value
+// is not known yet (still loading, or no data) go last, in their original order.
+export function sortResults<T extends { course_id: string; credits?: string }>(
+  courses: T[],
+  sort: ResultSort,
+  seatsOf: (courseId: string) => SeatsKnown,
+  gpaOf: (courseId: string) => number | null | undefined,
+): T[] {
+  if (sort === "match") return courses;
+  const value = (course: T): number | null => {
+    if (sort === "seats") { const seats = seatsOf(course.course_id); return seats ? seats.openSeats : null; }
+    if (sort === "gpa") return gpaOf(course.course_id) ?? null;
+    return minCredits(course.credits);
+  };
+  const direction = sort === "credits" ? 1 : -1;
+  return courses.map((course, index) => ({ course, index, key: value(course) }))
+    .sort((a, b) => (a.key === null ? 1 : 0) - (b.key === null ? 1 : 0) || (a.key !== null && b.key !== null ? direction * (a.key - b.key) : 0) || a.index - b.index)
+    .map(({ course }) => course);
+}

@@ -127,7 +127,7 @@ export default function RegistrationChecklist({ option, others, missingCourseIds
     </div>
     {missingCourseIds.length > 0 && <p role="alert" className="mt-3 rounded-lg border border-[#e7c6bf] bg-[#fff0ec] px-3 py-2 text-xs font-medium text-[#8c352c]">{t.missing} {missingCourseIds.join(", ")}</p>}
     <div className="mt-3 overflow-hidden rounded-lg border border-[#dfe7e1] bg-white">
-      <div className="grid grid-cols-[1fr_auto_auto] gap-3 border-b border-[#eef2ef] px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#737b77]"><span /><span>{t.course}</span><span>{t.section}</span></div>
+      <div className="grid grid-cols-[1fr_auto_auto] gap-3 border-b border-[#eef2ef] px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#646c68]"><span /><span>{t.course}</span><span>{t.section}</span></div>
       {option.selectedSections.map((section) => <div key={section.section_id} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-b border-[#eef2ef] px-3 py-2 last:border-b-0">
         <span className="min-w-0 text-xs leading-5 text-[#59635f]">{section.course_title}{isFull(section) && <span className="ml-2 rounded-full bg-[#f5e9e5] px-1.5 py-0.5 text-[10px] font-semibold text-[#8f4538]">{t.full}</span>}</span>
         {chip(`${section.section_id}:course`, section.course_id)}
@@ -139,15 +139,15 @@ export default function RegistrationChecklist({ option, others, missingCourseIds
     <ul className="mt-1.5 space-y-1 text-xs leading-5 text-[#59635f]">{t.tips.map(([text, link, label]) => <li key={link}>• {text} <a href={LINKS[link]} target="_blank" rel="noreferrer" className="font-medium text-[#a34a39] underline underline-offset-2">{label} ↗</a></li>)}</ul>
     <div className="mt-4 rounded-lg border border-[#dfe7e1] bg-white p-3">
       <p className="text-xs font-medium text-[#48534f]">{t.reminderTitle}</p>
-      <p className="mt-1 text-[11px] leading-5 text-[#737b77]">{t.reminderIntro}</p>
+      <p className="mt-1 text-[11px] leading-5 text-[#646c68]">{t.reminderIntro}</p>
       <div className="mt-2 flex flex-wrap items-end gap-2">
-        <label className="text-[11px] text-[#68716e]">{t.reminderDate}<input type="date" value={reminder.date} onChange={(event) => changeReminder({ date: event.target.value })} className="mt-1 block rounded-lg border border-[#dedbd3] px-2 py-1.5 text-xs text-[#24312d]" /></label>
-        <label className="text-[11px] text-[#68716e]">{t.reminderTime}<input type="time" value={reminder.time} onChange={(event) => changeReminder({ time: event.target.value })} className="mt-1 block rounded-lg border border-[#dedbd3] px-2 py-1.5 text-xs text-[#24312d]" /></label>
+        <label className="text-[11px] text-[#5d6561]">{t.reminderDate}<input type="date" value={reminder.date} onChange={(event) => changeReminder({ date: event.target.value })} className="mt-1 block rounded-lg border border-[#dedbd3] px-2 py-1.5 text-xs text-[#24312d]" /></label>
+        <label className="text-[11px] text-[#5d6561]">{t.reminderTime}<input type="time" value={reminder.time} onChange={(event) => changeReminder({ time: event.target.value })} className="mt-1 block rounded-lg border border-[#dedbd3] px-2 py-1.5 text-xs text-[#24312d]" /></label>
         <button type="button" onClick={downloadReminder} disabled={!reminder.date || !reminder.time} className="rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:cursor-not-allowed disabled:opacity-50">{t.reminderButton}</button>
       </div>
       {reminderDone && <p role="status" className="mt-2 text-[11px] text-[#367047]">✓ {t.reminderDone}</p>}
     </div>
-    <p className="mt-3 text-[11px] leading-5 text-[#858d89]">{t.confirm}</p>
+    <p className="mt-3 text-[11px] leading-5 text-[#646c68]">{t.confirm}</p>
     {failed && <p role="alert" className="mt-2 text-xs text-[#8c352c]">{t.copyFailed}</p>}
   </section>;
 }

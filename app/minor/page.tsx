@@ -159,7 +159,7 @@ function writeAuditHandoff(value: AuditCourses | null) {
 }
 
 const statusStyle: Record<CourseStatus | "none" | "open", string> = {
-  done: "bg-[#eaf4ec] text-[#367047]", inProgress: "bg-[#eef2f7] text-[#455d78]", planned: "bg-[#fff8e8] text-[#745424]", none: "bg-[#f2f0eb] text-[#6d746f]", open: "bg-[#fff0ec] text-[#8c352c]",
+  done: "bg-[#eaf4ec] text-[#367047]", inProgress: "bg-[#eef2f7] text-[#455d78]", planned: "bg-[#fff8e8] text-[#745424]", none: "bg-[#f2f0eb] text-[#5d6561]", open: "bg-[#fff0ec] text-[#8c352c]",
 };
 
 export default function ProgramExplorerPage() {
@@ -341,7 +341,7 @@ export default function ProgramExplorerPage() {
     return <li key={code} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#ebe8e1] bg-white px-3 py-2 text-xs">
       <div className="min-w-0">
         <p><span className="font-semibold text-[#202728]">{code}</span> <span className="text-[#606966]">{fact?.n ?? ""}</span></p>
-        <p className="mt-0.5 text-[11px] text-[#7c8580]">
+        <p className="mt-0.5 text-[11px] text-[#646c68]">
           {fact ? t.creditsItem(fact.c) : ""}
           {typeof average === "number" ? ` · GPA ${average.toFixed(2)}` : ""}
           {currentMajor?.has(code) ? <span className="ml-1.5 rounded bg-[#eef2f7] px-1.5 py-0.5 text-[10px] font-medium text-[#455d78]">{t.inMajor}</span> : null}
@@ -369,7 +369,7 @@ export default function ProgramExplorerPage() {
     return <article key={index} className="rounded-xl border border-[#e3e0d8] bg-[#fbfaf8] p-4">
       {showSection && <p className="text-[10px] font-semibold uppercase tracking-[.1em] text-[#9a5040]">{item.section}</p>}
       <div className="mt-1 flex flex-wrap items-start justify-between gap-2">
-        <p className="text-sm font-semibold leading-5">{title}{item.credits ? <span className="ml-2 text-xs font-normal text-[#7c8580]">{t.creditsItem(item.credits)}</span> : null}</p>
+        <p className="text-sm font-semibold leading-5">{title}{item.credits ? <span className="ml-2 text-xs font-normal text-[#646c68]">{t.creditsItem(item.credits)}</span> : null}</p>
         <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusStyle[badge[0] as keyof typeof statusStyle]}`}>{badge[1]}</span>
       </div>
       {result.met.length > 0 && <ul className="mt-2 space-y-1.5">{result.met.map((entry) => entry.option.map((code) => courseRow(code, statusText(entry.status))))}</ul>}
@@ -379,21 +379,21 @@ export default function ProgramExplorerPage() {
         setManualDone((value) => ({ ...value, [targetSlug]: [...nextDone] }));
       }} />{t.markDone}</label>}
       {!result.complete && !result.open && result.suggestions.length > 0 && <>
-        {item.kind === "choose" && <p className="mt-3 text-[11px] font-medium text-[#68716e]">{t.options}</p>}
+        {item.kind === "choose" && <p className="mt-3 text-[11px] font-medium text-[#5d6561]">{t.options}</p>}
         <ul className="mt-1.5 space-y-1.5">{(showAll ? result.suggestions : result.suggestions.slice(0, 5)).flatMap((option) => option.map((code) => courseRow(code)))}</ul>
         {result.suggestions.length > 5 && <button type="button" onClick={() => setExpanded((value) => { const next = new Set(value); if (next.has(index)) next.delete(index); else next.add(index); return next; })} className="mt-2 text-xs font-medium text-[#536d64] underline underline-offset-2">{showAll ? t.showFewer : t.showAll(result.suggestions.length)}</button>}
       </>}
     </article>;
   };
 
-  const stat = (label: string, value: string, detail: string) => <div className="rounded-xl border border-[#e3e0d8] bg-white p-4"><p className="text-[11px] font-semibold uppercase tracking-[.08em] text-[#7c8580]">{label}</p><p className="mt-1 font-serif text-2xl text-[#202728]">{value}</p><p className="mt-1 text-xs text-[#68716e]">{detail}</p></div>;
+  const stat = (label: string, value: string, detail: string) => <div className="rounded-xl border border-[#e3e0d8] bg-white p-4"><p className="text-[11px] font-semibold uppercase tracking-[.08em] text-[#646c68]">{label}</p><p className="mt-1 font-serif text-2xl text-[#202728]">{value}</p><p className="mt-1 text-xs text-[#5d6561]">{detail}</p></div>;
 
   return <main className="min-h-screen bg-[#f5f3ef] text-[#202728]">
     <header className="border-b border-[#dedbd3] bg-[#fbfaf8]"><div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-5 py-4 sm:px-8"><Link href="/" className="flex items-center gap-3 font-semibold"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#bd302f] font-serif text-lg text-white">T</span>TerpPlan</Link><div className="flex items-center gap-3"><Link href="/" className="inline-flex items-center gap-1.5 rounded-lg border border-[#d9d6ce] bg-white px-3 py-1.5 text-xs font-semibold text-[#273c38] shadow-sm hover:border-[#536d64] hover:bg-[#edf3ef]"><span aria-hidden="true">←</span>{t.home}</Link><button onClick={() => { const next = language === "en" ? "zh" : "en"; setLanguage(next); writeSavedState({ language: next }); }} className="rounded-lg border border-[#dcd9d0] px-3 py-2 text-xs">{language === "en" ? "中文" : "English"}</button></div></div></header>
     <div className="mx-auto max-w-6xl px-5 pb-16 pt-10 sm:px-8">
       <p className="text-[11px] font-semibold uppercase tracking-[.17em] text-[#a34a39]">{t.pilot}</p>
       <h1 className="mt-3 max-w-3xl font-serif text-4xl leading-tight sm:text-5xl">{t.title}</h1>
-      <p className="mt-4 max-w-2xl text-sm leading-6 text-[#626c67]">{t.intro}</p>
+      <p className="mt-4 max-w-2xl text-sm leading-6 text-[#5d6561]">{t.intro}</p>
 
       <div className="mt-8 grid gap-5 lg:grid-cols-2">
         <section className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-6">
@@ -402,10 +402,10 @@ export default function ProgramExplorerPage() {
             : <label className={`mt-4 flex w-full items-center gap-3 rounded-xl border border-[#d9d6ce] bg-white p-3 text-sm ${reading ? "opacity-60" : "cursor-pointer hover:border-[#a34a39]"} focus-within:ring-2 focus-within:ring-[#a34a39]/30`}>
               <input type="file" accept="application/pdf,.pdf" aria-label={t.upload} disabled={reading} onChange={(event) => { void readFile(event.target.files?.[0]); event.target.value = ""; }} className="sr-only" />
               <span className="shrink-0 rounded-lg bg-[#273c38] px-3 py-2 font-semibold text-white">📋 {t.upload}</span>
-              {reading && <span className="text-xs text-[#68716e]">{t.reading}</span>}
+              {reading && <span className="text-xs text-[#5d6561]">{t.reading}</span>}
             </label>}
           {auditError && <p role="alert" className="mt-3 rounded-xl bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]">{auditError}</p>}
-          <label className="mt-4 block text-xs font-medium text-[#68716e]">{t.manual}
+          <label className="mt-4 block text-xs font-medium text-[#5d6561]">{t.manual}
             <textarea value={manualText} onChange={(event) => { setManualText(event.target.value); savePrefs({ manual: event.target.value }); }} rows={2} placeholder={t.manualHint} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm" />
           </label>
           {plan.all.length > 0 && <label className="mt-3 flex items-center gap-2 text-xs text-[#59635f]"><input type="checkbox" checked={includePlan} onChange={(event) => setIncludePlan(event.target.checked)} />{t.includePlan(plan.all.length)}</label>}
@@ -416,22 +416,22 @@ export default function ProgramExplorerPage() {
           <h2 className="font-serif text-2xl">02 · {t.programs}</h2>
           {listError && <p role="alert" className="mt-3 text-sm text-[#8c352c]">{t.loadError}</p>}
           <div role="tablist" className="mt-4 inline-flex rounded-lg border border-[#dedbd3] bg-[#f2f0eb] p-1 text-xs font-medium">
-            {(["minor", "major"] as const).map((value) => <button key={value} type="button" role="tab" aria-selected={mode === value} onClick={() => { setMode(value); setQuery(""); savePrefs({ mode: value }); }} className={`rounded-md px-3 py-1.5 ${mode === value ? "bg-white text-[#202728] shadow-sm" : "text-[#68716e] hover:text-[#202728]"}`}>{value === "minor" ? t.modeMinor : t.modeMajor}</button>)}
+            {(["minor", "major"] as const).map((value) => <button key={value} type="button" role="tab" aria-selected={mode === value} onClick={() => { setMode(value); setQuery(""); savePrefs({ mode: value }); }} className={`rounded-md px-3 py-1.5 ${mode === value ? "bg-white text-[#202728] shadow-sm" : "text-[#5d6561] hover:text-[#202728]"}`}>{value === "minor" ? t.modeMinor : t.modeMajor}</button>)}
           </div>
-          <label className="mt-4 block text-xs font-medium text-[#68716e]">{mode === "minor" ? t.minor : t.second}
+          <label className="mt-4 block text-xs font-medium text-[#5d6561]">{mode === "minor" ? t.minor : t.second}
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={mode === "minor" ? t.search : t.searchMajor} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm" />
             <select value={targetSlug} onChange={(event) => chooseTarget(event.target.value)} className="mt-2 w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm">
               <option value="">{mode === "minor" ? t.chooseMinor : t.chooseSecond}</option>
               {filteredChoices.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}
             </select>
           </label>
-          <label className="mt-4 block text-xs font-medium text-[#68716e]">{mode === "minor" ? t.major : t.currentMajor}
+          <label className="mt-4 block text-xs font-medium text-[#5d6561]">{mode === "minor" ? t.major : t.currentMajor}
             <select value={majorSlug} onChange={(event) => { setMajorSlug(event.target.value); savePrefs({ major: event.target.value }); }} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm">
               <option value="">{t.noMajor}</option>
               {(list?.majors ?? []).map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}
             </select>
           </label>
-          <label className="mt-4 block text-xs font-medium text-[#68716e]">{t.semesters}
+          <label className="mt-4 block text-xs font-medium text-[#5d6561]">{t.semesters}
             <select value={semesters} onChange={(event) => { const next = Number(event.target.value); setSemesters(next); savePrefs({ semesters: next }); }} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm">
               {[1, 2, 3, 4, 5, 6, 7, 8].map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
@@ -440,18 +440,18 @@ export default function ProgramExplorerPage() {
         </section>
       </div>
 
-      {targetSlug && !current && <p role="status" className="mt-6 text-sm text-[#68716e]">{programError ? t.loadError : t.loading}</p>}
+      {targetSlug && !current && <p role="status" className="mt-6 text-sm text-[#5d6561]">{programError ? t.loadError : t.loading}</p>}
       {current && progress && workload && <section className="mt-6 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-7">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h2 className="font-serif text-2xl">03 · {current.program.name}</h2>
           <a href={current.program.url} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-[#a34a39] hover:underline">{t.catalog} ↗</a>
         </div>
-        {current.program.intro && <p className="mt-2 text-xs leading-5 text-[#68716e]">{current.program.intro}</p>}
+        {current.program.intro && <p className="mt-2 text-xs leading-5 text-[#5d6561]">{current.program.intro}</p>}
         {current.program.apply && <div className="mt-4 rounded-xl border border-[#ecd9a8] bg-[#fff8e8] p-3 text-xs leading-5 text-[#745424]"><p className="font-semibold">{t.applyTitle}</p><p className="mt-1">“{current.program.apply}”</p><p className="mt-1">{t.gatewayNote}</p>{current.program.applyUrl && <a href={current.program.applyUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block font-medium text-[#8c453b] underline underline-offset-2">{t.applyLink} ↗</a>}</div>}
         {current.program.blocks.length > 1 && <div className="mt-4 rounded-xl border border-[#e3e0d8] bg-white p-3">
           <p className="text-xs font-semibold text-[#48534f]">{t.parts}</p>
-          <p className="mt-0.5 text-[11px] text-[#858d89]">{t.partsHint}</p>
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">{current.program.blocks.map((block, index) => <label key={index} className="inline-flex items-center gap-2 text-xs text-[#48534f]"><input type="checkbox" checked={selectedBlocks.has(index)} onChange={() => toggleBlock(index)} />{block.title || t.core}{block.total ? <span className="text-[#858d89]">· {t.creditsItem(block.total)}</span> : null}</label>)}</div>
+          <p className="mt-0.5 text-[11px] text-[#646c68]">{t.partsHint}</p>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">{current.program.blocks.map((block, index) => <label key={index} className="inline-flex items-center gap-2 text-xs text-[#48534f]"><input type="checkbox" checked={selectedBlocks.has(index)} onChange={() => toggleBlock(index)} />{block.title || t.core}{block.total ? <span className="text-[#646c68]">· {t.creditsItem(block.total)}</span> : null}</label>)}</div>
         </div>}
         {progress.partial && <div className="mt-4 rounded-xl border border-[#f0d0c6] bg-[#fff0ec] p-3 text-xs leading-5 text-[#8c352c]"><p className="font-semibold">{t.partialTitle}</p><p className="mt-1">{current.program.items.length ? t.partial : t.noTable}</p></div>}
 
@@ -468,15 +468,15 @@ export default function ProgramExplorerPage() {
               <div className="flex items-center justify-between gap-2"><h3 className="font-semibold">{t.load}</h3><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${workload.level === "heavy" ? "bg-[#f7d9d0] text-[#8c352c]" : workload.level === "moderate" ? "bg-[#f6e7bf] text-[#745424]" : "bg-[#d9eadf] text-[#315c43]"}`}>{t.level[workload.level]}</span></div>
               <p className="mt-2 text-sm text-[#48534f]">{workload.lowPerSemester !== workload.perSemester ? t.perSemesterRange(workload.lowPerSemester, workload.perSemester, semesters) : t.perSemester(workload.perSemester, semesters)}</p>
               <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-[#59635f]">{workload.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
-              <p className="mt-2 text-[11px] leading-5 text-[#858d89]">{t.gpaNote}</p>
+              <p className="mt-2 text-[11px] leading-5 text-[#646c68]">{t.gpaNote}</p>
             </div>
             <div className="rounded-xl border border-[#e3e0d8] bg-white p-4">
               <h3 className="font-semibold">{t.overlap}</h3>
-              {!majorSlug ? <p className="mt-2 text-sm text-[#68716e]">{t.overlapPick}</p> : !currentMajor ? <p className="mt-2 text-sm text-[#68716e]">{t.loading}</p> : <>
+              {!majorSlug ? <p className="mt-2 text-sm text-[#5d6561]">{t.overlapPick}</p> : !currentMajor ? <p className="mt-2 text-sm text-[#5d6561]">{t.loading}</p> : <>
                 <p className="mt-2 text-sm text-[#48534f]">{progress.overlap.length ? (mode === "minor" ? t.overlapList : t.overlapListMajor)(progress.overlap.join(", ")) : t.overlapNone}</p>
                 {progress.overlapExcess > 0 && <p className="mt-2 rounded-lg bg-[#fff0ec] px-3 py-2 text-xs text-[#8c352c]">{t.overlapExcess(progress.overlapExcess)}</p>}
                 {mode === "major" && progress.sharedRemainingCredits > 0 && <p className="mt-2 text-xs text-[#48534f]">{t.sharedRemaining(progress.sharedRemainingCredits)}</p>}
-                <p className="mt-2 text-[11px] leading-5 text-[#858d89]">{t.overlapNote}</p>
+                <p className="mt-2 text-[11px] leading-5 text-[#646c68]">{t.overlapNote}</p>
               </>}
               <p className="mt-2 text-xs font-medium text-[#536d64]">{mode === "minor" ? t.overlapRule : t.overlapRuleMajor}</p>
               {mode === "major" && currentMajor && <div className="mt-3 rounded-lg bg-[#f6f4ef] p-3 text-xs leading-5 text-[#59635f]">
@@ -499,7 +499,7 @@ export default function ProgramExplorerPage() {
           <p className="font-semibold text-[#48534f]">{mode === "minor" ? t.rules : t.rulesMajor}</p>
           <ul className="mt-1 list-disc pl-5">{(mode === "minor" ? t.ruleList : t.ruleListMajor).map((rule) => <li key={rule}>{rule}</li>)}</ul>
           <p className="mt-2 font-medium text-[#8c453b]">{t.disclaimer}</p>
-          {list && <p className="mt-1 text-[11px] text-[#858d89]">{t.snapshot(list.builtAt)}</p>}
+          {list && <p className="mt-1 text-[11px] text-[#646c68]">{t.snapshot(list.builtAt)}</p>}
         </div>
       </section>}
     </div>

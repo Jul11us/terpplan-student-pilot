@@ -30,3 +30,15 @@ test("filters keep loading or unreadable seat counts and drop only known gaps", 
   assert.equal(filtersActive(NO_FILTERS), false);
   assert.equal(filtersActive({ ...NO_FILTERS, credits: "3" }), true);
 });
+
+test("sorting by seats, GPA or credits puts unknown values last and keeps ties in search order", async () => {
+  const { sortResults } = await import("../lib/result-filters.ts");
+  const courses = [{ course_id: "A100", credits: "3" }, { course_id: "B100", credits: "1–3" }, { course_id: "C100", credits: "4" }, { course_id: "D100" }];
+  const seats = { A100: { sections: 2, openSeats: 5 }, B100: { sections: 1, openSeats: 40 }, C100: { sections: 1, openSeats: 5 } };
+  const gpa = { A100: 3.1, C100: 3.6 };
+  const ids = (list) => list.map((course) => course.course_id);
+  assert.deepEqual(ids(sortResults(courses, "match", () => null, () => null)), ["A100", "B100", "C100", "D100"]);
+  assert.deepEqual(ids(sortResults(courses, "seats", (id) => seats[id], () => null)), ["B100", "A100", "C100", "D100"]);
+  assert.deepEqual(ids(sortResults(courses, "gpa", () => null, (id) => gpa[id])), ["C100", "A100", "B100", "D100"]);
+  assert.deepEqual(ids(sortResults(courses, "credits", () => null, () => null)), ["B100", "A100", "C100", "D100"]);
+});

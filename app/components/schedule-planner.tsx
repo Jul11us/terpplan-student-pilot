@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReferenceSchedule } from "@/app/components/gened-finder";
 import RegistrationChecklist from "@/app/components/registration-checklist";
 import { buildIcs, type IcsMeeting } from "@/lib/ics";
+import { reportMailto } from "@/lib/report-link";
 import { roomLabel } from "@/lib/room";
 import { TERM_CALENDARS } from "@/lib/term-calendar";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
@@ -55,7 +56,7 @@ const copy = {
     onlyInstructors: "Only", minutes: "min", credits: "credits", credit: "credit", lecture: "Lecture", discussion: "Discussion", lab: "Lab",
     // Short forms for the narrow timetable blocks.
     lectureShort: "LEC", discussionShort: "DIS", labShort: "LAB",
-    select: "View this schedule", calendar: "Weekly timetable", unknown: "Times to confirm", noUnknown: "All meeting times are listed.",
+    select: "View this schedule", calendar: "Weekly timetable", unknown: "Times to confirm", noUnknown: "All meeting times are listed.", reportSchedule: "Something wrong in this schedule (a time, room or map link)? Report it",
     noOptions: "No conflict-free schedule was found. Remove a preference or course and try again.",
     fit: "Preferred-window fit", warning: "Some meeting times are missing, so those sections cannot be fully checked.",
     loadError: "Schedule options could not be generated. Please try again.", invalidWindow: "Enter both ends of the preferred window, with the start before the end.", back: "← Back to course search",
@@ -97,7 +98,7 @@ const copy = {
     pinnedNote: "你指定的班次即使已满或属于 FC，也会保留在方案里。",
     onlyInstructors: "只排", minutes: "分钟", credits: "学分", credit: "学分", lecture: "讲课", discussion: "讨论课", lab: "实验课",
     lectureShort: "讲课", discussionShort: "讨论课", labShort: "实验课",
-    select: "查看此方案", calendar: "每周课表", unknown: "需要确认的时间", noUnknown: "所有班次均列出了上课时间。",
+    select: "查看此方案", calendar: "每周课表", unknown: "需要确认的时间", noUnknown: "所有班次均列出了上课时间。", reportSchedule: "课表里有信息不对（时间、教室或地图链接）？告诉我们",
     noOptions: "没有找到无冲突方案。可以移除一项偏好或课程后重试。",
     fit: "符合时间偏好的比例", warning: "部分班次时间缺失，无法完整验证这些课程是否冲突。",
     loadError: "暂时无法生成排课方案，请重试。", invalidWindow: "请填写完整的偏好时间段，并确保开始时间早于结束时间。", back: "← 返回找课",
@@ -242,7 +243,7 @@ function ScoreBreakdown({ option, language }: { option: ScheduleOption; language
     <p className="font-semibold text-[#273c38]">{t.scoreHow}</p>
     <ul className="mt-1">{parts.map((part) => <li key={part.key} className="flex justify-between gap-3"><span>{fill(t.scorePart[part.key], { count: part.count ?? 0 })}</span><span className="tabular-nums">{signed(part.points)}</span></li>)}</ul>
     <p className="mt-1 flex justify-between gap-3 border-t border-[#e6e4de] pt-1 font-semibold text-[#273c38]"><span>{t.scoreTotal}</span><span className="tabular-nums">{option.score.toFixed(2)}</span></p>
-    <p className="mt-1 text-[#737b77]">{t.scoreNote}</p>
+    <p className="mt-1 text-[#646c68]">{t.scoreNote}</p>
   </div>;
 }
 
@@ -298,16 +299,16 @@ export function WeeklyCalendar({ sections: courseSections, language, busyBlocks 
         <span className="pointer-events-none relative min-w-0 text-xs leading-5">
           <strong className="block text-[#24312d]">{displayClock(item.start)}–{displayClock(item.end)}</strong>
           <span className="block text-[#48534f]">{personalIds.has(item.section.section_id) ? item.section.course_title : item.section.section_id}{!personalIds.has(item.section.section_id) && item.type ? ` · ${item.type}` : ""}</span>
-          {!personalIds.has(item.section.section_id) && <RoomLink building={item.meeting.building} room={item.meeting.room} language={language} className="block w-fit text-[#737b77]" />}
+          {!personalIds.has(item.section.section_id) && <RoomLink building={item.meeting.building} room={item.meeting.room} language={language} className="block w-fit text-[#646c68]" />}
         </span>
       </div>)}</div>
     </div>)}</div>
     <div className="hidden sm:grid" style={{ gridTemplateColumns: `58px repeat(${gridDays.length}, minmax(0, 1fr))`, minWidth: 58 + gridDays.length * 120 }}>
-      <div className="sticky top-0 z-10 bg-white p-3 text-center text-[11px] text-[#8a918e]">ET</div>
+      <div className="sticky top-0 z-10 bg-white p-3 text-center text-[11px] text-[#646c68]">ET</div>
       {gridDays.map((day) => <div key={day} className="sticky top-0 z-10 border-l border-[#e6e4de] bg-white p-3 text-center text-xs font-semibold text-[#59635f]">{t.weekdays[DAYS.indexOf(day)]}</div>)}
       <div className="relative" style={{ height }}>
         {/* Labels sit centred on their hour line, except the first and last, which would be half hidden under the day header or past the bottom edge. */}
-        {Array.from({ length: (lastMinute - firstMinute) / 60 + 1 }, (_, index) => <span key={index} className={`absolute right-2 text-[10px] text-[#858d89] ${index === 0 ? "translate-y-0.5" : index === (lastMinute - firstMinute) / 60 ? "-translate-y-full" : "-translate-y-1/2"}`} style={{ top: index * 60 }}>{displayClock(firstMinute + index * 60)}</span>)}
+        {Array.from({ length: (lastMinute - firstMinute) / 60 + 1 }, (_, index) => <span key={index} className={`absolute right-2 text-[10px] text-[#646c68] ${index === 0 ? "translate-y-0.5" : index === (lastMinute - firstMinute) / 60 ? "-translate-y-full" : "-translate-y-1/2"}`} style={{ top: index * 60 }}>{displayClock(firstMinute + index * 60)}</span>)}
       </div>
       {gridDays.map((day) => <div key={day} className={columnClass} style={{ height }}>
         {sections.flatMap((section) => (section.meetings ?? []).flatMap((meeting, index) => {
@@ -341,7 +342,7 @@ export function WeeklyCalendar({ sections: courseSections, language, busyBlocks 
       {[...colors].filter(([courseId]) => !personalIds.has(courseId)).map(([courseId, color]) => <span key={courseId} className="inline-flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: color }} />{courseId}</span>)}
       {busyBlocks.length > 0 && <span className="inline-flex items-center gap-2"><i className="h-2.5 w-2.5 rounded-sm bg-[#dce2df]" />{language === "zh" ? "个人日程" : "Personal commitments"}</span>}
     </div>
-    {unknown.size > 0 ? <p className="border-t border-[#e6e4de] bg-[#fff8e8] px-4 py-3 text-xs text-[#745424]">{t.warning} {t.unknown}: {[...unknown].join(", ")}</p> : <p className="border-t border-[#e6e4de] px-4 py-3 text-xs text-[#737b77]">{t.noUnknown}</p>}
+    {unknown.size > 0 ? <p className="border-t border-[#e6e4de] bg-[#fff8e8] px-4 py-3 text-xs text-[#745424]">{t.warning} {t.unknown}: {[...unknown].join(", ")}</p> : <p className="border-t border-[#e6e4de] px-4 py-3 text-xs text-[#646c68]">{t.noUnknown}</p>}
     {online.size > 0 && <p className="border-t border-[#e6e4de] px-4 py-3 text-xs text-[#536d64]">{t.onlineAsync} {[...online].join(", ")}</p>}
     {walks.length > 0 && <div className="border-t border-[#e6e4de] bg-[#fff8e8] px-4 py-3 text-xs text-[#745424]">
       <p className="font-semibold">{t.walkTitle}</p>
@@ -392,9 +393,9 @@ export function CalendarExport({ sections, term, termName, language, incomplete 
   return <div className="mb-3 rounded-xl border border-[#e3e0d8] bg-white p-3 sm:p-4">
     <div className="flex flex-wrap items-center gap-3">
       <button onClick={download} disabled={!calendar} className="rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:opacity-50">{t.exportCalendar}</button>
-      <p className="w-full text-[11px] leading-5 text-[#737b77] sm:w-auto sm:min-w-0 sm:flex-1">{calendar ? t.exportHelp : t.exportUnavailable}</p>
+      <p className="w-full text-[11px] leading-5 text-[#646c68] sm:w-auto sm:min-w-0 sm:flex-1">{calendar ? t.exportHelp : t.exportUnavailable}</p>
     </div>
-    {calendar && <p className="mt-2 text-[11px] leading-5 text-[#858d89]">{t.exportNote}</p>}
+    {calendar && <p className="mt-2 text-[11px] leading-5 text-[#646c68]">{t.exportNote}</p>}
     {skipped.length > 0 && <p className="mt-2 text-[11px] text-[#745424]">{t.exportSkipped} {skipped.join(", ")}</p>}
   </div>;
 }
@@ -540,68 +541,69 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
       <button onClick={onBack} className="rounded-lg border border-[#d9d6ce] px-3 py-2 text-sm font-medium hover:bg-white">{t.back}</button>
     </div>
     {planSwitch && <div className="mt-4">{planSwitch}</div>}
-    {!courses.length ? <p className="mt-6 rounded-xl bg-[#f2f0eb] p-5 text-sm text-[#717975]">{t.addCourse}</p> : <>
+    {!courses.length ? <p className="mt-6 rounded-xl bg-[#f2f0eb] p-5 text-sm text-[#646c68]">{t.addCourse}</p> : <>
       {creditsLabel && <p className="mt-6 text-xs font-medium text-[#48534f]">{creditsLabel}</p>}
       {creditWarning && <p role="status" className="mt-2 rounded-lg bg-[#fff8e8] px-3 py-2 text-xs leading-5 text-[#745424]">⚠ {creditWarning}</p>}
       {takenEditor && <div className="mt-2">{takenEditor}</div>}
-      <div className={`${creditsLabel ? "mt-2" : "mt-6"} space-y-2`}>{courses.map((course) => <article key={course.courseId} className="flex items-center justify-between gap-4 rounded-xl border border-[#e3e0d8] bg-white px-4 py-3"><div><p className="font-semibold">{course.courseId}</p><p className="mt-0.5 text-xs text-[#737b77]">{course.courseTitle}</p>{prereqNeeds[course.courseId]?.length ? <p className="mt-1 text-xs font-medium text-[#745424]">⚠ {t.prereqNeeds.replace("{needs}", prereqNeeds[course.courseId].join("; "))}</p> : null}{course.instructors?.length ? <p className="mt-1 text-xs text-[#536d64]">{t.onlyInstructors}: {course.instructors.join(", ")}</p> : null}{course.pinnedSectionId && <p className="mt-1 text-xs font-medium text-[#315c43]">{t.pinned}: {course.pinnedSectionId}</p>}{course.excludedSectionIds?.length ? <p className="mt-1 text-xs text-[#8f4538]">{t.excludedSections}: {course.excludedSectionIds.join(", ")}</p> : null}{(course.pinnedSectionId || course.excludedSectionIds?.length) && <button onClick={onBack} className="mt-1 text-xs font-medium text-[#536d64] underline underline-offset-2">{t.changeSections}</button>}</div><button onClick={() => onRemove(course.courseId)} className="rounded-lg border border-[#dedbd3] px-3 py-2 text-xs font-medium text-[#6a736f] hover:bg-[#f6f4ef]">{t.remove}</button></article>)}</div>
+      <div className={`${creditsLabel ? "mt-2" : "mt-6"} space-y-2`}>{courses.map((course) => <article key={course.courseId} className="flex items-center justify-between gap-4 rounded-xl border border-[#e3e0d8] bg-white px-4 py-3"><div><p className="font-semibold">{course.courseId}</p><p className="mt-0.5 text-xs text-[#646c68]">{course.courseTitle}</p>{prereqNeeds[course.courseId]?.length ? <p className="mt-1 text-xs font-medium text-[#745424]">⚠ {t.prereqNeeds.replace("{needs}", prereqNeeds[course.courseId].join("; "))}</p> : null}{course.instructors?.length ? <p className="mt-1 text-xs text-[#536d64]">{t.onlyInstructors}: {course.instructors.join(", ")}</p> : null}{course.pinnedSectionId && <p className="mt-1 text-xs font-medium text-[#315c43]">{t.pinned}: {course.pinnedSectionId}</p>}{course.excludedSectionIds?.length ? <p className="mt-1 text-xs text-[#8f4538]">{t.excludedSections}: {course.excludedSectionIds.join(", ")}</p> : null}{(course.pinnedSectionId || course.excludedSectionIds?.length) && <button onClick={onBack} className="mt-1 text-xs font-medium text-[#536d64] underline underline-offset-2">{t.changeSections}</button>}</div><button onClick={() => onRemove(course.courseId)} className="rounded-lg border border-[#dedbd3] px-3 py-2 text-xs font-medium text-[#5d6561] hover:bg-[#f6f4ef]">{t.remove}</button></article>)}</div>
       <div className="mt-5 rounded-xl border border-[#e3e0d8] bg-white p-4 sm:p-5">
         {/* On a phone the form is long enough to hide the options below it, so it folds to one line there. */}
-        <button type="button" onClick={() => setPrefsOpen(!prefsOpen)} aria-expanded={prefsOpen} className="flex w-full items-center justify-between gap-3 text-left sm:hidden"><span className="font-semibold">{t.preferences}{prefsSet ? <span className="ml-2 text-xs font-normal text-[#68716e]">· {t.prefsSet.replace("{n}", String(prefsSet))}</span> : null}</span><span aria-hidden="true" className="text-xs text-[#68716e]">{prefsOpen ? "▲" : "▼"}</span></button>
+        <button type="button" onClick={() => setPrefsOpen(!prefsOpen)} aria-expanded={prefsOpen} className="flex w-full items-center justify-between gap-3 text-left sm:hidden"><span className="font-semibold">{t.preferences}{prefsSet ? <span className="ml-2 text-xs font-normal text-[#5d6561]">· {t.prefsSet.replace("{n}", String(prefsSet))}</span> : null}</span><span aria-hidden="true" className="text-xs text-[#5d6561]">{prefsOpen ? "▲" : "▼"}</span></button>
         <h3 className="hidden font-semibold sm:block">{t.preferences}</h3>
         <div className={`${prefsOpen ? "" : "hidden"} sm:block`}>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="grid gap-1.5 text-xs font-medium text-[#68716e]">{t.earliest}<input type="time" value={earliestStart} onChange={(event) => setEarliestStart(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]" /></label>
-          <label className="grid gap-1.5 text-xs font-medium text-[#68716e]">{t.window} · {t.start}<input type="time" value={windowStart} onChange={(event) => setWindowStart(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]" /></label>
-          <label className="grid gap-1.5 text-xs font-medium text-[#68716e]">{t.window} · {t.end}<input type="time" value={windowEnd} onChange={(event) => setWindowEnd(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]" /></label>
-          <label className="flex items-end gap-2 pb-2 text-xs text-[#68716e]"><input type="checkbox" checked={strictTime} disabled={!windowStart || !windowEnd} onChange={(event) => setStrictTime(event.target.checked)} />{t.strict}</label>
+          <label className="grid gap-1.5 text-xs font-medium text-[#5d6561]">{t.earliest}<input type="time" value={earliestStart} onChange={(event) => setEarliestStart(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]" /></label>
+          <label className="grid gap-1.5 text-xs font-medium text-[#5d6561]">{t.window} · {t.start}<input type="time" value={windowStart} onChange={(event) => setWindowStart(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]" /></label>
+          <label className="grid gap-1.5 text-xs font-medium text-[#5d6561]">{t.window} · {t.end}<input type="time" value={windowEnd} onChange={(event) => setWindowEnd(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]" /></label>
+          <label className="flex items-end gap-2 pb-2 text-xs text-[#5d6561]"><input type="checkbox" checked={strictTime} disabled={!windowStart || !windowEnd} onChange={(event) => setStrictTime(event.target.checked)} />{t.strict}</label>
         </div>
-        <div className="mt-4"><p className="mb-2 text-xs font-medium text-[#68716e]">{t.excluded}</p><div className="flex flex-wrap gap-2">{DAYS.map((day, index) => <label key={day} className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[#e3e0d8] bg-[#fbfaf8] px-3 py-2 text-xs"><input type="checkbox" checked={excludedDays.includes(day)} onChange={(event) => setExcludedDays((current) => event.target.checked ? [...current, day] : current.filter((item) => item !== day))} />{t.weekdays[index]}</label>)}</div></div>
-        <label className="mt-4 inline-flex items-center gap-2 text-xs text-[#68716e]"><input type="checkbox" checked={openSeatsOnly} onChange={(event) => setOpenSeatsOnly(event.target.checked)} />{t.openOnly}</label>
-        <label className="mt-2 flex items-start gap-2 text-xs text-[#68716e]"><input type="checkbox" className="mt-0.5" checked={preferGpa} onChange={(event) => setPreferGpa(event.target.checked)} />{t.preferGpa}</label>
-        <label className="mt-2 flex items-center gap-2 text-xs text-[#68716e]"><input type="checkbox" checked={includeFreshmanConnection} onChange={(event) => setIncludeFreshmanConnection(event.target.checked)} />{t.includeFc}</label>
-        <p className="mt-3 text-xs leading-5 text-[#858d89]">{t.windowHint}</p>
-        {courses.some((course) => course.pinnedSectionId) && <p className="mt-1 text-xs leading-5 text-[#858d89]">{t.pinnedNote}</p>}
+        <div className="mt-4"><p className="mb-2 text-xs font-medium text-[#5d6561]">{t.excluded}</p><div className="flex flex-wrap gap-2">{DAYS.map((day, index) => <label key={day} className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[#e3e0d8] bg-[#fbfaf8] px-3 py-2 text-xs"><input type="checkbox" checked={excludedDays.includes(day)} onChange={(event) => setExcludedDays((current) => event.target.checked ? [...current, day] : current.filter((item) => item !== day))} />{t.weekdays[index]}</label>)}</div></div>
+        <label className="mt-4 inline-flex items-center gap-2 text-xs text-[#5d6561]"><input type="checkbox" checked={openSeatsOnly} onChange={(event) => setOpenSeatsOnly(event.target.checked)} />{t.openOnly}</label>
+        <label className="mt-2 flex items-start gap-2 text-xs text-[#5d6561]"><input type="checkbox" className="mt-0.5" checked={preferGpa} onChange={(event) => setPreferGpa(event.target.checked)} />{t.preferGpa}</label>
+        <label className="mt-2 flex items-center gap-2 text-xs text-[#5d6561]"><input type="checkbox" checked={includeFreshmanConnection} onChange={(event) => setIncludeFreshmanConnection(event.target.checked)} />{t.includeFc}</label>
+        <p className="mt-3 text-xs leading-5 text-[#646c68]">{t.windowHint}</p>
+        {courses.some((course) => course.pinnedSectionId) && <p className="mt-1 text-xs leading-5 text-[#646c68]">{t.pinnedNote}</p>}
         <PersonalSchedule blocks={busyBlocks} buffer={bufferMinutes} onBlocks={setBusyBlocks} onBuffer={setBufferMinutes} language={language} />
         </div>
       </div>
       {error && <p role="alert" className="mt-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]">{error}</p>}
-      <div className="mt-5 flex flex-wrap items-center justify-end gap-3"><p className="text-xs text-[#858d89]">{t.autoNote}</p><button onClick={() => void generate()} disabled={loading} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1d302c] disabled:opacity-60">{loading ? t.generating : t.generate}</button></div>
+      <div className="mt-5 flex flex-wrap items-center justify-end gap-3"><p className="text-xs text-[#646c68]">{t.autoNote}</p><button onClick={() => void generate()} disabled={loading} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1d302c] disabled:opacity-60">{loading ? t.generating : t.generate}</button></div>
     </>}
     {warnings.length > 0 && <ul className="mt-5 space-y-2 rounded-xl border border-[#ead8b5] bg-[#fff8e8] p-4 text-sm text-[#745424]">{warnings.map((warning, index) => <li key={index}>{warningText(warning, language)}</li>)}</ul>}
     {generated.requestKey === requestKey && <ScheduleRecovery diagnostics={generated.diagnostics ?? []} repairs={generated.repairs ?? []} blocks={busyBlocks} language={language} disabled={loading || !upToDate} onRepair={applyRepair} onBack={onBack} />}
-    {courses.length > 0 && options.length === 0 && !loading && !error && warnings.length > 0 && <p className="mt-4 text-sm text-[#68716e]">{t.noOptions}</p>}
+    {courses.length > 0 && options.length === 0 && !loading && !error && warnings.length > 0 && <p className="mt-4 text-sm text-[#5d6561]">{t.noOptions}</p>}
     {options.length > 0 && <div className="mt-8">
       <h3 className="font-serif text-2xl">{t.options}</h3>
-      <p className="mt-1 text-xs text-[#737b77]">{t.ranking}</p>
+      <p className="mt-1 text-xs text-[#646c68]">{t.ranking}</p>
       {prefsChanged && windowValid && <p role="status" className="mt-3 rounded-xl border border-[#d9e3dc] bg-[#f4f8f5] px-4 py-3 text-sm text-[#315c43]">{t.updating}</p>}
       {prefsChanged && !windowValid && <p role="status" className="mt-3 rounded-xl border border-[#ead8b5] bg-[#fff8e8] px-4 py-3 text-sm text-[#745424]">{t.staleOptions}</p>}
       <div className="mt-4 grid gap-3 lg:grid-cols-3">{options.map((option, index) => <div key={option.selectedSections.map((section) => section.section_id).join("|")} className={`relative rounded-xl border p-4 text-left transition ${selectedOption === index ? "border-[#536d64] bg-[#edf3ef] ring-2 ring-[#536d64]/15" : "border-[#e3e0d8] bg-white hover:border-[#b9c5be]"}`}>
         {/* The card selects the option; the score's info button sits above it and only opens the explanation. */}
         <button type="button" onClick={() => { setSelectedOption(index); setShareUrl(""); setShareCopied(false); }} aria-pressed={selectedOption === index} aria-label={`${t.option} ${index + 1}`} className="absolute inset-0 rounded-xl" />
         <div className="pointer-events-none relative">
-        <span className="flex items-center justify-between gap-2"><strong>{t.option} {index + 1}</strong><span className="flex items-center gap-1.5 text-xs text-[#737b77]">{t.score} {option.score.toFixed(2)}<button type="button" onClick={() => setScoreHelpFor(scoreHelp === index ? null : { requestKey, index })} aria-expanded={scoreHelp === index} aria-label={t.scoreHow} title={t.scoreHow} className="pointer-events-auto grid h-4 w-4 place-items-center rounded-full border border-[#9aa59f] text-[10px] font-bold leading-none text-[#59635f] hover:border-[#536d64] hover:text-[#273c38]">i</button></span></span>
+        <span className="flex items-center justify-between gap-2"><strong>{t.option} {index + 1}</strong><span className="flex items-center gap-1.5 text-xs text-[#646c68]">{t.score} {option.score.toFixed(2)}<button type="button" onClick={() => setScoreHelpFor(scoreHelp === index ? null : { requestKey, index })} aria-expanded={scoreHelp === index} aria-label={t.scoreHow} title={t.scoreHow} className="pointer-events-auto grid h-4 w-4 place-items-center rounded-full border border-[#9aa59f] text-[10px] font-bold leading-none text-[#59635f] hover:border-[#536d64] hover:text-[#273c38]">i</button></span></span>
         {scoreHelp === index && <ScoreBreakdown option={option} language={language} />}
         {highlights[index]?.length ? <span className="mt-2 flex flex-wrap gap-1.5">{highlights[index].map((key) => <span key={key} className="rounded-full bg-[#e6efe9] px-2 py-0.5 text-[11px] font-semibold text-[#315c43]">{t.highlight[key]}</span>)}</span> : null}
-        <span className="mt-3 block text-xs leading-5 text-[#626c67]">{option.selectedSections.map((section) => section.section_id).join(" · ")}</span>
+        <span className="mt-3 block text-xs leading-5 text-[#5d6561]">{option.selectedSections.map((section) => section.section_id).join(" · ")}</span>
         {missingFrom(option).length ? <span className="mt-2 mr-1 inline-block rounded-full bg-[#8f4538] px-2 py-0.5 text-[11px] font-semibold text-white">{t.incompleteTag}: {missingFrom(option).join(", ")}</span> : null}
         {option.fullSectionIds?.length ? <span className="mt-2 inline-block rounded-full bg-[#f5e9e5] px-2 py-0.5 text-[11px] font-semibold text-[#8f4538]">{t.fullIn}: {option.fullSectionIds.join(", ")}</span> : null}
-        <span className="mt-3 block text-xs text-[#737b77]">{t.rating}: {option.professorRating === null ? "—" : option.professorRating.toFixed(2) + " / 5"}{option.averageGpa !== null && option.averageGpa !== undefined ? ` · ${t.avgGpa} ${option.averageGpa.toFixed(2)}` : ""} · {t.gaps}: {option.gapMinutes} {t.minutes}{option.tightWalkCount ? <span className="text-[#8f4538]"> · {t.tightWalks}: {option.tightWalkCount} {t.times}</span> : null}</span>
-        <span className="mt-1 block text-xs text-[#737b77]">{t.days}: {option.campusDays.map((day) => t.weekdays[DAYS.indexOf(day as (typeof DAYS)[number])] ?? day).join(", ") || "—"}{option.earliestStart ? " · " + t.firstClass + " " + option.earliestStart : ""}</span>
-        {option.timeFitPercent !== null && <span className="mt-1 block text-xs text-[#737b77]">{t.fit}: {Math.round(option.timeFitPercent)}%</span>}
+        <span className="mt-3 block text-xs text-[#646c68]">{t.rating}: {option.professorRating === null ? "—" : option.professorRating.toFixed(2) + " / 5"}{option.averageGpa !== null && option.averageGpa !== undefined ? ` · ${t.avgGpa} ${option.averageGpa.toFixed(2)}` : ""} · {t.gaps}: {option.gapMinutes} {t.minutes}{option.tightWalkCount ? <span className="text-[#8f4538]"> · {t.tightWalks}: {option.tightWalkCount} {t.times}</span> : null}</span>
+        <span className="mt-1 block text-xs text-[#646c68]">{t.days}: {option.campusDays.map((day) => t.weekdays[DAYS.indexOf(day as (typeof DAYS)[number])] ?? day).join(", ") || "—"}{option.earliestStart ? " · " + t.firstClass + " " + option.earliestStart : ""}</span>
+        {option.timeFitPercent !== null && <span className="mt-1 block text-xs text-[#646c68]">{t.fit}: {Math.round(option.timeFitPercent)}%</span>}
         </div>
       </div>)}</div>
       {chosen && <div className="mt-6">
         {chosenMissing.length > 0 && <div role="alert" className="mb-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]"><p className="font-semibold">{t.incompleteTitle}</p><p className="mt-1 text-xs leading-5">{t.incompleteBody} <strong>{chosenMissing.join(", ")}</strong></p></div>}
-        <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h4 className="font-semibold">{t.calendar}</h4><p className="mt-1 text-xs text-[#737b77]">{chosen.selectedSections.map((section) => section.section_id).join(" · ")}</p></div><span className="text-xs text-[#737b77]">{t.rating}: {chosen.professorRating === null ? "—" : chosen.professorRating.toFixed(2) + " / 5"}{chosen.totalCredits ? " · " + chosen.totalCredits + " " + (chosen.totalCredits === 1 ? t.credit : t.credits) : ""}</span></div>
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h4 className="font-semibold">{t.calendar}</h4><p className="mt-1 text-xs text-[#646c68]">{chosen.selectedSections.map((section) => section.section_id).join(" · ")}</p></div><span className="text-xs text-[#646c68]">{t.rating}: {chosen.professorRating === null ? "—" : chosen.professorRating.toFixed(2) + " / 5"}{chosen.totalCredits ? " · " + chosen.totalCredits + " " + (chosen.totalCredits === 1 ? t.credit : t.credits) : ""}</span></div>
         <CalendarExport key={chosen.selectedSections.map((section) => section.section_id).join("|")} sections={chosen.selectedSections} term={term} termName={termName} language={language} incomplete={chosenMissing.length > 0} />
         <div className="mb-3 rounded-xl border border-[#e3e0d8] bg-white p-3 sm:p-4">
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3"><button type="button" onClick={() => void shareSchedule()} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]">{shareCopied ? t.shareCopied : t.shareSchedule}</button><p className="w-full text-[11px] leading-5 text-[#737b77] sm:w-auto sm:min-w-0 sm:flex-1">{t.shareHint}</p></div>
-          {shareUrl && <div className="mt-3"><label htmlFor="share-schedule-url" className="text-[11px] font-medium text-[#68716e]">{shareCopied ? t.shareReady : t.shareCopyFailed}</label><input id="share-schedule-url" readOnly value={shareUrl} onFocus={(event) => event.target.select()} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-[#fbfaf8] px-3 py-2 text-xs text-[#273c38]" /></div>}
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3"><button type="button" onClick={() => void shareSchedule()} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]">{shareCopied ? t.shareCopied : t.shareSchedule}</button><p className="w-full text-[11px] leading-5 text-[#646c68] sm:w-auto sm:min-w-0 sm:flex-1">{t.shareHint}</p></div>
+          {shareUrl && <div className="mt-3"><label htmlFor="share-schedule-url" className="text-[11px] font-medium text-[#5d6561]">{shareCopied ? t.shareReady : t.shareCopyFailed}</label><input id="share-schedule-url" readOnly value={shareUrl} onFocus={(event) => event.target.select()} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-[#fbfaf8] px-3 py-2 text-xs text-[#273c38]" /></div>}
         </div>
-        <p className="mb-2 text-xs leading-5 text-[#737b77]">{language === "zh" ? "点击课表中的课程可查看备选班次。个人日程仅显示在这里，不包含在分享链接或日历导出中。" : "Click a class to review alternative sections. Personal commitments appear here and are excluded from share links and calendar exports."}</p>
+        <p className="mb-2 text-xs leading-5 text-[#646c68]">{language === "zh" ? "点击课表中的课程可查看备选班次。个人日程仅显示在这里，不包含在分享链接或日历导出中。" : "Click a class to review alternative sections. Personal commitments appear here and are excluded from share links and calendar exports."}</p>
         <WeeklyCalendar sections={chosen.selectedSections} language={language} busyBlocks={busyBlocks} onSelectSection={(section) => { const control = document.getElementById(`section-swap-${section.section_id}`); control?.scrollIntoView({ block: "center", behavior: "smooth" }); control?.click(); }} />
-        <div className="mt-4 space-y-2">{chosen.selectedSections.map((section) => <article key={section.section_id} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{section.course_id} · {section.course_title}</p><p className="mt-1 text-sm text-[#626c67]">{section.section_id}{(section.meetings ?? []).length ? " · " + (section.meetings ?? []).map((meeting) => {
+        <a href={reportMailto({ term: termName, sectionIds: chosen.selectedSections.map((section) => section.section_id), language })} className="mt-2 inline-block text-xs font-medium text-[#a34a39] hover:underline">{t.reportSchedule} ↗</a>
+        <div className="mt-4 space-y-2">{chosen.selectedSections.map((section) => <article key={section.section_id} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{section.course_id} · {section.course_title}</p><p className="mt-1 text-sm text-[#5d6561]">{section.section_id}{(section.meetings ?? []).length ? " · " + (section.meetings ?? []).map((meeting) => {
           const start = minutes(meeting.start_time), end = minutes(meeting.end_time);
           const kind = meetingType(meeting.classtype);
           const type = kind ? t[kind] : null;
@@ -609,11 +611,11 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
           if (isAsyncOnline(meeting)) return (type ? type + " · " : "") + t.onlineNoTime;
           return start === null || end === null || !days.length ? (language === "zh" ? "时间待定" : "Time TBA") : (type ? type + " · " : "") + days.join(" ") + " " + displayClock(start) + "–" + displayClock(end) + " · " + roomLabel(meeting.building, meeting.room, language);
         }).join(" · ") : language === "zh" ? " · 时间待定" : " · Time TBA"}</p>
-        {section.instructorRatings.length > 0 && <p className="mt-2 text-xs text-[#737b77]">{section.instructorRatings.map((item) => item.name + (item.averageRating === null ? "" : " · " + item.averageRating.toFixed(2) + " / 5")).join(" · ")}</p>}
-        </div><div className="text-right"><span className={`inline-block rounded-full px-2.5 py-1 text-xs ${seatCount(section.open_seats) === 0 ? "bg-[#f5e9e5] font-semibold text-[#8f4538]" : "bg-[#f1efe9] text-[#68716e]"}`}>{seatText(section.open_seats, t)}</span>{formatSeatReadTime(section.seatCheckedAt, language) && <p className="mt-1 text-[11px] text-[#858d89]">{t.seatReadAt}: {formatSeatReadTime(section.seatCheckedAt, language)}</p>}</div></div>
+        {section.instructorRatings.length > 0 && <p className="mt-2 text-xs text-[#646c68]">{section.instructorRatings.map((item) => item.name + (item.averageRating === null ? "" : " · " + item.averageRating.toFixed(2) + " / 5")).join(" · ")}</p>}
+        </div><div className="text-right"><span className={`inline-block rounded-full px-2.5 py-1 text-xs ${seatCount(section.open_seats) === 0 ? "bg-[#f5e9e5] font-semibold text-[#8f4538]" : "bg-[#f1efe9] text-[#5d6561]"}`}>{seatText(section.open_seats, t)}</span>{formatSeatReadTime(section.seatCheckedAt, language) && <p className="mt-1 text-[11px] text-[#646c68]">{t.seatReadAt}: {formatSeatReadTime(section.seatCheckedAt, language)}</p>}</div></div>
         <SectionSwap key={`${requestKey}:${prefsKey}:${chosen.selectedSections.map((item) => item.section_id).join("|")}`} section={section} language={language} request={{ ...scheduleRequest, selectedSectionIds: chosen.selectedSections.map((item) => item.section_id) }} disabled={loading || !upToDate || chosenMissing.length > 0} forceOpen={false} onApply={(option) => applySwap(option, section.course_id)} />
         </article>)}</div>
-        <p className="mt-3 text-xs leading-5 text-[#858d89]">{t.seatReadHint}</p>
+        <p className="mt-3 text-xs leading-5 text-[#646c68]">{t.seatReadHint}</p>
         <RegistrationChecklist option={chosen} others={options.filter((option) => option !== chosen)} missingCourseIds={chosenMissing} language={language} termName={termName} />
       </div>}
     </div>}
