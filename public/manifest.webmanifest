@@ -1,0 +1,19 @@
+{
+  "name": "TerpPlan · UMD course & schedule planner",
+  "short_name": "TerpPlan",
+  "description": "Your UMD class week, with building map links, even without internet. Plan courses and schedules on terpplan.com.",
+  "start_url": "/week?source=home-screen",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f3ef",
+  "theme_color": "#273c38",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "My week", "url": "/week?source=home-screen", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Plan courses", "url": "/", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

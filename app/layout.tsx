@@ -1,4 +1,5 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import ServiceWorker from "@/app/components/service-worker";
 import { CLOUDFLARE_ANALYTICS_TOKEN, SITE_URL, analyticsEnabled } from "@/lib/site-config";
 import "./globals.css";
 
@@ -10,6 +11,9 @@ export const metadata: Metadata = {
   title,
   description,
   applicationName: "TerpPlan",
+  // Home-screen install ("My week" opens offline); see public/manifest.webmanifest and public/sw.js.
+  manifest: "/manifest.webmanifest",
+  appleWebApp: { capable: true, title: "TerpPlan", statusBarStyle: "default" },
   alternates: { canonical: "/" },
   openGraph: {
     type: "website",
@@ -39,6 +43,8 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = { themeColor: "#273c38" };
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -48,6 +54,7 @@ export default function RootLayout({
     <html lang="en">
       <body className="antialiased">
         {children}
+        <ServiceWorker />
         {analyticsEnabled && (
           <script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon={JSON.stringify({ token: CLOUDFLARE_ANALYTICS_TOKEN })} />
         )}

@@ -14,6 +14,7 @@ import { buildingFor, mapsUrl, tightWalks } from "@/lib/campus-walk";
 import { optionHighlights } from "@/lib/option-highlights";
 import { planKey } from "@/lib/plan-key";
 import { sharePath } from "@/lib/shared-schedule";
+import { weekFromSections, writeMyWeek } from "@/lib/my-week";
 import { anonymousBusyBlocks, type BusyBlock } from "@/lib/personal-schedule";
 import type { ScheduleOption, ScheduledSection, PlanDiagnosis, PlanRepair } from "@/lib/planner";
 import { PersonalSchedule, ScheduleRecovery, SectionSwap } from "@/app/components/schedule-tools";
@@ -56,7 +57,7 @@ const copy = {
     onlyInstructors: "Only", minutes: "min", credits: "credits", credit: "credit", lecture: "Lecture", discussion: "Discussion", lab: "Lab",
     // Short forms for the narrow timetable blocks.
     lectureShort: "LEC", discussionShort: "DIS", labShort: "LAB",
-    select: "View this schedule", calendar: "Weekly timetable", unknown: "Times to confirm", noUnknown: "All meeting times are listed.", reportSchedule: "Something wrong in this schedule (a time, room or map link)? Report it",
+    select: "View this schedule", calendar: "Weekly timetable", unknown: "Times to confirm", noUnknown: "All meeting times are listed.", useWeek: "Use as my week", weekSaved: "Saved. Open My week →", weekHint: "My week lists each day's classes with building map links and works without internet. You can add it to your phone's home screen.", reportSchedule: "Something wrong in this schedule (a time, room or map link)? Report it",
     noOptions: "No conflict-free schedule was found. Remove a preference or course and try again.",
     fit: "Preferred-window fit", warning: "Some meeting times are missing, so those sections cannot be fully checked.",
     loadError: "Schedule options could not be generated. Please try again.", invalidWindow: "Enter both ends of the preferred window, with the start before the end.", back: "← Back to course search",
@@ -98,7 +99,7 @@ const copy = {
     pinnedNote: "你指定的班次即使已满或属于 FC，也会保留在方案里。",
     onlyInstructors: "只排", minutes: "分钟", credits: "学分", credit: "学分", lecture: "讲课", discussion: "讨论课", lab: "实验课",
     lectureShort: "讲课", discussionShort: "讨论课", labShort: "实验课",
-    select: "查看此方案", calendar: "每周课表", unknown: "需要确认的时间", noUnknown: "所有班次均列出了上课时间。", reportSchedule: "课表里有信息不对（时间、教室或地图链接）？告诉我们",
+    select: "查看此方案", calendar: "每周课表", unknown: "需要确认的时间", noUnknown: "所有班次均列出了上课时间。", useWeek: "设为我的一周", weekSaved: "已保存，打开“我的一周” →", weekHint: "“我的一周”按天列出每节课和楼的地图链接，没有网络也能看，可以添加到手机主屏幕。", reportSchedule: "课表里有信息不对（时间、教室或地图链接）？告诉我们",
     noOptions: "没有找到无冲突方案。可以移除一项偏好或课程后重试。",
     fit: "符合时间偏好的比例", warning: "部分班次时间缺失，无法完整验证这些课程是否冲突。",
     loadError: "暂时无法生成排课方案，请重试。", invalidWindow: "请填写完整的偏好时间段，并确保开始时间早于结束时间。", back: "← 返回找课",
@@ -408,6 +409,8 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
   const [error, setError] = useState("");
   const [shareUrl, setShareUrl] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
+  // Which option was last saved as "My week", so the button can say so until another option is chosen.
+  const [weekSavedFor, setWeekSavedFor] = useState("");
   // This panel only mounts after the page has loaded in the browser, so it can read saved preferences directly.
   const [savedPreferences] = useState(() => readSavedState().preferences);
   const [excludedDays, setExcludedDays] = useState<string[]>(savedPreferences?.excludedDays ?? []);
@@ -600,6 +603,10 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
           <div className="flex flex-wrap items-center gap-2 sm:gap-3"><button type="button" onClick={() => void shareSchedule()} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]">{shareCopied ? t.shareCopied : t.shareSchedule}</button><p className="w-full text-[11px] leading-5 text-[#646c68] sm:w-auto sm:min-w-0 sm:flex-1">{t.shareHint}</p></div>
           {shareUrl && <div className="mt-3"><label htmlFor="share-schedule-url" className="text-[11px] font-medium text-[#5d6561]">{shareCopied ? t.shareReady : t.shareCopyFailed}</label><input id="share-schedule-url" readOnly value={shareUrl} onFocus={(event) => event.target.select()} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-[#fbfaf8] px-3 py-2 text-xs text-[#273c38]" /></div>}
         </div>
+        {(() => {
+          const weekKey = requestKey + "|" + chosen.selectedSections.map((section) => section.section_id).join(",");
+          return <div className="mb-3 rounded-xl border border-[#e3e0d8] bg-white p-3 sm:p-4"><div className="flex flex-wrap items-center gap-2 sm:gap-3"><button type="button" onClick={() => { if (writeMyWeek(weekFromSections(chosen.selectedSections, term, termName))) setWeekSavedFor(weekKey); }} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]">{weekSavedFor === weekKey ? "✓ " : ""}{t.useWeek}</button>{weekSavedFor === weekKey ? <a href="/week" className="text-xs font-semibold text-[#a34a39] hover:underline">{t.weekSaved}</a> : <p className="w-full text-[11px] leading-5 text-[#646c68] sm:w-auto sm:min-w-0 sm:flex-1">{t.weekHint}</p>}</div></div>;
+        })()}
         <p className="mb-2 text-xs leading-5 text-[#646c68]">{language === "zh" ? "点击课表中的课程可查看备选班次。个人日程仅显示在这里，不包含在分享链接或日历导出中。" : "Click a class to review alternative sections. Personal commitments appear here and are excluded from share links and calendar exports."}</p>
         <WeeklyCalendar sections={chosen.selectedSections} language={language} busyBlocks={busyBlocks} onSelectSection={(section) => { const control = document.getElementById(`section-swap-${section.section_id}`); control?.scrollIntoView({ block: "center", behavior: "smooth" }); control?.click(); }} />
         <a href={reportMailto({ term: termName, sectionIds: chosen.selectedSections.map((section) => section.section_id), language })} className="mt-2 inline-block text-xs font-medium text-[#a34a39] hover:underline">{t.reportSchedule} ↗</a>
