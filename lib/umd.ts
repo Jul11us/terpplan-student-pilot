@@ -278,3 +278,20 @@ export function courseIdIsValid(value: string): boolean {
 }
 
 export { DEFAULT_TERM };
+
+// Sections of several courses on the Testudo term, 25 courses per request, by course id. A course with no
+// sections block is offered without sections this term (an empty list).
+export async function getTestudoSectionsBatch(term: string, courseIds: string[]) {
+  const result = new Map<string, UmdSection[]>();
+  for (let start = 0; start < courseIds.length; start += 25) {
+    const ids = courseIds.slice(start, start + 25);
+    const html = await testudoHtml(`/${encodeURIComponent(term)}/sections?courseIds=${ids.join(",")}`);
+    const parts = new Map(html.split(/<div id="(?=[A-Z]{4}\d{3}[A-Z]?" class="course-sections")/).slice(1)
+      .map((part) => [part.slice(0, part.indexOf('"')), part] as const));
+    for (const id of ids) {
+      const part = parts.get(id);
+      result.set(id, part ? parseTestudoSections(part, id) : []);
+    }
+  }
+  return result;
+}

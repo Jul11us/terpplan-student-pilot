@@ -30,3 +30,17 @@ test("stored weeks are checked and the weekday follows the device's calendar", (
   assert.equal(dayOf(new Date(2026, 9, 5)), "Mon");
   assert.equal(dayOf(new Date(2026, 9, 4)), "Sun");
 });
+
+test("a saved week notices a new room or time, and a section that is gone", async () => {
+  const { applyWeekChanges, compareWeek } = await import("../lib/my-week.ts");
+  const week = weekFromSections(sections, "202701", "Spring 2027");
+  const now = (list) => weekFromSections(list, "202701", "Spring 2027").classes;
+  const moved = [{ ...sections[0], meetings: [{ ...sections[0].meetings[0], room: "0215" }, sections[0].meetings[1]] }];
+  const current = { "CMSC216-0104": now(moved), "ENGL101-0309": now([sections[1]]) };
+  assert.deepEqual(compareWeek(week, current).map((change) => change.sectionId), ["CMSC216-0104"]);
+  assert.deepEqual(compareWeek(week, { "ENGL101-0309": null }).map((change) => [change.sectionId, change.after]), [["ENGL101-0309", null]]);
+  assert.deepEqual(compareWeek(week, {}), []);
+  const updated = applyWeekChanges(week, compareWeek(week, current));
+  assert.deepEqual(updated.classes.filter((item) => item.sectionId === "CMSC216-0104").map((item) => item.room).sort(), ["0215", "3118"]);
+  assert.equal(compareWeek(updated, current).length, 0);
+});

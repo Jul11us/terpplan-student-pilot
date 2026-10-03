@@ -256,6 +256,8 @@ export default function Home() {
   const [transferOffer, setTransferOffer] = useState<Transfer | "invalid" | null>(null);
   const [transferLink, setTransferLink] = useState("");
   const [transferCopied, setTransferCopied] = useState(false);
+  // A course named in the link (/?course=CMSC131, from the instructor page), opened once the page is restored.
+  const linkedCourseRef = useRef("");
   const termRef = useRef("");
   const applyingOtherTabRef = useRef(false);
   const [watches, setWatches] = useState<Watch[]>([]);
@@ -341,6 +343,11 @@ export default function Home() {
         window.history.replaceState(null, "", window.location.pathname);
       }
       readTransferLink();
+      const linked = (new URLSearchParams(window.location.search).get("course") ?? "").trim().toUpperCase();
+      if (/^[A-Z]{4}\d{3}[A-Z0-9]*$/.test(linked)) {
+        linkedCourseRef.current = linked;
+        window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+      }
       setRestored(true);
       fetch("/api/terms").then(async (response) => {
         if (!response.ok) throw new Error("terms");
@@ -471,6 +478,14 @@ export default function Home() {
       // The search effect still runs for the new query and shows its own error.
     }
   };
+  useEffect(() => {
+    if (!restored || !linkedCourseRef.current) return;
+    const courseId = linkedCourseRef.current;
+    linkedCourseRef.current = "";
+    void jumpToCourse(courseId);
+    // Runs once, when the page is restored; jumpToCourse is recreated every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restored]);
 
   const courseInstructors = [...new Set(sections.flatMap((section) => section.instructors ?? []))].sort((a, b) => a.localeCompare(b));
   const keptInstructors = courseInstructors.filter((name) => !excludedInstructors.includes(name));
@@ -870,7 +885,7 @@ export default function Home() {
               return <article key={id} className={`rounded-xl border bg-white p-4 ${pinned ? "border-[#536d64] ring-1 ring-[#536d64]/20" : excluded ? "border-[#e7e4dc] opacity-70" : "border-[#e7e4dc]"}`}>
                 <div className="section-comparison-grid">
                   <div className="min-w-0"><h3 className="text-sm font-semibold">{id}{/-FC[A-Z0-9]*$/.test(id) && <span className="ml-2 rounded-full bg-[#f3ecdc] px-2 py-0.5 align-middle text-[10px] font-semibold text-[#7a5a24]">{t.fcOnly}</span>}</h3><div className="mt-2 space-y-1.5 text-xs leading-5 text-[#525d59]">{section.meetings?.length ? section.meetings.map((meeting, index) => <p key={index}>{displayTime(meeting, language)}</p>) : <p>{formatMeetings(section.meetings)}</p>}</div></div>
-                  <div className="min-w-0">{section.instructors?.length ? <SectionProfessors compact panelTargetId={`reviews-${id}`} names={section.instructors} courseId={selected?.course_id ?? ""} ratings={professorRatings} ratingsLoading={ratingsLoading} language={language} /> : <p className="text-xs text-[#646c68]">{language === "en" ? "Instructor TBA" : "教师待定"}</p>}</div>
+                  <div className="min-w-0">{section.instructors?.length ? <SectionProfessors compact term={term} panelTargetId={`reviews-${id}`} names={section.instructors} courseId={selected?.course_id ?? ""} ratings={professorRatings} ratingsLoading={ratingsLoading} language={language} /> : <p className="text-xs text-[#646c68]">{language === "en" ? "Instructor TBA" : "教师待定"}</p>}</div>
                   <div className="min-w-0">{seatsOf(section)}</div>
                 </div>
                 {/* Student comments open here, across the whole card, rather than in the narrow instructor column. */}
@@ -912,7 +927,7 @@ export default function Home() {
                 return <article key={group.key} className="rounded-xl border border-[#e7e4dc] bg-white p-4">
                   <div className="section-comparison-grid">
                     <div className="min-w-0"><h3 className="text-sm font-semibold">{firstId} – {lastNumber} <span className="ml-1 rounded-full bg-[#f1efe9] px-2 py-0.5 align-middle text-[10px] font-semibold text-[#5d6561]">{t.groupSections.replace("{n}", String(ids.length))}</span></h3>{group.shared.length > 0 && <div className="mt-2 text-xs leading-5 text-[#525d59]"><p className="text-[11px] font-medium text-[#646c68]">{t.groupShared}</p>{group.shared.map((meeting, index) => <p key={index}>{displayTime(meeting, language)}</p>)}</div>}</div>
-                    <div className="min-w-0"><SectionProfessors compact panelTargetId={`reviews-${firstId}`} names={instructors} courseId={selected?.course_id ?? ""} ratings={professorRatings} ratingsLoading={ratingsLoading} language={language} /></div>
+                    <div className="min-w-0"><SectionProfessors compact term={term} panelTargetId={`reviews-${firstId}`} names={instructors} courseId={selected?.course_id ?? ""} ratings={professorRatings} ratingsLoading={ratingsLoading} language={language} /></div>
                     <div className="min-w-0">{known.length > 0 && <><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${openTotal > 0 ? "bg-[#eaf4ec] text-[#367047]" : "bg-[#f5e9e5] text-[#8f4538]"}`}>{openTotal > 0 && capacityTotal !== null ? t.openOf.replace("{n}", String(openTotal)).replace("{total}", String(capacityTotal)) : seatLabel(openTotal)}</span><p className="mt-1 text-[11px] text-[#646c68]">{t.groupOpenIn.replace("{n}", String(ids.length))}</p></>}</div>
                   </div>
                   <div id={`reviews-${firstId}`} />

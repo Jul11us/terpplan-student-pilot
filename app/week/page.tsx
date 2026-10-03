@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { buildingFor, mapsUrl } from "@/lib/campus-walk";
-import { classesOn, dayOf, readMyWeek, WEEK_DAYS, type MyWeek, type WeekClass } from "@/lib/my-week";
+import { applyWeekChanges, classesOn, compareWeek, dayOf, readMyWeek, weekFromSections, WEEK_DAYS, writeMyWeek, type MyWeek, type WeekChange, type WeekClass } from "@/lib/my-week";
 import { roomLabel } from "@/lib/room";
+import type { MeetingTime } from "@/lib/meeting-time";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 
 type Language = "en" | "zh";
@@ -19,6 +20,7 @@ const copy = {
     note: "Times and rooms are as they were when you saved. If a section changes, check Testudo and save your week again.",
     installTitle: "Keep it on your home screen",
     install: "iPhone (Safari): Share → Add to Home Screen. Android (Chrome): ⋮ → Add to Home screen or Install app. After one visit it opens without internet too.",
+    changesTitle: "Your sections changed since you saved", changedWas: "Was", changedNow: "Now", gone: "No longer listed this term. Check Testudo.", update: "Update my week", updated: "My week is up to date with the Schedule of Classes.", testudo: "Open Testudo",
     days: { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday" },
   },
   zh: {
@@ -30,6 +32,7 @@ const copy = {
     note: "时间和教室是保存时的信息。如果班次有变化，请以 Testudo 为准，并重新保存。",
     installTitle: "放到手机主屏幕",
     install: "iPhone（Safari）：分享 → 添加到主屏幕。Android（Chrome）：⋮ → 添加到主屏幕或安装应用。打开过一次之后，没有网络也能打开。",
+    changesTitle: "保存之后，这些班次有变化", changedWas: "原来", changedNow: "现在", gone: "本学期已经找不到这个班次，请到 Testudo 确认。", update: "更新我的一周", updated: "已按最新的课程表更新。", testudo: "打开 Testudo",
     days: { Mon: "周一", Tue: "周二", Wed: "周三", Thu: "周四", Fri: "周五", Sat: "周六", Sun: "周日" },
   },
 } as const;
@@ -56,6 +59,8 @@ export default function MyWeekPage() {
   const [language, setLanguage] = useState<Language>("en");
   const [week, setWeek] = useState<MyWeek | null | undefined>(undefined);
   const [now, setNow] = useState(() => new Date());
+  const [changes, setChanges] = useState<WeekChange[]>([]);
+  const [justUpdated, setJustUpdated] = useState(false);
   useEffect(() => {
     const load = window.setTimeout(() => {
       setLanguage(readSavedState().language ?? "en");
@@ -65,6 +70,34 @@ export default function MyWeekPage() {
     const tick = window.setInterval(() => setNow(new Date()), 30_000);
     return () => { window.clearTimeout(load); window.clearInterval(tick); };
   }, []);
+  useEffect(() => {
+    if (!week || !navigator.onLine) return;
+    let cancelled = false;
+    const courses = [...new Set(week.classes.map((item) => item.courseId))];
+    void Promise.all(courses.map(async (courseId) => {
+      try {
+        const response = await fetch(`/api/course?id=${encodeURIComponent(courseId)}&term=${encodeURIComponent(week.term)}`);
+        if (!response.ok) return [];
+        const payload = await response.json() as { sections?: Array<{ section_id?: string; number?: string; meetings?: (MeetingTime & { classtype?: string | null })[] }> };
+        const listed = payload.sections ?? [];
+        const saved = [...new Set(week.classes.filter((item) => item.courseId === courseId).map((item) => item.sectionId))];
+        return saved.map((sectionId) => {
+          const match = listed.find((section) => (section.section_id ?? `${courseId}-${section.number}`) === sectionId);
+          const title = week.classes.find((item) => item.sectionId === sectionId)?.courseTitle ?? courseId;
+          return [sectionId, match ? weekFromSections([{ course_id: courseId, course_title: title, section_id: sectionId, meetings: match.meetings }], week.term, week.termName).classes : null] as const;
+        });
+      } catch {
+        return []; // Offline or the lookup failed: this course is simply not checked.
+      }
+    })).then((entries) => { if (!cancelled) setChanges(compareWeek(week, Object.fromEntries(entries.flat()))); });
+    return () => { cancelled = true; };
+  }, [week]);
+  const updateWeek = () => {
+    if (!week) return;
+    const next = applyWeekChanges(week, changes);
+    if (writeMyWeek(next)) { setWeek(next); setJustUpdated(true); }
+  };
+
   const t = copy[language];
   const switchLanguage = () => { const next = language === "en" ? "zh" : "en"; setLanguage(next); writeSavedState({ language: next }); };
 
@@ -85,6 +118,16 @@ export default function MyWeekPage() {
       <h1 className="font-serif text-3xl">{t.title}</h1>
       {week && <p className="mt-1 text-xs text-[#5d6561]">{t.saved.replace("{term}", week.termName).replace("{date}", savedDate)}</p>}
       {week === null && <div className="mt-5 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5"><p className="text-sm leading-6 text-[#48534f]">{t.empty}</p><Link href="/" className="mt-3 inline-block rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white">{t.emptyButton}</Link></div>}
+      {week && changes.length > 0 && <section role="status" className="mt-5 rounded-2xl border border-[#ead8b5] bg-[#fff8e8] p-4 text-[#745424]">
+        <h2 className="text-sm font-semibold">⚠ {t.changesTitle}</h2>
+        <ul className="mt-2 space-y-2 text-xs leading-5">{changes.map((change) => <li key={change.sectionId}>
+          <p className="font-semibold text-[#5a4219]">{change.sectionId}</p>
+          <p><span className="font-medium">{t.changedWas}:</span> {change.before.map((item) => `${item.days.map((day) => t.days[day as keyof typeof t.days].slice(0, 3)).join(" ")} ${clock(item.start)}–${clock(item.end)} · ${roomLabel(item.building, item.room, language)}`).join("; ")}</p>
+          {change.after ? <p><span className="font-medium">{t.changedNow}:</span> {change.after.map((item) => `${item.days.map((day) => t.days[day as keyof typeof t.days].slice(0, 3)).join(" ")} ${clock(item.start)}–${clock(item.end)} · ${roomLabel(item.building, item.room, language)}`).join("; ")}</p> : <p className="font-medium">{t.gone}</p>}
+        </li>)}</ul>
+        <div className="mt-3 flex flex-wrap gap-2">{changes.some((change) => change.after) && <button type="button" onClick={updateWeek} className="rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white">{t.update}</button>}<a href="https://app.testudo.umd.edu/" target="_blank" rel="noopener noreferrer" className="rounded-lg border border-[#d9c79f] bg-white px-3 py-2 text-xs font-semibold text-[#745424]">{t.testudo} ↗</a></div>
+      </section>}
+      {week && justUpdated && !changes.length && <p role="status" className="mt-5 rounded-xl bg-[#edf3ef] px-4 py-3 text-xs text-[#315c43]">✓ {t.updated}</p>}
       {week && <>
         <section aria-label={t.today} className="mt-5 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-4">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-[#5d6561]">{t.today} · {t.days[today]}</h2>

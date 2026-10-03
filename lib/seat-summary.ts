@@ -4,7 +4,7 @@
 // planner skips them unless the student opts in.
 
 import { isFreshmanConnection } from "@/lib/planner";
-import { isTestudoTerm, parseCount, parseTestudoSections, testudoHtml } from "@/lib/umd";
+import { getTestudoSectionsBatch, isTestudoTerm, parseCount } from "@/lib/umd";
 
 export type SeatSummary = {
   sections: number; // sections other than Freshman Connection
@@ -14,7 +14,6 @@ export type SeatSummary = {
 };
 
 const CACHE_MS = 60_000;
-const BATCH = 25;
 const cache = new Map<string, { expiresAt: number; summary: SeatSummary }>();
 
 export function summarizeSeats(sections: Array<{ section_id?: string; number?: string; open_seats?: string | number | null }>): SeatSummary {
@@ -40,19 +39,12 @@ export async function seatSummaries(term: string, courseIds: string[]): Promise<
     if (hit && hit.expiresAt > now) result[id] = hit.summary;
     else missing.push(id);
   }
-  for (let start = 0; start < missing.length; start += BATCH) {
-    const ids = missing.slice(start, start + BATCH);
-    const html = await testudoHtml(`/${encodeURIComponent(term)}/sections?courseIds=${ids.join(",")}`);
-    const parts = new Map(html.split(/<div id="(?=[A-Z]{4}\d{3}[A-Z]?" class="course-sections")/).slice(1)
-      .map((part) => [part.slice(0, part.indexOf('"')), part] as const));
-    for (const id of ids) {
-      const part = parts.get(id);
-      // A course with no sections block has no sections offered this term.
-      const summary = summarizeSeats(part ? parseTestudoSections(part, id) : []);
-      result[id] = summary;
-      if (cache.size >= 2000) cache.delete(cache.keys().next().value!);
-      cache.set(`${term}|${id}`, { expiresAt: now + CACHE_MS, summary });
-    }
+  const sections = await getTestudoSectionsBatch(term, missing);
+  for (const id of missing) {
+    const summary = summarizeSeats(sections.get(id) ?? []);
+    result[id] = summary;
+    if (cache.size >= 2000) cache.delete(cache.keys().next().value!);
+    cache.set(`${term}|${id}`, { expiresAt: now + CACHE_MS, summary });
   }
   return result;
 }

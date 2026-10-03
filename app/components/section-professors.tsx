@@ -14,6 +14,8 @@ type Props = {
   // Id of an element (full width, below the section row) to show the open comments in, instead of the
   // narrow instructor column.
   panelTargetId?: string;
+  // When given, each name links to the instructor's page for this term.
+  term?: string;
 };
 
 const labels = {
@@ -74,7 +76,7 @@ function keyFor(name: string) {
   return name.trim().replace(/\s+/g, " ").toLocaleLowerCase("en-US");
 }
 
-export default function SectionProfessors({ names, courseId, ratings, language, ratingsLoading, compact = false, panelTargetId }: Props) {
+export default function SectionProfessors({ names, courseId, ratings, language, ratingsLoading, compact = false, panelTargetId, term }: Props) {
   const t = labels[language];
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
@@ -126,7 +128,9 @@ export default function SectionProfessors({ names, courseId, ratings, language, 
         return (
           <div key={name} className="text-xs">
             <div className={compact ? "flex flex-col items-start gap-1.5" : "flex flex-wrap items-center gap-x-2 gap-y-1"}>
-              <span className={`font-medium text-[#525d59] ${compact ? "text-sm" : ""}`}>{name}</span>
+              {term && !isTba
+                ? <a href={`/instructor?${new URLSearchParams({ name: name.trim(), term, course: courseId })}`} title={language === "zh" ? "这位老师本学期的所有班次" : "All of this instructor's sections this term"} className={`font-medium text-[#525d59] underline decoration-[#cfcac0] underline-offset-2 hover:text-[#a34a39] ${compact ? "text-sm" : ""}`}>{name}</a>
+                : <span className={`font-medium text-[#525d59] ${compact ? "text-sm" : ""}`}>{name}</span>}
               {isTba ? null : rating?.averageRating !== null && rating?.averageRating !== undefined ? (
                 <span className="rounded-full bg-[#f5efe2] px-2 py-1 text-[#795f2d]">
                   {t.average}: {rating.averageRating.toFixed(2)} / 5

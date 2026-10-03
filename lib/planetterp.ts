@@ -261,3 +261,24 @@ export async function getProfessorGpa(name: string, courseId: string): Promise<G
     return null;
   }
 }
+
+// The instructor's summary plus every course PlanetTerp lists them for, without repeats.
+// null when PlanetTerp has no such instructor.
+export async function getProfessorProfile(name: string): Promise<(ProfessorSummary & { courses: string[] }) | null> {
+  const normalized = name.trim();
+  if (!normalized || isInstructorTba(normalized)) return null;
+  const professor = await fetchProfessor(normalized, false);
+  if (!professor) return null;
+  const courses = Array.isArray(professor.courses) ? [...new Set(professor.courses.map((course) => String(course).replace(/\s+/g, "").toUpperCase()))] : [];
+  return { ...summary(normalized, professor), courses };
+}
+
+// Average GPA across every course the instructor has taught (PlanetTerp grade data).
+export async function getProfessorOverallGpa(name: string): Promise<GpaSummary | null> {
+  try {
+    const overall = averageGpa(await fetchGrades({ professor: name.trim() }));
+    return overall ? { ...overall, scope: "all" } : null;
+  } catch {
+    return null;
+  }
+}

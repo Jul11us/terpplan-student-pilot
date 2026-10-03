@@ -91,3 +91,32 @@ export function classesOn(week: MyWeek, day: string) {
 export function dayOf(date: Date) {
   return WEEK_DAYS[(date.getDay() + 6) % 7];
 }
+
+// A saved section whose meetings are no longer what the Schedule of Classes lists: a new time or room, or
+// (after === null) the section is gone.
+export type WeekChange = { sectionId: string; courseId: string; before: WeekClass[]; after: WeekClass[] | null };
+
+const meetingKey = (item: WeekClass) => [item.days.join(""), item.start, item.end, (item.building ?? "").toUpperCase(), (item.room ?? "").toUpperCase()].join("|");
+
+// `current` holds each section's classes as listed now (built with weekFromSections), or null when the
+// section is no longer listed. Sections missing from `current` were not checked and are left out.
+export function compareWeek(week: MyWeek, current: Record<string, WeekClass[] | null>): WeekChange[] {
+  const saved = new Map<string, WeekClass[]>();
+  for (const item of week.classes) saved.set(item.sectionId, [...(saved.get(item.sectionId) ?? []), item]);
+  const changes: WeekChange[] = [];
+  for (const [sectionId, before] of saved) {
+    if (!(sectionId in current)) continue;
+    const after = current[sectionId];
+    const same = after !== null && after.length === before.length && before.map(meetingKey).sort().join(";") === after.map(meetingKey).sort().join(";");
+    if (!same) changes.push({ sectionId, courseId: before[0]!.courseId, before, after });
+  }
+  return changes;
+}
+
+// The week with each changed section's meetings replaced by the current ones (a section that is gone keeps
+// its old meetings, since the student still has to sort it out in Testudo).
+export function applyWeekChanges(week: MyWeek, changes: WeekChange[], now = new Date()): MyWeek {
+  const updated = new Map(changes.filter((change) => change.after).map((change) => [change.sectionId, change.after!]));
+  const classes = week.classes.filter((item) => !updated.has(item.sectionId)).concat([...updated.values()].flat());
+  return { ...week, classes, savedAt: now.toISOString() };
+}
