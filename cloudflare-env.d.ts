@@ -6,5 +6,7 @@ declare namespace Cloudflare {
     RESEND_API_KEY?: string;
     EMAIL_FROM?: string;
     WATCH_RUNNER_SECRET?: string;
+    // Comma-separated emails that may open /admin.
+    ADMIN_EMAILS?: string;
   }
 }
