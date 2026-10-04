@@ -3,6 +3,7 @@ import test from "node:test";
 import { generateOptions, applyRepair, replacementOptions } from "../lib/planner.ts";
 import { anonymousBusyBlocks, validBusyBlocks, validBuffer } from "../lib/personal-schedule.ts";
 import { readSavedState, writeSavedState, STORAGE_KEY } from "../lib/saved-state.ts";
+import { normalizeProfessorName } from "../lib/planetterp.ts";
 
 const meeting = (start, end, days = "Mon", classtype = "Lecture") => ({ days, start_time: start, end_time: end, classtype, building: "CSI", room: "1115" });
 const section = (id, start, end, extra = {}) => ({ section_id: id, open_seats: 4, instructors: [], meetings: [meeting(start, end)], ...extra });
@@ -306,4 +307,34 @@ test("a required section is kept even when it meets outside the chosen areas", (
   ], { pinnedSectionId: "ENGL101-0101" });
   const result = generateOptions([engl], {}, { campusAreas: ["engineering"] });
   assert.equal(result.options[0].selectedSections[0].section_id, "ENGL101-0101");
+});
+
+test("early classes cost points before the student's chosen time, or not at all when turned off", () => {
+  const eight = course("CMSC131", [section("CMSC131-0101", "08:00", "08:50")]);
+  const early = (preferences) => generateOptions([eight], {}, preferences).options[0].scoreParts.find((part) => part.key === "early");
+  assert.deepEqual([early({}).count, early({}).at], [1, "9am"]);
+  assert.equal(early({ earlyBefore: "08:00" }).count, 0);
+  assert.deepEqual([early({ earlyBefore: "08:30" }).count, early({ earlyBefore: "08:30" }).at], [1, "8:30am"]);
+  assert.equal(early({ earlyBefore: "off" }), undefined);
+  // The preference also orders sections within a course: with 8am fine, the 8am section is not pushed back.
+  const choice = course("MATH140", [section("MATH140-0101", "08:00", "08:50", { instructors: ["Ada Lovelace"] }), section("MATH140-0201", "13:00", "13:50", { instructors: ["Alan Turing"] })]);
+  // 4.0 at 8am against 3.6 at 1pm: the 0.7 early-class cost decides it.
+  const rated = (name, averageRating) => [normalizeProfessorName(name), { name, matched: true, averageRating, reviewCount: 10, status: "ok" }];
+  const ratings = Object.fromEntries([rated("Ada Lovelace", 4.0), rated("Alan Turing", 3.6)]);
+  assert.equal(generateOptions([choice], ratings, {}).options[0].selectedSections[0].section_id, "MATH140-0201", "9am default pushes the 8am section back");
+  assert.equal(generateOptions([choice], ratings, { earlyBefore: "off" }).options[0].selectedSections[0].section_id, "MATH140-0101");
+});
+
+test("a saved early-class time survives, and anything else falls back to the default", () => {
+  const values = new Map();
+  const previous = globalThis.window;
+  globalThis.window = { localStorage: { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) } };
+  try {
+    writeSavedState({ preferences: { excludedDays: [], earliestStart: "", earlyBefore: "08:00", windowStart: "", windowEnd: "", strictTime: false, openSeatsOnly: false, includeFreshmanConnection: false } });
+    assert.equal(readSavedState().preferences.earlyBefore, "08:00");
+    values.set(STORAGE_KEY, JSON.stringify({ preferences: { earlyBefore: "<script>" } }));
+    assert.equal(readSavedState().preferences.earlyBefore, "");
+  } finally {
+    if (previous === undefined) delete globalThis.window; else globalThis.window = previous;
+  }
 });
