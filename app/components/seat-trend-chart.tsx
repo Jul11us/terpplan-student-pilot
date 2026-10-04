@@ -128,7 +128,7 @@ export function SeatTrendChart({ trend, lang }: SeatTrendChartProps) {
         </div>
       </div>
 
-      <p className="text-xs text-[#646c68]">{lang === "zh" ? "末次读取：" : "Last observed: "}{snapshots[snapshots.length - 1].checkedAt.replace("T", " ").replace(".000Z", " UTC")}. {lang === "zh" ? "预测依据最近变化，至少需要一天的数据；不保证届时满员。" : "Estimates need at least a day of observations and assume the recent rate continues."}</p>
+      <p className="history-note">{lang === "zh" ? "末次读取：" : "Last observed: "}{snapshots[snapshots.length - 1].checkedAt.replace("T", " ").replace(".000Z", " UTC")}. {lang === "zh" ? "预测依据最近变化，至少需要一天的数据；不保证届时满员。" : "Estimates need at least a day of observations and assume the recent rate continues."}</p>
 
       <style jsx>{`
         .seat-trend-chart {
@@ -198,8 +198,14 @@ export function SeatTrendChart({ trend, lang }: SeatTrendChartProps) {
           display: flex;
           justify-content: space-between;
           font-size: 0.75rem;
-          color: #9ca3af;
+          color: #646c68;
           margin-top: 0.5rem;
+        }
+
+        .history-note {
+          font-size: 0.75rem;
+          color: #646c68;
+          margin-top: 0.75rem;
         }
 
         @media (prefers-color-scheme: dark) {
@@ -217,8 +223,9 @@ export function SeatTrendChart({ trend, lang }: SeatTrendChartProps) {
             color: #9ca3af;
           }
 
-          .chart-labels {
-            color: #6b7280;
+          .chart-labels,
+          .history-note {
+            color: #cbd5e1;
           }
         }
       `}</style>

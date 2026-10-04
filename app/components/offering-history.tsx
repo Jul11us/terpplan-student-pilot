@@ -49,7 +49,7 @@ export function OfferingHistory({ history, lang }: OfferingHistoryProps) {
           {t.pattern}: <strong>{patternLabel}</strong>
         </span>
       </div>
-      <p className="text-xs text-[#646c68]">{lang === "zh" ? "仅显示 TerpPlan 已读取的学期；不能据此保证未来开课。" : "Only semesters observed by TerpPlan are listed. Future offerings may differ."}</p>
+      <p className="history-note">{lang === "zh" ? "仅显示 TerpPlan 已读取的学期；不能据此保证未来开课。" : "Only semesters observed by TerpPlan are listed. Future offerings may differ."}</p>
 
       <div className="terms-list">
         <div className="terms-header">
@@ -135,6 +135,12 @@ export function OfferingHistory({ history, lang }: OfferingHistoryProps) {
           gap: 0.5rem;
         }
 
+        .history-note {
+          font-size: 0.75rem;
+          color: #646c68;
+          margin-bottom: 0.75rem;
+        }
+
         .terms-header {
           font-size: 0.75rem;
           font-weight: 600;
@@ -212,6 +218,10 @@ export function OfferingHistory({ history, lang }: OfferingHistoryProps) {
 
           .term-stats {
             color: #9ca3af;
+          }
+
+          .history-note {
+            color: #cbd5e1;
           }
         }
       `}</style>
