@@ -35,7 +35,54 @@ export function walkMinutes(from: Building, to: Building) {
   return Math.max(1, Math.ceil(meters(from, to) * PATH_FACTOR / METERS_PER_MINUTE));
 }
 
+// Named parts of campus, each as the point students would call its middle. A building belongs to the
+// area whose middle it is closest to, so the grouping follows the map instead of a hand-drawn list that
+// would have to be revisited every time a building is added to data/umd-buildings.json.
+// Each middle is the rough centre of that cluster of buildings rather than one landmark inside it, which
+// is what keeps the boundaries where the map puts them: Tydings reads as the mall, Atlantic as the science
+// buildings next to it, Knight Hall as south campus near Education.
+export const CAMPUS_AREAS = {
+  engineering: { lat: 38.99000, lng: -76.93900 },  // Engineering and the science buildings, east of the mall
+  north: { lat: 38.99250, lng: -76.94650 },        // North campus: the hill, dining and the recreation centre
+  mall: { lat: 38.98580, lng: -76.94350 },         // McKeldin Mall and the libraries
+  south: { lat: 38.98380, lng: -76.94480 },        // South campus: South Hill, business and architecture
+  west: { lat: 38.98700, lng: -76.95420 },         // The west edge along Adelphi Road (UMUC, the golf course)
+} as const;
+
+export type CampusArea = keyof typeof CAMPUS_AREAS;
+
+export const CAMPUS_AREA_KEYS = Object.keys(CAMPUS_AREAS) as CampusArea[];
+
+// Anything more than this from every area's middle is somewhere else entirely (the FDA building in
+// Beltsville, for one), and calling it part of a campus area would make an area filter lie.
+const AREA_RADIUS_METERS = 900;
+
+export function areaFor(code: string | null | undefined): CampusArea | null {
+  const building = buildingFor(code);
+  if (!building) return null;
+  let best: { area: CampusArea; distance: number } | null = null;
+  for (const area of CAMPUS_AREA_KEYS) {
+    const distance = meters(building, { ...CAMPUS_AREAS[area], name: area, map: area });
+    if (!best || distance < best.distance) best = { area, distance };
+  }
+  return best && best.distance <= AREA_RADIUS_METERS ? best.area : null;
+}
+
 type WalkSection = { course_id: string; section_id: string; meetings?: MeetingTime[] | null };
+
+// The areas a schedule meets in, in the order the areas are listed above. Online and TBA meetings have
+// no place on campus, so they add nothing.
+export function sectionAreas(sections: WalkSection[]): CampusArea[] {
+  const found = new Set<CampusArea>();
+  for (const section of sections) {
+    for (const meeting of section.meetings ?? []) {
+      if (isAsyncOnline(meeting)) continue;
+      const area = areaFor(meeting.building);
+      if (area) found.add(area);
+    }
+  }
+  return CAMPUS_AREA_KEYS.filter((area) => found.has(area));
+}
 
 export type TightWalk = {
   day: string;
@@ -45,10 +92,12 @@ export type TightWalk = {
   walkMinutes: number;
 };
 
-// Consecutive classes on the same day whose gap is shorter than the estimated walk between their buildings.
-// Meetings without a known time or building (TBA, online) are skipped rather than guessed.
-export function tightWalks(sections: WalkSection[]): TightWalk[] {
-  const byDay = new Map<string, Array<{ sectionId: string; building: Building & { code: string }; start: number; end: number }>>();
+type PlacedMeeting = { sectionId: string; building: Building & { code: string }; start: number; end: number };
+
+// Each day's classes in time order, keeping only meetings with both a known time and a known building,
+// which are the only ones a walk can be measured between.
+function placedByDay(sections: WalkSection[]) {
+  const byDay = new Map<string, PlacedMeeting[]>();
   for (const section of sections) {
     for (const meeting of section.meetings ?? []) {
       if (isAsyncOnline(meeting)) continue;
@@ -62,9 +111,31 @@ export function tightWalks(sections: WalkSection[]): TightWalk[] {
       }
     }
   }
+  for (const list of byDay.values()) list.sort((a, b) => a.start - b.start || a.end - b.end);
+  return byDay;
+}
+
+// Estimated minutes spent walking between classes over a week: every move from one building to the next,
+// counted once for each day it happens. Walks within one building are zero, and a day with one class has
+// no walk at all. This measures the whole week's legwork, where tightWalks only finds the rushed moves.
+export function weeklyWalkMinutes(sections: WalkSection[]) {
+  let total = 0;
+  for (const list of placedByDay(sections).values()) {
+    for (let index = 1; index < list.length; index += 1) {
+      const from = list[index - 1], to = list[index];
+      if (from.building.code === to.building.code) continue;
+      total += walkMinutes(from.building, to.building);
+    }
+  }
+  return total;
+}
+
+// Consecutive classes on the same day whose gap is shorter than the estimated walk between their buildings.
+// Meetings without a known time or building (TBA, online) are skipped rather than guessed.
+export function tightWalks(sections: WalkSection[]): TightWalk[] {
+  const byDay = placedByDay(sections);
   const result: TightWalk[] = [];
   for (const [day, list] of byDay) {
-    list.sort((a, b) => a.start - b.start || a.end - b.end);
     for (let index = 1; index < list.length; index += 1) {
       const from = list[index - 1], to = list[index];
       const gap = to.start - from.end;

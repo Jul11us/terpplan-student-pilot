@@ -65,6 +65,7 @@ function diagnosisText(item: PlanDiagnosis, blocks: BusyBlock[], language: Langu
     case "busyBlock": return zh ? `${courses} 与“${event?.label || "固定日程"}”${event ? `（${event.start}–${event.end}）` : ""}重叠。` : `${courses} overlaps ${event?.label || "a commitment"}${event ? ` (${event.start}–${event.end})` : ""}.`;
     case "fullSections": return zh ? `${courses} 的已满班次被“只使用有空位”排除。` : `${courses}: full sections are excluded by your open-seat filter.`;
     case "fcSections": return zh ? `${courses} 有 FC 班次，需要参加 Freshman Connection 才能选择。` : `${courses} has FC sections reserved for Freshman Connection students.`;
+    case "campusAreas": return zh ? `${courses} 的班次都在你选择的校园区域之外。` : `${courses}: its sections meet outside the parts of campus you chose.`;
     case "sectionFilters": return zh ? `${courses} 没有符合指定班次、排除班次或教师筛选的班次。` : `${courses}: no section matches your required section, exclusions or instructor choices.`;
     case "courseConflict": return zh ? `${courses} 的可选班次全部互相冲突，例如 ${item.sectionIds?.join(" / ")}。` : `Every eligible combination of ${courses} overlaps, including ${item.sectionIds?.join(" / ")}.`;
     case "bufferConflict": return zh ? `${courses} 的所有组合都会重叠或无法留出要求的课间缓冲，例如 ${item.sectionIds?.join(" / ")}。` : `Every combination of ${courses} overlaps or leaves less than your required class buffer, including ${item.sectionIds?.join(" / ")}.`;
@@ -81,6 +82,7 @@ function repairText(repair: PlanRepair, blocks: BusyBlock[], language: Language)
     case "clearBuffer": return zh ? "将课间缓冲设为 0 分钟" : "Set the class buffer to 0 min";
     case "removeBlock": return zh ? `移除日程：${blocks.find((block) => block.id === repair.blockId)?.label || "固定日程"}` : `Remove commitment: ${blocks.find((block) => block.id === repair.blockId)?.label || "Commitment"}`;
     case "allowFull": return zh ? "允许排入已满班次（需要候补或等余位）" : "Include full sections (waitlist or watch for seats)";
+    case "clearCampusAreas": return zh ? "取消校园区域限制" : "Allow classes anywhere on campus";
     case "unpin": return zh ? `取消 ${repair.courseId} 的指定班次` : `Unpin ${repair.courseId}`;
     case "resetFilters": return zh ? `重置 ${repair.courseId} 的班次和教师筛选` : `Reset section & instructor filters for ${repair.courseId}`;
     case "removeCourse": return zh ? `从本次计划移除 ${repair.courseId}` : `Remove ${repair.courseId} from this plan`;

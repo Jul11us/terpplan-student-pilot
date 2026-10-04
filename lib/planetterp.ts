@@ -214,6 +214,48 @@ export async function getProfessorReviews(name: string, courseId: string): Promi
 // UMD grade points. W and "Other" are not graded and are left out, as on PlanetTerp.
 const GRADE_POINTS: Record<string, number> = { "A+": 4, A: 4, "A-": 3.7, "B+": 3.3, B: 3, "B-": 2.7, "C+": 2.3, C: 2, "C-": 1.7, "D+": 1.3, D: 1, "D-": 0.7, F: 0 };
 
+// Letter bands for the "how this instructor grades" bar. Pluses and minuses are folded into their letter,
+// which is the shape of the question a student is asking ("how many As?"), and W is kept separate because a
+// withdrawal is not a grade: it is counted and shown, but never mixed into the letters or the average.
+export const GRADE_BANDS = ["A", "B", "C", "D", "F"] as const;
+export type GradeBand = (typeof GRADE_BANDS)[number];
+
+export type GradeDistribution = {
+  // One entry per letter, always all five and in order, so the bar has a fixed shape even at zero.
+  bands: Array<{ band: GradeBand; students: number; percent: number }>;
+  // Students who were graded; the percentages are shares of this, not of graded plus withdrawn.
+  students: number;
+  withdrew: number;
+  semesters: number;
+};
+
+export function gradeDistribution(rows: unknown[]): GradeDistribution | null {
+  const counts = new Map<GradeBand, number>(GRADE_BANDS.map((band) => [band, 0]));
+  let students = 0, withdrew = 0;
+  const semesters = new Set<string>();
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const record = row as Record<string, unknown>;
+    if (typeof record.semester === "string" && record.semester) semesters.add(record.semester);
+    for (const grade of Object.keys(GRADE_POINTS)) {
+      const n = Number(record[grade]);
+      if (!Number.isFinite(n) || n <= 0) continue;
+      const band = grade[0] as GradeBand;
+      counts.set(band, (counts.get(band) ?? 0) + n);
+      students += n;
+    }
+    const w = Number(record.W);
+    if (Number.isFinite(w) && w > 0) withdrew += w;
+  }
+  if (!students) return null;
+  return {
+    bands: GRADE_BANDS.map((band) => ({ band, students: counts.get(band) ?? 0, percent: Math.round((counts.get(band)! / students) * 1000) / 10 })),
+    students,
+    withdrew,
+    semesters: semesters.size,
+  };
+}
+
 export function averageGpa(rows: unknown[]): { gpa: number; students: number } | null {
   let points = 0, students = 0;
   for (const row of rows) {
@@ -280,5 +322,39 @@ export async function getProfessorOverallGpa(name: string): Promise<GpaSummary |
     return overall ? { ...overall, scope: "all" } : null;
   } catch {
     return null;
+  }
+}
+
+// Everything one hover card shows: the rating, a few comment excerpts, the average GPA and how the grades
+// were spread. `scope` says which question the grade numbers answer — this course, or all their courses —
+// because an instructor's average in CMSC131 and across everything they teach are different facts.
+export type ProfessorCard = ProfessorReviews & {
+  gpa: GpaSummary | null;
+  grades: (GradeDistribution & { scope: "course" | "all" }) | null;
+  courseId: string | null;
+};
+
+export async function getProfessorCard(name: string, courseId: string): Promise<ProfessorCard> {
+  const normalized = name.trim();
+  const course = courseId.trim().toUpperCase();
+  const reviews = await getProfessorReviews(normalized, course);
+  // PlanetTerp's own spelling is what its grade data is keyed by; an unmatched instructor has no grades.
+  const subject = reviews.matched ? reviews.name : normalized;
+  if (!reviews.matched || isInstructorTba(normalized)) return { ...reviews, gpa: null, grades: null, courseId: course || null };
+  try {
+    const inCourse = course ? await fetchGrades({ course, professor: subject }) : [];
+    const rows = inCourse.length ? inCourse : await fetchGrades({ professor: subject });
+    const scope = inCourse.length ? "course" as const : "all" as const;
+    const average = averageGpa(rows);
+    const spread = gradeDistribution(rows);
+    return {
+      ...reviews,
+      gpa: average ? { ...average, scope } : null,
+      grades: spread ? { ...spread, scope } : null,
+      courseId: course || null,
+    };
+  } catch {
+    // The rating and comments are already in hand; losing the grade data should not lose them too.
+    return { ...reviews, gpa: null, grades: null, courseId: course || null };
   }
 }

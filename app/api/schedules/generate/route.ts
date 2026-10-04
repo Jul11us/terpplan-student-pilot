@@ -1,5 +1,6 @@
 import { generateOptions, replacementOptions, type PlanCourse, type PlanPreferences, type PlanWarning } from "@/lib/planner";
 import { anonymousBusyBlocks, validBusyBlocks, validBuffer } from "@/lib/personal-schedule";
+import { CAMPUS_AREA_KEYS } from "@/lib/campus-walk";
 import { getProfessorGpa, getProfessorSummaries, normalizeProfessorName } from "@/lib/planetterp";
 
 // GPA lookups (one or two PlanetTerp requests each) for the "prefer higher GPA" preference.
@@ -43,6 +44,13 @@ export async function POST(request: Request) {
     busyBlocks: anonymousBusyBlocks(rawPreferences.busyBlocks ?? []),
     bufferMinutes: rawPreferences.bufferMinutes as number | undefined,
     preferGpa: rawPreferences.preferGpa === true,
+    preferFewerDays: rawPreferences.preferFewerDays === true,
+    // Unknown area names are dropped here, and again in the planner, so a filter can only ever narrow to
+    // parts of campus this build actually knows.
+    campusAreas: Array.isArray(rawPreferences.campusAreas)
+      ? rawPreferences.campusAreas.filter((area): area is string => typeof area === "string").slice(0, CAMPUS_AREA_KEYS.length)
+      : [],
+    preferNearbyClasses: rawPreferences.preferNearbyClasses === true,
   };
   if (body.mode !== undefined && body.mode !== "alternatives") return Response.json({ error: "Invalid schedule operation." }, { status: 400 });
   if (body.mode === "alternatives" && (typeof body.replaceCourseId !== "string" || !courseIds.includes(body.replaceCourseId)

@@ -4,6 +4,7 @@
 // cleared site data), so every access is wrapped and the page works without it.
 
 import { normalizeBusyBlocks, validBuffer, type BusyBlock } from "@/lib/personal-schedule";
+import { CAMPUS_AREA_KEYS } from "@/lib/campus-walk";
 
 export const STORAGE_KEY = "terpplan:v1";
 
@@ -23,6 +24,9 @@ export type SavedPreferences = {
   strictTime: boolean;
   openSeatsOnly: boolean;
   preferGpa?: boolean;
+  preferFewerDays?: boolean;
+  campusAreas?: string[];
+  preferNearbyClasses?: boolean;
   includeFreshmanConnection: boolean;
   busyBlocks?: BusyBlock[];
   bufferMinutes?: number;
@@ -74,6 +78,10 @@ function preferences(value: unknown): SavedPreferences | undefined {
     strictTime: record.strictTime === true,
     openSeatsOnly: record.openSeatsOnly === true,
     preferGpa: record.preferGpa === true,
+    preferFewerDays: record.preferFewerDays === true,
+    // Only area names this build knows survive; the planner drops any others again.
+    campusAreas: strings(record.campusAreas).filter((area) => (CAMPUS_AREA_KEYS as string[]).includes(area)),
+    preferNearbyClasses: record.preferNearbyClasses === true,
     includeFreshmanConnection: record.includeFreshmanConnection === true,
     busyBlocks: normalizeBusyBlocks(record.busyBlocks ?? []),
     bufferMinutes: validBuffer(record.bufferMinutes) ? record.bufferMinutes : 0,

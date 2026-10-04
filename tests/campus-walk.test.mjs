@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildingFor, mapsUrl, tightWalks, walkMinutes } from "../lib/campus-walk.ts";
+import { areaFor, buildingFor, CAMPUS_AREA_KEYS, mapsUrl, sectionAreas, tightWalks, walkMinutes, weeklyWalkMinutes } from "../lib/campus-walk.ts";
 
 const section = (id, building, days, start, end) => ({
   course_id: id.split("-")[0],
@@ -56,4 +56,66 @@ test("does not flag nearby buildings, long gaps, the same building, or unknown p
     section("ENGL101-0201", "TBA", "MWF", "11:00am", "11:50am"),
     { course_id: "UNIV100", section_id: "UNIV100-0101", meetings: [{ days: null, start_time: null, end_time: null, building: "ONLINE", room: null }] },
   ]), []);
+});
+
+test("buildings fall into the part of campus the map puts them in", () => {
+  assert.equal(areaFor("IRB"), "engineering");
+  assert.equal(areaFor("KEB"), "engineering");
+  assert.equal(areaFor("MTH"), "engineering");
+  assert.equal(areaFor("TYD"), "mall");
+  assert.equal(areaFor("MCK"), "mall");
+  assert.equal(areaFor("ESJ"), "mall");
+  assert.equal(areaFor("VMH"), "south");
+  assert.equal(areaFor("ARC"), "south");
+  assert.equal(areaFor("SPH"), "north");
+  assert.equal(areaFor("ICC"), "west");
+  // Nothing on campus, or far enough off it that no area would be honest.
+  assert.equal(areaFor("FDA"), null);
+  assert.equal(areaFor("TBA"), null);
+  assert.equal(areaFor(null), null);
+  assert.ok(CAMPUS_AREA_KEYS.every((area) => typeof area === "string"));
+});
+
+test("a schedule's areas are listed once each, and online or unplaced meetings add none", () => {
+  assert.deepEqual(sectionAreas([
+    section("CMSC131-0101", "IRB", "MWF", "10:00am", "10:50am"),
+    section("CMSC132-0101", "CSI", "TuTh", "9:30am", "10:45am"),
+    section("ENGL101-0201", "TYD", "MWF", "1:00pm", "1:50pm"),
+  ]), ["engineering", "mall"]);
+  assert.deepEqual(sectionAreas([
+    section("ENGL101-0201", "TBA", "MWF", "11:00am", "11:50am"),
+    { course_id: "UNIV100", section_id: "UNIV100-0101", meetings: [{ days: null, start_time: null, end_time: null, building: "ONLINE", room: null }] },
+  ]), []);
+  assert.deepEqual(sectionAreas([]), []);
+});
+
+test("weekly walking counts every building change, once for each day it happens", () => {
+  const acrossCampus = weeklyWalkMinutes([
+    section("CMSC131-0101", "IRB", "MWF", "10:00am", "10:50am"),
+    section("ENGL101-0201", "TYD", "MWF", "11:00am", "11:50am"),
+  ]);
+  const oneDay = weeklyWalkMinutes([
+    section("CMSC131-0101", "IRB", "Mon", "10:00am", "10:50am"),
+    section("ENGL101-0201", "TYD", "Mon", "11:00am", "11:50am"),
+  ]);
+  assert.equal(acrossCampus, oneDay * 3, `${acrossCampus} vs ${oneDay}`);
+  // Same building, one class a day, and online or TBA meetings are all no walking at all.
+  assert.equal(weeklyWalkMinutes([
+    section("ENGL101-0201", "TYD", "MW", "10:00am", "10:50am"),
+    section("HIST200-0101", "TYD", "MW", "11:00am", "11:50am"),
+  ]), 0);
+  assert.equal(weeklyWalkMinutes([section("CMSC131-0101", "IRB", "MWF", "10:00am", "10:50am")]), 0);
+  assert.equal(weeklyWalkMinutes([
+    section("ENGL101-0201", "TBA", "MWF", "11:00am", "11:50am"),
+    { course_id: "UNIV100", section_id: "UNIV100-0101", meetings: [{ days: null, start_time: null, end_time: null, building: "ONLINE", room: null }] },
+  ]), 0);
+  // A gap long enough not to be a tight walk is still walking time that the week costs.
+  const relaxed = weeklyWalkMinutes([
+    section("CMSC131-0101", "IRB", "TuTh", "9:30am", "10:45am"),
+    section("ENGL101-0201", "TYD", "TuTh", "11:30am", "12:45pm"),
+  ]);
+  assert.ok(relaxed > 0 && tightWalks([
+    section("CMSC131-0101", "IRB", "TuTh", "9:30am", "10:45am"),
+    section("ENGL101-0201", "TYD", "TuTh", "11:30am", "12:45pm"),
+  ]).length === 0, `relaxed walk: ${relaxed}`);
 });

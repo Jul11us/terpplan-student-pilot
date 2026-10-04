@@ -4,7 +4,7 @@
 
 import { meetingMinutes } from "@/lib/meeting-time";
 
-export type Highlight = "noRush" | "rating" | "days" | "gaps" | "lateStart" | "window" | "balanced" | "onlyOne";
+export type Highlight = "noRush" | "rating" | "days" | "gaps" | "lateStart" | "window" | "balanced" | "onlyOne" | "nearby";
 
 type OptionStats = {
   professorRating: number | null;
@@ -13,6 +13,7 @@ type OptionStats = {
   campusDays: string[];
   earliestStart: string | null;
   timeFitPercent: number | null;
+  walkMinutes?: number;
 };
 
 const MAX_PER_OPTION = 2;
@@ -43,6 +44,8 @@ export function optionHighlights(options: OptionStats[]): Highlight[][] {
   give(bestOf(options.map((option) => option.gapMinutes), "low", 30), "gaps");
   give(bestOf(options.map((option) => meetingMinutes(option.earliestStart)), "high", 30), "lateStart");
   give(bestOf(options.map((option) => option.timeFitPercent), "high", 5), "window");
+  // 10 minutes a week is the smallest difference worth claiming; below that the schedules walk about the same.
+  give(bestOf(options.map((option) => option.walkMinutes ?? null), "low", 10), "nearby");
   // The first option is first because it balances everything best, even if it leads on nothing alone.
   if (!result[0].length) result[0].push("balanced");
   return result;

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
+import ProfessorDetailCard from "@/app/components/professor-card";
 import type { ProfessorReviews, ProfessorSummary } from "@/lib/planetterp";
 
 type Props = {
@@ -128,9 +129,14 @@ export default function SectionProfessors({ names, courseId, ratings, language, 
         return (
           <div key={name} className="text-xs">
             <div className={compact ? "flex flex-col items-start gap-1.5" : "flex flex-wrap items-center gap-x-2 gap-y-1"}>
-              {term && !isTba
-                ? <a href={`/instructor?${new URLSearchParams({ name: name.trim(), term, course: courseId })}`} title={language === "zh" ? "这位老师本学期的所有班次" : "All of this instructor's sections this term"} className={`font-medium text-[#525d59] underline decoration-[#cfcac0] underline-offset-2 hover:text-[#a34a39] ${compact ? "text-sm" : ""}`}>{name}</a>
-                : <span className={`font-medium text-[#525d59] ${compact ? "text-sm" : ""}`}>{name}</span>}
+              {/* An instructor PlanetTerp has no page for has nothing to show in a card, so the name stays plain. */}
+              {isTba || rating?.status === "unmatched"
+                ? <span className={`font-medium text-[#525d59] ${compact ? "text-sm" : ""}`}>{name}</span>
+                : <ProfessorDetailCard name={name} courseId={courseId} language={language}>
+                    {term
+                      ? <a href={`/instructor?${new URLSearchParams({ name: name.trim(), term, course: courseId })}`} title={language === "zh" ? "这位老师本学期的所有班次" : "All of this instructor's sections this term"} className={`font-medium text-[#525d59] underline decoration-[#cfcac0] underline-offset-2 hover:text-[#a34a39] ${compact ? "text-sm" : ""}`}>{name}</a>
+                      : <span className={`font-medium text-[#525d59] ${compact ? "text-sm" : ""}`}>{name}</span>}
+                  </ProfessorDetailCard>}
               {isTba ? null : rating?.averageRating !== null && rating?.averageRating !== undefined ? (
                 <span className="rounded-full bg-[#f5efe2] px-2 py-1 text-[#795f2d]">
                   {t.average}: {rating.averageRating.toFixed(2)} / 5

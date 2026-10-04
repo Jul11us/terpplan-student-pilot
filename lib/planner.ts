@@ -1,4 +1,4 @@
-import { tightWalks } from "@/lib/campus-walk";
+import { areaFor, buildingFor, sectionAreas, tightWalks, weeklyWalkMinutes, type CampusArea, CAMPUS_AREA_KEYS } from "@/lib/campus-walk";
 import { isAsyncOnline } from "@/lib/meeting-time";
 import { isInstructorTba, normalizeProfessorName, type ProfessorSummary } from "@/lib/planetterp";
 import { normalizeBusyBlocks, validBuffer, type BusyBlock } from "@/lib/personal-schedule";
@@ -47,6 +47,12 @@ export type PlanPreferences = {
   bufferMinutes?: number;
   // Rank sections whose instructors gave higher grades first.
   preferGpa?: boolean;
+  // Rank schedules that fit into fewer days on campus first.
+  preferFewerDays?: boolean;
+  // Only use sections that meet in these parts of campus (see CAMPUS_AREAS). Empty means anywhere.
+  campusAreas?: string[];
+  // Rank schedules with less walking between buildings first.
+  preferNearbyClasses?: boolean;
 };
 
 export type ScheduledSection = PlanSection & {
@@ -61,7 +67,7 @@ export type ScheduledSection = PlanSection & {
 };
 
 export type ScorePart = {
-  key: "base" | "rating" | "gpa" | "gaps" | "early" | "unknown" | "window" | "full" | "walks";
+  key: "base" | "rating" | "gpa" | "gaps" | "early" | "unknown" | "window" | "full" | "walks" | "days" | "walkTime";
   points: number;
   // How many of the thing were counted (minutes for gaps, meetings for early classes, ...), when it helps explain.
   count?: number;
@@ -79,6 +85,9 @@ export type ScheduleOption = {
   gapMinutes: number;
   // Times a week the estimated walk to the next class is longer than the gap before it.
   tightWalkCount: number;
+  // Estimated minutes a week spent walking between classes, and the parts of campus they meet in.
+  walkMinutes: number;
+  campusAreas: CampusArea[];
   earliestStart: string | null;
   latestEnd: string | null;
   campusDays: string[];
@@ -105,7 +114,7 @@ export type PlannerResult = {
 };
 
 export type PlanDiagnosis = {
-  code: "excludedDay" | "earliestStart" | "timeWindow" | "busyBlock" | "fullSections" | "fcSections" | "sectionFilters" | "courseConflict" | "bufferConflict" | "combinationConflict";
+  code: "excludedDay" | "earliestStart" | "timeWindow" | "busyBlock" | "fullSections" | "fcSections" | "sectionFilters" | "courseConflict" | "bufferConflict" | "combinationConflict" | "campusAreas";
   courseIds: string[];
   day?: string;
   blockId?: string;
@@ -114,7 +123,7 @@ export type PlanDiagnosis = {
   sample?: { days: string[]; leftStart: string; leftEnd: string; rightStart: string; rightEnd: string };
 };
 export type PlanRepair = {
-  kind: "allowDay" | "clearEarliest" | "relaxWindow" | "clearBuffer" | "removeBlock" | "allowFull" | "unpin" | "resetFilters" | "removeCourse";
+  kind: "allowDay" | "clearEarliest" | "relaxWindow" | "clearBuffer" | "removeBlock" | "allowFull" | "unpin" | "resetFilters" | "removeCourse" | "clearCampusAreas";
   day?: string;
   blockId?: string;
   courseId?: string;
@@ -138,6 +147,14 @@ const TIGHT_WALK_PER_MINUTE = 0.1;
 // a full grade point is worth about as much as a 2-point difference in instructor rating.
 const GPA_BASELINE = 3;
 const GPA_WEIGHT = 2;
+// Per day on campus, applied only when the student asked for fewer days. Worth about 150 minutes of
+// between-class gaps, so a compact week wins even when it means waiting around; without that weight the
+// gap penalty alone decides and the preference looks like it did nothing.
+const DAY_PENALTY = 1.2;
+// Per estimated minute a week spent walking between buildings, applied only when the student asked to keep
+// classes close together. A minute of walking weighs about three times a minute of sitting in a gap, since
+// walking across campus between every pair of classes is the part of a spread-out week that is felt.
+const WALK_MINUTE_PENALTY = 0.025;
 const DAY_TOKENS: Array<[string, (typeof DAYS)[number]]> = [
   ["MONDAY", "Mon"], ["MON", "Mon"], ["MO", "Mon"], ["M", "Mon"],
   ["TUESDAY", "Tue"], ["TUES", "Tue"], ["TUE", "Tue"], ["TU", "Tue"],
@@ -262,6 +279,11 @@ function parsePrefs(preferences: PlanPreferences) {
     busyBlocks: normalizeBusyBlocks(preferences.busyBlocks ?? []),
     bufferMinutes: validBuffer(preferences.bufferMinutes) ? preferences.bufferMinutes : 0,
     preferGpa: Boolean(preferences.preferGpa),
+    preferFewerDays: Boolean(preferences.preferFewerDays),
+    // Unknown names are dropped rather than treated as "nowhere", so a stale saved preference cannot
+    // quietly rule out every section.
+    campusAreas: new Set((preferences.campusAreas ?? []).filter((area): area is CampusArea => (CAMPUS_AREA_KEYS as string[]).includes(area))),
+    preferNearbyClasses: Boolean(preferences.preferNearbyClasses),
   };
 }
 
@@ -302,12 +324,25 @@ function eligibleSections(course: PlanCourse, preference: ReturnType<typeof pars
     && allowedByPreferences(section, preference, !ignorePin && sectionId(section, course.course_id) === course.pinnedSectionId));
 }
 
+// A section is outside the chosen parts of campus when any of its meetings is somewhere else. Online and
+// TBA meetings are nowhere on campus, so they never rule a section out; a building the data has no position
+// for is left in too, since excluding it would be a guess.
+function outsideCampusAreas(section: PlanSection, areas: Set<CampusArea>) {
+  if (!areas.size) return false;
+  return (section.meetings ?? []).some((meeting) => {
+    if (isAsyncOnline(meeting) || !buildingFor(meeting.building)) return false;
+    const area = areaFor(meeting.building);
+    return area !== null && !areas.has(area);
+  });
+}
+
 function allowedByPreferences(section: PlanSection, preference: ReturnType<typeof parsePrefs>, pinned: boolean) {
   if (conflictsWithTimePreferences(section, preference)) return false;
   const meetings = section.meetings ?? [];
   if (meetings.some((meeting, index) => meetings.slice(index + 1).some((other) => overlaps(meeting, other, preference.bufferMinutes)))) return false;
   if (!pinned && preference.openSeatsOnly && isFull(section)) return false;
   if (!pinned && !preference.includeFreshmanConnection && isFreshmanConnection(section)) return false;
+  if (!pinned && outsideCampusAreas(section, preference.campusAreas)) return false;
   return true;
 }
 
@@ -365,10 +400,15 @@ function summarize(sections: ScheduledSection[], preferences: ReturnType<typeof 
   if (preferences.interval) unknownCount += unknownSectionIds.length;
   const walks = tightWalks(sections);
   const walkPenalty = walks.reduce((sum, walk) => sum + TIGHT_WALK_PENALTY + TIGHT_WALK_PER_MINUTE * (walk.walkMinutes - walk.gapMinutes), 0);
+  const campusDays = DAYS.filter((day) => sections.some((section) => (section.meetings ?? []).some((meeting) => dayNames(meeting.days).includes(day))));
+  const walkMinutes = weeklyWalkMinutes(sections);
+  const campusAreas = sectionAreas(sections);
   const scoreParts: ScorePart[] = [
     { key: "base", points: 0.4 },
     { key: "rating", points: professorRating ?? 0 },
     ...(preferences.preferGpa ? [{ key: "gpa" as const, points: gpaPoints(averageGpa, true) }] : []),
+    ...(preferences.preferFewerDays ? [{ key: "days" as const, points: -DAY_PENALTY * campusDays.length, count: campusDays.length }] : []),
+    ...(preferences.preferNearbyClasses ? [{ key: "walkTime" as const, points: -WALK_MINUTE_PENALTY * walkMinutes, count: walkMinutes }] : []),
     { key: "gaps", points: -0.008 * gapMinutes, count: gapMinutes },
     { key: "early", points: -0.7 * earlyCount, count: earlyCount },
     { key: "unknown", points: -0.35 * unknownCount, count: unknownCount },
@@ -377,7 +417,6 @@ function summarize(sections: ScheduledSection[], preferences: ReturnType<typeof 
     { key: "walks", points: -walkPenalty, count: walks.length },
   ];
   const score = scoreParts.reduce((sum, part) => sum + part.points, 0);
-  const campusDays = DAYS.filter((day) => sections.some((section) => (section.meetings ?? []).some((meeting) => dayNames(meeting.days).includes(day))));
   const totalCredits = sections.reduce((sum, section) => sum + (section.credits ?? 0), 0);
   return {
     selectedSections: sections,
@@ -388,6 +427,8 @@ function summarize(sections: ScheduledSection[], preferences: ReturnType<typeof 
     averageGpa,
     gapMinutes,
     tightWalkCount: walks.length,
+    walkMinutes,
+    campusAreas,
     earliestStart: earliestStart === null ? null : formatClock(earliestStart),
     latestEnd: latestEnd === null ? null : formatClock(latestEnd),
     campusDays,
@@ -529,6 +570,7 @@ function diagnose(courses: PlanCourse[], preferences: PlanPreferences): PlanDiag
     for (const block of parsed.busyBlocks) if (meets.some((meeting) => overlaps(meeting, { days: block.days.join(" "), start_time: block.start, end_time: block.end }))) diagnoses.push({ code: "busyBlock", courseIds: [course.course_id], blockId: block.id });
     if (parsed.openSeatsOnly && selected.some(isFull)) diagnoses.push({ code: "fullSections", courseIds: [course.course_id] });
     if (!parsed.includeFreshmanConnection && selected.some(isFreshmanConnection)) diagnoses.push({ code: "fcSections", courseIds: [course.course_id] });
+    if (parsed.campusAreas.size && selected.some((section) => outsideCampusAreas(section, parsed.campusAreas))) diagnoses.push({ code: "campusAreas", courseIds: [course.course_id] });
     if (parsed.bufferMinutes && selected.some((section) => (section.meetings ?? []).some((meeting, index) => (section.meetings ?? []).slice(index + 1).some((other) => overlaps(meeting, other, parsed.bufferMinutes))))) diagnoses.push({ code: "bufferConflict", courseIds: [course.course_id] });
   }
   // A pair is reported as blocking only when every eligible combination conflicts.
@@ -582,6 +624,7 @@ export function applyRepair(courses: PlanCourse[], preferences: PlanPreferences,
     case "clearBuffer": nextPreferences.bufferMinutes = 0; break;
     case "removeBlock": nextPreferences.busyBlocks = (preferences.busyBlocks ?? []).filter((block) => block.id !== repair.blockId); break;
     case "allowFull": nextPreferences.openSeatsOnly = false; break;
+    case "clearCampusAreas": nextPreferences.campusAreas = []; break;
     case "unpin": nextCourses = courses.map((course) => course.course_id === repair.courseId ? { ...course, pinnedSectionId: undefined } : course); break;
     case "resetFilters": nextCourses = courses.map((course) => course.course_id === repair.courseId ? { ...course, pinnedSectionId: undefined, excludedSectionIds: [], instructors: undefined } : course); break;
     case "removeCourse": nextCourses = courses.filter((course) => course.course_id !== repair.courseId); break;
@@ -600,6 +643,7 @@ export function generateOptions(courses: PlanCourse[], ratings: Record<string, P
   if (preferences.bufferMinutes) candidates.push({ kind: "clearBuffer" });
   for (const block of preferences.busyBlocks ?? []) candidates.push({ kind: "removeBlock", blockId: block.id });
   if (preferences.openSeatsOnly) candidates.push({ kind: "allowFull" });
+  if (preferences.campusAreas?.length) candidates.push({ kind: "clearCampusAreas" });
   for (const course of courses) {
     if (course.pinnedSectionId) candidates.push({ kind: "unpin", courseId: course.course_id });
     if (course.instructors?.length || course.excludedSectionIds?.length) candidates.push({ kind: "resetFilters", courseId: course.course_id });
