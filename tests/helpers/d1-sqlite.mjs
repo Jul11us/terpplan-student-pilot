@@ -9,6 +9,7 @@ export function testDatabase() {
   function prepare(query, params = []) {
     return {
       bind(...values) { return prepare(query, values); },
+      async first(column) { const row = sqlite.prepare(query).get(...params); return column ? row?.[column] ?? null : row ?? null; },
       async all() { return { success: true, results: sqlite.prepare(query).all(...params), meta: {} }; },
       async raw() { return sqlite.prepare(query).all(...params).map((row) => Object.values(row)); },
       async run() { const result = sqlite.prepare(query).run(...params); return { success: true, results: [], meta: { changes: result.changes, last_row_id: Number(result.lastInsertRowid) } }; },

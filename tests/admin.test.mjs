@@ -66,6 +66,17 @@ test("counts sign-ups and watches and masks addresses", async () => {
   assert.ok(!JSON.stringify(body).includes("ann@umd.edu"));
 });
 
+test("admin access rejects spoofed identity headers and altered session cookies", async () => {
+  const ownerRequest = await request("owner@example.test");
+  const headers = { "x-user-email": "owner@example.test", "x-user-id": await userId("owner@example.test") };
+  assert.equal((await stats(new Request(ownerRequest.url, { headers }))).status, 401);
+  headers.cookie = ownerRequest.headers.get("cookie").replace("=", "=x");
+  assert.equal((await stats(new Request(ownerRequest.url, { headers }))).status, 401);
+  const allowed = await stats(ownerRequest);
+  assert.equal(allowed.status, 200);
+  assert.equal(allowed.headers.get("cache-control"), "no-store");
+});
+
 test("masks an address down to its first letter and domain", () => {
   assert.equal(maskEmail("terp@gmail.com"), "t•••@gmail.com");
   assert.equal(maskEmail("broken"), "•••");
