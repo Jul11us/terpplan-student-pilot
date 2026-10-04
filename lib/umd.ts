@@ -216,6 +216,17 @@ function parseTestudoCourse(html: string, courseId: string) {
   };
 }
 
+// A course's sections in any Testudo term (past ones too), for offering history: [] when the term has no such
+// course. A page that is neither a result nor Testudo's "No courses matched" message is an error, so a layout
+// change is not stored as "not offered".
+export async function getTestudoTermSections(courseId: string, term: string): Promise<UmdSection[]> {
+  const html = await testudoHtml(`/${encodeURIComponent(term)}/${encodeURIComponent(courseId.slice(0, 4))}/${encodeURIComponent(courseId)}`);
+  const detail = parseTestudoCourse(html, courseId);
+  if (detail) return detail.sections;
+  if (/No courses matched/i.test(html) || /\bclass=["']course["']/i.test(html)) return [];
+  throw new Error("Testudo returned an unexpected page.");
+}
+
 type TestudoCourseDetail = NonNullable<ReturnType<typeof parseTestudoCourse>>;
 const testudoCourseCache = new Map<string, { expiresAt: number; detail: TestudoCourseDetail & { seatCheckedAt: string } }>();
 
