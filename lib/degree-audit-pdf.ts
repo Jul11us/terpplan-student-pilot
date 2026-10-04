@@ -29,7 +29,7 @@ export async function extractDegreeAuditText(file: File) {
   if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) throw new Error("type");
   const pdfjs = await import("pdfjs-dist");
   pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
-  const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+  const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false });
   const document = await task.promise;
   try {
     if (document.numPages > 60) throw new Error("pages");

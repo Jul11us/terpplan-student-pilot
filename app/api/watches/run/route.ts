@@ -33,6 +33,10 @@ export async function POST(request: Request) {
   const db = getDb();
   try {
     const expiredWatches = await removeExpiredWatches(db);
+    // Keep stale code and abuse-limit keys from accumulating or becoming a log of visits.
+    const cutoff = Math.floor(Date.now() / 1000) - 86400;
+    await env.DB!.prepare("DELETE FROM email_login_rate_limits WHERE window_started_at < ?").bind(cutoff).run();
+    await env.DB!.prepare("DELETE FROM email_login_codes WHERE expires_at < ?").bind(cutoff).run();
     const rows = await db.select().from(watches);
     const groups = groupByCourse(rows);
     const due = groups
@@ -64,7 +68,7 @@ export async function POST(request: Request) {
       durationMs: Date.now() - startedAt,
     });
   } catch (error) {
-    console.error("Background seat check failed", error);
+    console.error("Background seat check failed", error instanceof Error ? error.name : "unknown");
     return Response.json({ error: "Background seat check failed." }, { status: 503 });
   }
 }

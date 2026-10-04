@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { emailAuthConfigured, hashCode, hashEmail, newEmailCode } from "@/lib/auth";
+import { readJsonObject, sameOriginMutation } from "@/lib/request-security";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -20,15 +21,14 @@ async function allowRate(rateKey: string, limit: number, windowSeconds: number) 
 }
 
 export async function POST(request: Request) {
+  const denied = sameOriginMutation(request);
+  if (denied) return denied;
   if (!emailAuthConfigured() || !env.DB) {
     return Response.json({ error: "Email sign-in is not set up yet." }, { status: 503 });
   }
-  let body: { email?: unknown };
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: "Enter a valid email address." }, { status: 400 });
-  }
+  const parsed = await readJsonObject(request);
+  if (parsed.error) return parsed.error;
+  const body = parsed.value;
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   if (email.length > 254 || !EMAIL_PATTERN.test(email)) {
     return Response.json({ error: "Enter a valid email address." }, { status: 400 });
@@ -59,6 +59,7 @@ export async function POST(request: Request) {
     if (!reserved) return Response.json({ error: "Please wait a minute before requesting another code." }, { status: 429 });
 
     const sent = await fetch("https://api.resend.com/emails", {
+      signal: AbortSignal.timeout(10_000),
       method: "POST",
       headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({

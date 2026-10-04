@@ -6,6 +6,7 @@ import { getProfessorGpa, getProfessorSummaries, normalizeProfessorName } from "
 // GPA lookups (one or two PlanetTerp requests each) for the "prefer higher GPA" preference.
 const MAX_GPA_LOOKUPS = 40;
 import { courseIdIsValid, DEFAULT_TERM, getCourse, sectionId as normalizedSectionId } from "@/lib/umd";
+import { readJsonObject, sameOriginMutation } from "@/lib/request-security";
 
 function creditsValue(value: unknown) {
   const parsed = Number(value);
@@ -13,13 +14,11 @@ function creditsValue(value: unknown) {
 }
 
 export async function POST(request: Request) {
-  let body: { courseIds?: unknown; term?: unknown; preferences?: unknown; instructorFilters?: unknown; sectionFilters?: unknown; mode?: unknown; selectedSectionIds?: unknown; replaceCourseId?: unknown };
-  try {
-    body = await request.json();
-    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid request");
-  } catch {
-    return Response.json({ error: "Provide a valid schedule request." }, { status: 400 });
-  }
+  const denied = sameOriginMutation(request);
+  if (denied) return denied;
+  const parsed = await readJsonObject(request, 65536);
+  if (parsed.error) return parsed.error;
+  const body = parsed.value;
   const courseIds = Array.isArray(body.courseIds)
     ? [...new Set(body.courseIds.filter((item): item is string => typeof item === "string").map((item) => item.trim().toUpperCase()).filter(Boolean))]
     : [];

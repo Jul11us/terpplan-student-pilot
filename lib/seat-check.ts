@@ -55,7 +55,7 @@ export async function checkWatchGroup(db: Db, group: WatchRow[]): Promise<GroupC
     for (const update of updates) await update;
     result.ok = true;
   } catch (error) {
-    console.error("Seat check failed", sample.courseId, error);
+    console.error("Seat check failed", sample.courseId, error instanceof Error ? error.name : "unknown");
     for (const row of group) {
       await db.update(watches).set({ status: row.lastSuccessAt ? "stale" : "failed", lastCheckedAt: checkedAt }).where(rowFilter(row));
     }

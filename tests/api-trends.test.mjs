@@ -11,7 +11,7 @@ const { GET: seats } = await import("../app/api/trends/seats/route.ts");
 const { GET: offerings } = await import("../app/api/trends/offerings/route.ts");
 const { GET: popular } = await import("../app/api/trends/popular/route.ts");
 const { POST: activity } = await import("../app/api/trends/activity/route.ts");
-const { recordCourseHistory, getPopularCourses } = await import("../lib/history-db.ts");
+const { recordCourseHistory, getPopularCourses, backfillCourseOfferings } = await import("../lib/history-db.ts");
 let database;
 let originalFetch;
 const request = (path, params) => new Request("https://terpplan.test/api/trends/" + path + "?" + new URLSearchParams(params));
@@ -30,8 +30,8 @@ beforeEach(() => {
     if (term !== "202701") {
       if (term === "202508") return new Response("busy", { status: 503 });
       if (term === "202501") return new Response("<p>No courses matched your search filters above.</p>");
-      const section = (number, seats) => `<div class="section"><input name="sectionId" value="${number}"><span class="total-seats-count">${seats}</span><span class="open-seats-count">0</span></div>`;
-      return new Response(`<div id="CMSC131" class="course"><span class="course-title">Fixture course</span>${section("0101", 30)}${section("0201", 25)}</div><div id="CMSC131H" class="course"><span class="course-title">Honors</span>${section("0101", 99)}</div>`);
+      const section = (number, seats, open) => `<div class="section"><input name="sectionId" value="${number}"><span class="total-seats-count">${seats}</span><span class="open-seats-count">${open}</span></div>`;
+      return new Response(`<div id="CMSC131" class="course"><span class="course-title">Fixture course</span>${section("0101", 30, 0)}${section("0201", 25, 4)}</div><div id="CMSC131H" class="course"><span class="course-title">Honors</span>${section("0101", 99, 50)}</div>`);
     }
     const courseId = url.pathname.split("/").pop();
     return new Response(`<div id="${courseId}" class="course"><span class="course-title">Fixture course</span><div class="section"><input name="sectionId" value="0101"><span class="total-seats-count">20</span><span class="open-seats-count">8</span></div></div>`);
@@ -78,6 +78,26 @@ test("offering history reads earlier fall and spring terms once, keeping 'not of
   globalThis.fetch = async (input) => { calls += 1; return previous(input); };
   await offerings(request("offerings", { id: "CMSC131", lang: "en" }));
   assert.equal(calls, 1, "only the failed Fall 2025 is asked again");
+});
+
+test("earlier terms keep their final open seats and are read again until the term has ended", async () => {
+  const may = new Date("2026-04-01T12:00:00Z");
+  await backfillCourseOfferings("CMSC131", ["202601"], may);
+  const row = () => database.sqlite.prepare("SELECT section_count, total_seats, open_seats, full_sections, last_seen_at FROM course_offerings WHERE term = '202601'").get();
+  assert.deepEqual([row().section_count, row().total_seats, row().open_seats, row().full_sections], [2, 55, 4, 1]);
+  // Stored mid-semester: read again a week later, and again after the term ends; then left alone.
+  database.sqlite.prepare("UPDATE course_offerings SET open_seats = 9, last_seen_at = ? WHERE term = '202601'").run(may.toISOString());
+  await backfillCourseOfferings("CMSC131", ["202601"], new Date("2026-04-03T12:00:00Z"));
+  assert.equal(row().open_seats, 9, "not yet a week");
+  await backfillCourseOfferings("CMSC131", ["202601"], new Date("2026-06-15T12:00:00Z"));
+  assert.equal(row().open_seats, 4, "final numbers after the term ended");
+  database.sqlite.prepare("UPDATE course_offerings SET open_seats = 7, last_seen_at = '2026-06-15T12:00:00.000Z' WHERE term = '202601'").run();
+  await backfillCourseOfferings("CMSC131", ["202601"], new Date("2027-03-01T12:00:00Z"));
+  assert.equal(row().open_seats, 7, "a term read after it ended is final");
+  // Rows stored before open seats were kept are filled in.
+  database.sqlite.prepare("UPDATE course_offerings SET open_seats = NULL, full_sections = NULL WHERE term = '202601'").run();
+  await backfillCourseOfferings("CMSC131", ["202601"], new Date("2027-03-01T12:00:00Z"));
+  assert.equal(row().full_sections, 1);
 });
 
 test("seat API reads real SQL, excludes other sections and records the current upstream observation", async () => {

@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { alertSubscriptions, watches } from "@/db/schema";
 import { alertsConfigured, hashToken, unsubscribeToken } from "@/lib/alerts";
 import { authRequired, currentUser, hashEmail } from "@/lib/auth";
+import { readJsonObject, sameOriginMutation } from "@/lib/request-security";
 
 // Seat-email opt-in for the signed-in student. The address is stored only after they turn this on.
 
@@ -14,15 +15,14 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const denied = sameOriginMutation(request);
+  if (denied) return denied;
   const user = await currentUser(request);
   if (!user) return authRequired();
   if (!alertsConfigured()) return Response.json({ error: "Seat emails are not set up yet." }, { status: 503 });
-  let body: { email?: unknown };
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: "Enter the email you signed in with.", code: "emailMismatch" }, { status: 400 });
-  }
+  const parsed = await readJsonObject(request);
+  if (parsed.error) return parsed.error;
+  const body = parsed.value;
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   // The session holds only a hash, so the student re-enters the address and it must match the verified one.
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || `email:${await hashEmail(email)}` !== user.id) {
@@ -36,6 +36,8 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const denied = sameOriginMutation(request);
+  if (denied) return denied;
   const user = await currentUser(request);
   if (!user) return authRequired();
   const db = getDb();

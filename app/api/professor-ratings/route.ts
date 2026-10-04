@@ -1,16 +1,16 @@
 import { getProfessorGpa, getProfessorSummaries } from "@/lib/planetterp";
 import { courseIdIsValid } from "@/lib/umd";
+import { readJsonObject, sameOriginMutation } from "@/lib/request-security";
 
 // Grade lookups take one or two PlanetTerp requests per instructor, so only a course page's worth.
 const MAX_GPA_LOOKUPS = 20;
 
 export async function POST(request: Request) {
-  let body: { names?: unknown; courseId?: unknown };
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: "Provide instructor names." }, { status: 400 });
-  }
+  const denied = sameOriginMutation(request);
+  if (denied) return denied;
+  const parsed = await readJsonObject(request, 32768);
+  if (parsed.error) return parsed.error;
+  const body = parsed.value;
   if (!Array.isArray(body.names) || body.names.length > 200 || body.names.some((name) => typeof name !== "string" || name.length > 120)) {
     return Response.json({ error: "Provide a valid instructor list." }, { status: 400 });
   }

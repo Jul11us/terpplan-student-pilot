@@ -22,6 +22,8 @@ export type SeatTrend = {
   demandIndex: number; // 0-100 popularity score
 };
 
+export type OfferingTermStatus = "past" | "current" | "upcoming";
+
 export type OfferingHistory = {
   courseId: string;
   terms: Array<{
@@ -29,6 +31,10 @@ export type OfferingHistory = {
     termName: string;
     sectionCount: number;
     totalSeats: number;
+    openSeats: number | null;
+    fullSections: number | null;
+    // "past" (numbers are final), "current" (in progress) or "upcoming" (registration).
+    status: OfferingTermStatus;
   }>;
   pattern: "every-fall" | "every-spring" | "every-summer" | "fall-spring" | "all-terms" | "irregular";
 };

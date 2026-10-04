@@ -289,7 +289,7 @@ export function sectionId(section: UmdSection, courseId: string): string | null 
 }
 
 export function courseIdIsValid(value: string): boolean {
-  return /^[A-Z]{4}\d{3}[A-Z0-9]*$/.test(value);
+  return value.length <= 12 && /^[A-Z]{4}\d{3}[A-Z0-9]*$/.test(value);
 }
 
 export { DEFAULT_TERM };

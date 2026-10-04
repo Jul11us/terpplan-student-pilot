@@ -58,14 +58,14 @@ async function emailSessionId(request: Request) {
   if (!env.EMAIL_AUTH_SECRET) return null;
   const cookie = request.headers.get("cookie")?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${SESSION_COOKIE}=`));
   const token = cookie?.slice(SESSION_COOKIE.length + 1);
-  if (!token) return null;
+  if (!token || token.length > 1024) return null;
   const [body, signature, extra] = token.split(".");
   if (!body || !signature || extra) return null;
   try {
     const key = await hmacKey(env.EMAIL_AUTH_SECRET);
     if (!await crypto.subtle.verify("HMAC", key, fromBase64Url(signature), encoder.encode(body))) return null;
     const payload = JSON.parse(new TextDecoder().decode(fromBase64Url(body))) as SessionPayload;
-    if (payload.v !== 1 || !/^[a-f0-9]{64}$/.test(payload.emailHash) || payload.expiresAt <= Math.floor(Date.now() / 1000)) return null;
+    if (!payload || payload.v !== 1 || typeof payload.emailHash !== "string" || !/^[a-f0-9]{64}$/.test(payload.emailHash) || !Number.isSafeInteger(payload.expiresAt) || payload.expiresAt <= Math.floor(Date.now() / 1000)) return null;
     return `email:${payload.emailHash}`;
   } catch {
     return null;
@@ -91,6 +91,6 @@ export function clearEmailSessionCookie() {
 export function authRequired() {
   return Response.json(
     { error: "Sign in with an email verification code to save seat watches." },
-    { status: 401 },
+    { status: 401, headers: { "Cache-Control": "private, no-store" } },
   );
 }

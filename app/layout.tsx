@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import ServiceWorker from "@/app/components/service-worker";
-import { CLOUDFLARE_ANALYTICS_TOKEN, SITE_URL, analyticsEnabled } from "@/lib/site-config";
+import { SITE_URL } from "@/lib/site-config";
+import Analytics from "@/app/components/analytics";
 import "./globals.css";
 
 const title = "TerpPlan · UMD course & schedule planner";
@@ -55,9 +56,7 @@ export default function RootLayout({
       <body className="antialiased">
         {children}
         <ServiceWorker />
-        {analyticsEnabled && (
-          <script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon={JSON.stringify({ token: CLOUDFLARE_ANALYTICS_TOKEN })} />
-        )}
+        <Analytics />
       </body>
     </html>
   );
