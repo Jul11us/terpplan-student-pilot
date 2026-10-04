@@ -1,4 +1,4 @@
-import { areaFor, buildingFor, sectionAreas, tightWalks, weeklyWalkMinutes, type CampusArea, CAMPUS_AREA_KEYS } from "@/lib/campus-walk";
+import { areaFor, buildingFor, longWalkMinutes, sectionAreas, tightWalks, weeklyWalkMinutes, type CampusArea, CAMPUS_AREA_KEYS } from "@/lib/campus-walk";
 import { isAsyncOnline } from "@/lib/meeting-time";
 import { isInstructorTba, normalizeProfessorName, type ProfessorSummary } from "@/lib/planetterp";
 import { normalizeBusyBlocks, validBuffer, type BusyBlock } from "@/lib/personal-schedule";
@@ -67,7 +67,7 @@ export type ScheduledSection = PlanSection & {
 };
 
 export type ScorePart = {
-  key: "base" | "rating" | "gpa" | "gaps" | "early" | "unknown" | "window" | "full" | "walks" | "days" | "walkTime";
+  key: "base" | "rating" | "gpa" | "longWalks" | "early" | "unknown" | "window" | "full" | "walks" | "days" | "walkTime";
   points: number;
   // How many of the thing were counted (minutes for gaps, meetings for early classes, ...), when it helps explain.
   count?: number;
@@ -155,6 +155,10 @@ const DAY_PENALTY = 1.2;
 // classes close together. A minute of walking weighs about three times a minute of sitting in a gap, since
 // walking across campus between every pair of classes is the part of a spread-out week that is felt.
 const WALK_MINUTE_PENALTY = 0.025;
+// Free time between classes is not penalised (a break is often wanted). What costs points is a walk longer
+// than 10 minutes between back-to-back classes: each minute past 10, on each day it happens.
+const LONG_WALK_ALLOWANCE = 10;
+const LONG_WALK_PER_MINUTE = 0.1;
 const DAY_TOKENS: Array<[string, (typeof DAYS)[number]]> = [
   ["MONDAY", "Mon"], ["MON", "Mon"], ["MO", "Mon"], ["M", "Mon"],
   ["TUESDAY", "Tue"], ["TUES", "Tue"], ["TUE", "Tue"], ["TU", "Tue"],
@@ -402,6 +406,7 @@ function summarize(sections: ScheduledSection[], preferences: ReturnType<typeof 
   const walkPenalty = walks.reduce((sum, walk) => sum + TIGHT_WALK_PENALTY + TIGHT_WALK_PER_MINUTE * (walk.walkMinutes - walk.gapMinutes), 0);
   const campusDays = DAYS.filter((day) => sections.some((section) => (section.meetings ?? []).some((meeting) => dayNames(meeting.days).includes(day))));
   const walkMinutes = weeklyWalkMinutes(sections);
+  const extraWalkMinutes = longWalkMinutes(sections, LONG_WALK_ALLOWANCE);
   const campusAreas = sectionAreas(sections);
   const scoreParts: ScorePart[] = [
     { key: "base", points: 0.4 },
@@ -409,7 +414,7 @@ function summarize(sections: ScheduledSection[], preferences: ReturnType<typeof 
     ...(preferences.preferGpa ? [{ key: "gpa" as const, points: gpaPoints(averageGpa, true) }] : []),
     ...(preferences.preferFewerDays ? [{ key: "days" as const, points: -DAY_PENALTY * campusDays.length, count: campusDays.length }] : []),
     ...(preferences.preferNearbyClasses ? [{ key: "walkTime" as const, points: -WALK_MINUTE_PENALTY * walkMinutes, count: walkMinutes }] : []),
-    { key: "gaps", points: -0.008 * gapMinutes, count: gapMinutes },
+    { key: "longWalks", points: -LONG_WALK_PER_MINUTE * extraWalkMinutes, count: extraWalkMinutes },
     { key: "early", points: -0.7 * earlyCount, count: earlyCount },
     { key: "unknown", points: -0.35 * unknownCount, count: unknownCount },
     { key: "window", points: preferences.interval ? -0.05 * (outsideMinutes + 90 * unknownSectionIds.length) : 0, count: Math.round(outsideMinutes) },

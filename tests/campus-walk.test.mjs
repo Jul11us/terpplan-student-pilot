@@ -119,3 +119,17 @@ test("weekly walking counts every building change, once for each day it happens"
     section("ENGL101-0201", "TYD", "TuTh", "11:30am", "12:45pm"),
   ]).length === 0, `relaxed walk: ${relaxed}`);
 });
+
+test("only the part of a walk past 10 minutes counts, once for each day it happens", async () => {
+  const { longWalkMinutes } = await import("../lib/campus-walk.ts");
+  const meet = (days, start, end, building) => ({ days, start_time: start, end_time: end, building, room: "1" });
+  const far = walkMinutes(buildingFor("IRB"), buildingFor("VMH"));
+  const week = [
+    { course_id: "A", section_id: "A-1", meetings: [meet("MW", "9:00am", "9:50am", "IRB")] },
+    { course_id: "B", section_id: "B-1", meetings: [meet("MW", "11:00am", "11:50am", "VMH")] },
+  ];
+  assert.equal(longWalkMinutes(week), 2 * Math.max(0, far - 10));
+  assert.equal(longWalkMinutes(week, 60), 0);
+  // A long break between classes in the same building costs nothing.
+  assert.equal(longWalkMinutes([week[0], { course_id: "C", section_id: "C-1", meetings: [meet("MW", "3:00pm", "3:50pm", "IRB")] }]), 0);
+});

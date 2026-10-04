@@ -226,7 +226,7 @@ export default function AuditPage() {
         </label>
         <p className="mt-4 rounded-xl bg-[#edf3ef] px-4 py-3 text-xs leading-5 text-[#315c43]">{t.privacy}</p>{reading && <p role="status" className="mt-4 text-sm text-[#5d6561]">{t.reading}</p>}{error && <p role="alert" className="mt-4 rounded-xl bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]">{error}</p>}
       </section>
-      {audit && <section className="mt-6 grid gap-5 lg:grid-cols-[minmax(270px,.43fr)_minmax(0,.57fr)]"><div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-6"><h2 className="font-serif text-2xl">02 · {t.requirements}</h2><p className="mt-2 text-xs leading-5 text-[#646c68]">{t.review}</p>{audit.status === "complete" && <p className="mt-4 rounded-xl bg-[#edf3ef] p-3 text-sm text-[#315c43]">{t.complete}</p>}{audit.status === "unknown" && <p className="mt-4 rounded-xl bg-[#fff8e8] p-3 text-sm text-[#745424]">{t.unknown}</p>}{audit.inProgressCourseIds.length > 0 && <p className="mt-4 rounded-xl bg-[#eef2f7] p-3 text-xs leading-5 text-[#455d78]">{t.inProgress}: {audit.inProgressCourseIds.join(", ")}</p>}
+      {/* On a wide screen 02 and 03 scroll on their own, so a long list of requirements never pushes the course results off screen. */}{audit && <section className="mt-6 grid gap-5 lg:grid-cols-[minmax(270px,.43fr)_minmax(0,.57fr)]"><div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-6 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:self-start lg:overflow-y-auto lg:overscroll-contain"><h2 className="font-serif text-2xl">02 · {t.requirements}</h2><p className="mt-2 text-xs leading-5 text-[#646c68]">{t.review}</p>{audit.status === "complete" && <p className="mt-4 rounded-xl bg-[#edf3ef] p-3 text-sm text-[#315c43]">{t.complete}</p>}{audit.status === "unknown" && <p className="mt-4 rounded-xl bg-[#fff8e8] p-3 text-sm text-[#745424]">{t.unknown}</p>}{audit.inProgressCourseIds.length > 0 && <p className="mt-4 rounded-xl bg-[#eef2f7] p-3 text-xs leading-5 text-[#455d78]">{t.inProgress}: {audit.inProgressCourseIds.join(", ")}</p>}
         {(() => {
           const actionable = audit.requirements.filter(isActionable);
           const others = audit.requirements.filter((requirement) => !isActionable(requirement));
@@ -258,7 +258,7 @@ export default function AuditPage() {
             </details>}
           </>;
         })()}
-      </div><div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-6"><h2 className="font-serif text-2xl">03 · {t.results}</h2>{selected && !isActionable(selected) && manualId !== selected.id ? <div className="mt-4">
+      </div><div className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-6 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:self-start lg:overflow-y-auto lg:overscroll-contain"><h2 className="font-serif text-2xl">03 · {t.results}</h2>{selected && !isActionable(selected) && manualId !== selected.id ? <div className="mt-4">
           <p className="text-sm font-semibold">{t.kind[requirementKind(selected)]}</p>
           <p className="mt-1 text-xs text-[#5d6561]">{t.need}: {selected.need}</p>
           <p className="mt-1 text-[11px] text-[#646c68]">{selected.title}</p>

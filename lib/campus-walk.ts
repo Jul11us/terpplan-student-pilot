@@ -130,6 +130,21 @@ export function weeklyWalkMinutes(sections: WalkSection[]) {
   return total;
 }
 
+// Minutes a week spent walking beyond a comfortable walk: for every move between buildings longer than
+// `allowance` minutes, the minutes past it, counted on each day the move happens. Free time between classes
+// is not counted; only how far apart the buildings are.
+export function longWalkMinutes(sections: WalkSection[], allowance = 10) {
+  let total = 0;
+  for (const list of placedByDay(sections).values()) {
+    for (let index = 1; index < list.length; index += 1) {
+      const from = list[index - 1], to = list[index];
+      if (from.building.code === to.building.code) continue;
+      total += Math.max(0, walkMinutes(from.building, to.building) - allowance);
+    }
+  }
+  return total;
+}
+
 // Consecutive classes on the same day whose gap is shorter than the estimated walk between their buildings.
 // Meetings without a known time or building (TBA, online) are skipped rather than guessed.
 export function tightWalks(sections: WalkSection[]): TightWalk[] {

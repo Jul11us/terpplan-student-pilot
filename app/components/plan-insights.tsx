@@ -63,16 +63,17 @@ export function WeekLoadChart({ sections, language }: { sections: ScheduledSecti
   const scale = Math.max(240, ...load.days.map((day) => day.classMinutes + day.gapMinutes));
   const label = (day: (typeof WEEK_DAYS)[number]) => t.weekdays[WEEK_DAYS.indexOf(day)];
   const gpa = historicalGpaSummary(sections);
-  return <div className="mb-3 grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+  // Side by side with the grades card when there is one; otherwise the chart uses the full width.
+  return <div className={`mb-3 grid gap-3 ${gpa ? "lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]" : ""}`}>
     <div className="rounded-xl border border-[#e3e0d8] bg-white p-3 sm:p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2"><h5 className="text-xs font-semibold text-[#273c38]">{t.weekLoad}</h5><span className="text-[11px] text-[#646c68]">{fill(t.total, { h: hours(load.totalClassMinutes) })}</span></div>
-      <ul className="mt-3 space-y-1.5">{load.days.map((day) => <li key={day.day} className="grid grid-cols-[2.5rem_minmax(0,1fr)_5.5rem] items-center gap-2 text-[11px]">
+      <ul className="mt-3 space-y-1.5">{load.days.map((day) => <li key={day.day} className="grid grid-cols-[2.5rem_minmax(0,1fr)_7.5rem] items-center gap-2 text-[11px]">
         <span className={day.day === load.busiest ? "font-semibold text-[#273c38]" : "text-[#59635f]"}>{label(day.day)}</span>
         <span className="flex h-2.5 overflow-hidden rounded-full bg-[#f2f0eb]" aria-hidden="true">
           <span className="h-full bg-[#536d64]" style={{ width: `${(day.classMinutes / scale) * 100}%` }} />
           <span className="h-full bg-[repeating-linear-gradient(45deg,#cfd8d3_0,#cfd8d3_3px,transparent_3px,transparent_6px)]" style={{ width: `${(day.gapMinutes / scale) * 100}%` }} />
         </span>
-        <span className="text-right tabular-nums text-[#59635f]">{day.classMinutes ? `${hours(day.classMinutes)} ${t.hours}${day.gapMinutes ? ` · ${t.gap} ${hours(day.gapMinutes)}` : ""}` : t.noClasses}</span>
+        <span className="text-right tabular-nums text-[#59635f]">{day.classMinutes ? `${hours(day.classMinutes)} ${t.hours}${day.gapMinutes ? ` · ${t.gap} ${hours(day.gapMinutes)} ${t.hours}` : ""}` : t.noClasses}</span>
       </li>)}</ul>
       <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-[#646c68]">
         {load.busiest && <span>{fill(t.busiest, { day: label(load.busiest) })}</span>}
