@@ -49,3 +49,46 @@ export const alertSubscriptions = sqliteTable("alert_subscriptions", {
   dailyCount: integer("daily_count").notNull().default(0),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+// Historical seat snapshots for trend analysis
+export const seatHistory = sqliteTable(
+  "seat_history",
+  {
+    courseId: text("course_id").notNull(),
+    sectionId: text("section_id").notNull(),
+    term: text("term").notNull(),
+    seats: integer("seats"),
+    openSeats: integer("open_seats").notNull(),
+    waitlist: integer("waitlist").notNull().default(0),
+    checkedAt: text("checked_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [primaryKey({ columns: [table.term, table.sectionId, table.checkedAt] })],
+);
+
+// Track which courses are added to plans (for popularity ranking)
+export const planActivity = sqliteTable(
+  "plan_activity",
+  {
+    courseId: text("course_id").notNull(),
+    term: text("term").notNull(),
+    // Anonymous fingerprint to count unique users without storing identity
+    userHash: text("user_hash").notNull(),
+    addedAt: text("added_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    removedAt: text("removed_at"),
+  },
+  (table) => [primaryKey({ columns: [table.term, table.courseId, table.userHash] })],
+);
+
+// Historical offerings: which terms a course was offered
+export const courseOfferings = sqliteTable(
+  "course_offerings",
+  {
+    courseId: text("course_id").notNull(),
+    term: text("term").notNull(),
+    sectionCount: integer("section_count").notNull(),
+    totalSeats: integer("total_seats").notNull(),
+    firstSeenAt: text("first_seen_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    lastSeenAt: text("last_seen_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [primaryKey({ columns: [table.courseId, table.term] })],
+);

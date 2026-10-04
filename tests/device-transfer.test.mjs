@@ -10,7 +10,7 @@ const state = {
   plans: { "202701": [{ courseId: "CMSC216", courseTitle: "Introduction to Computer Systems", pinnedSectionId: "CMSC216-0104" }, { courseId: "MATH141", courseTitle: "Calculus II" }] },
   preferences: { excludedDays: ["Fri"], earliestStart: "09:00", windowStart: "", windowEnd: "", strictTime: false, openSeatsOnly: true, includeFreshmanConnection: false, busyBlocks: [{ id: "b1", days: ["Mon"], start: "12:00", end: "13:00", label: "Shift at the dining hall" }], bufferMinutes: 10 },
 };
-const taken = { completed: ["CMSC131", "CMSC132"], inProgress: ["MATH140"], source: "manual", updatedAt: "2026-10-01T00:00:00Z" };
+const taken = { completed: ["CMSC131", "CMSC132"], inProgress: ["MATH140"], credits: 45, source: "manual", updatedAt: "2026-10-01T00:00:00Z" };
 
 test("a transfer link round-trips the plan and courses taken, without event names or language", async () => {
   const code = await encodeTransfer(state, taken);
@@ -22,6 +22,7 @@ test("a transfer link round-trips the plan and courses taken, without event name
   assert.equal(back.state.preferences.bufferMinutes, 10);
   assert.deepEqual(back.state.preferences.busyBlocks, [{ id: "b1", days: ["Mon"], start: "12:00", end: "13:00" }]);
   assert.deepEqual([back.taken.completed, back.taken.inProgress], [taken.completed, taken.inProgress]);
+  assert.equal(back.taken.credits, 45);
   assert.equal(transferCourseCount(back), 2);
 });
 
@@ -47,6 +48,7 @@ test("loading another device's plan replaces old preferences and taken courses, 
     assert.equal(readSavedState().language, "zh");
     assert.deepEqual(readSavedState().plans, transferred.state.plans);
     assert.deepEqual(readTaken().completed, taken.completed);
+    assert.equal(readTaken().credits, 45);
     assert.equal(readSavedState().preferences.bufferMinutes, 10);
 
     const empty = await decodeTransfer(await encodeTransfer({ term: "202701", plans: {} }, null));

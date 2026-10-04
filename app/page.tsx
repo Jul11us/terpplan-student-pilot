@@ -10,6 +10,7 @@ import { GEN_ED_CATEGORIES } from "@/lib/gened-categories";
 import { creditMeter, creditRange, creditWarning, formatCreditTotal, totalPlanCredits, type CreditRange } from "@/lib/plan-credits";
 import { planKey } from "@/lib/plan-key";
 import { courseSet, describeRequirement, unmetRequirements } from "@/lib/prereq-check";
+import { minimumCredits } from "@/lib/credit-standing";
 import type { PrereqNode } from "@/lib/programs";
 import { readTaken, TAKEN_EVENT, TAKEN_KEY, type TakenCourses } from "@/lib/taken-courses";
 import TakenCoursesEditor from "@/app/components/taken-courses";
@@ -26,6 +27,8 @@ import { courseSearchView, startCourseSearch, type CourseSearchState } from "@/l
 import { groupSections, ownMeetings } from "@/lib/section-groups";
 import { reportMailto } from "@/lib/report-link";
 import { applyTransfer, decodeTransfer, encodeTransfer, TRANSFER_PREFIX, transferCourseCount, type Transfer } from "@/lib/device-transfer";
+import { CourseTrends } from "@/app/components/course-trends";
+import { PopularCourses } from "@/app/components/popular-courses";
 
 type Course = { course_id: string; name: string; department?: string; credits?: string };
 type Meeting = { days?: string | null; start_time?: string | null; end_time?: string | null; building?: string | null; room?: string | null };
@@ -78,7 +81,7 @@ const copy = {
     loading: "Loading…", error: "Something went wrong. Please try again.",
     resultFull: "Full", resultNoSections: "No sections", resultSeatsUnknown: "Seats unknown",
     filterOpen: "Open seats", filterPrereqs: "Prerequisites met", filterPrereqsNeedTaken: "Add the courses you've taken (above) to use this filter.", filterCredits: "Credits", filterAny: "Any", filterShowing: "Showing {n} of {m}", filterNone: "No matches with these filters.", filterClear: "Clear filters", sortLabel: "Sort", sortMatch: "Best match", sortSeats: "Most open seats", sortGpa: "Highest avg GPA", sortCredits: "Fewest credits", sortGpaShort: "avg GPA", sortGpaHint: "Historical average GPA from PlanetTerp, across every past term and instructor.", sortLoading: "Sorting as the numbers load…", showMore: "Show {n} more ({m} left)", reportCourse: "Something wrong with this course's information? Report it", planName: "Plan {x}", planSwitch: "Plan A or Plan B for this term", planCopy: "Copy this plan to Plan {x}", planHint: "Keep a backup plan for this term. Each plan has its own courses; preferences are shared.", transferButton: "Continue on another device", transferCopied: "Link copied. Open it on your other device, for example by emailing or messaging it to yourself.", transferReady: "Copy this link and open it on your other device.", transferPrivacy: "It carries your plans, schedule preferences and courses taken, but not the names of personal events. Anyone with the link can see them.", transferTitle: "Plan from another device", transferBody: "This link has {courses} planned courses{taken}. Load them here? This replaces the plan saved in this browser.", transferTaken: " and {n} courses taken", transferLoad: "Load plan", transferDismiss: "Not now", transferInvalid: "This transfer link is incomplete or damaged. Make a new one on the other device.", resultsCapped: "Showing the first {n} matches. Type more of the course code or title to narrow the search.",
-    prereqNeeds: "Prerequisite not met yet: {needs}", prereqMet: "Prerequisites met by the courses you've taken.", prereqAddTaken: "Add the courses you've taken (at the top of the page) to check this prerequisite.", prereqOrHigher: " or higher", prereqSameTerm: " (same term OK)", prereqOf: "{k} of",
+    prereqNeeds: "Prerequisite not met yet: {needs}", prereqMet: "Prerequisites met by the courses you've taken.", prereqAddTaken: "Add the courses you've taken (at the top of the page) to check this prerequisite.", prereqOrHigher: " or higher", prereqSameTerm: " (same term OK)", prereqOf: "{k} of", creditNeed: "{n} credits completed (you'll have {have})", creditUnknown: "This course needs {n} completed credits. Enter your credits with the courses you've taken (top of the page) to check.", creditShort: "Needs {n} completed credits; you'll have {have} by next term.", creditMet: "Needs {n} completed credits; you'll have {have}.",
     seats: "seats open", seat: "seat open", credit: "credit", creditsUnit: "credits", openOf: "{n} / {total} open", waitlisted: "{n} waitlisted", groupSections: "{n} sections", groupShared: "Every section meets", groupOwn: "Each section adds", groupOpenIn: "across {n} sections", fcOnly: "Freshman Connection only", pickCourse: "Pick a course from the matches to see its sections.", waitlist: "waitlist", checked: "Last checked", status: "Status", freshness: "Seat counts come from UMD course data and may lag the official Schedule of Classes. This page checks at most once a minute while open.",
     open: "Seats available", full: "Full", unknown: "Unknown", stale: "Last check failed · showing saved count", checking: "Checking…",
     next: "Next step", back: "Back", termFallback: "Term list unavailable — showing Spring 2027",
@@ -100,7 +103,7 @@ const copy = {
     loading: "加载中…",
     resultFull: "已满", resultNoSections: "本学期无班次", resultSeatsUnknown: "余位未知",
     filterOpen: "有空位", filterPrereqs: "先修课已满足", filterPrereqsNeedTaken: "先在上方填写修过的课程，才能用这个筛选。", filterCredits: "学分", filterAny: "不限", filterShowing: "显示 {n} / {m} 门", filterNone: "没有符合筛选条件的课程。", filterClear: "清除筛选", sortLabel: "排序", sortMatch: "最匹配", sortSeats: "空位最多", sortGpa: "平均 GPA 最高", sortCredits: "学分最少", sortGpaShort: "平均 GPA", sortGpaHint: "PlanetTerp 上的历史平均 GPA，包括过去所有学期和所有老师。", sortLoading: "数据加载中，排序会随之更新…", showMore: "再显示 {n} 门（还有 {m} 门）", reportCourse: "这门课的信息有误？告诉我们", planName: "方案 {x}", planSwitch: "本学期的方案 A 或方案 B", planCopy: "把这个方案复制到方案 {x}", planHint: "给这学期留一个备用方案。两个方案的课程各自独立，排课偏好共用。", transferButton: "在其他设备上继续", transferCopied: "链接已复制。在另一台设备上打开它，比如用邮件或消息发给自己。", transferReady: "复制这个链接，在另一台设备上打开。", transferPrivacy: "链接里有你的排课方案、排课偏好和修过的课程，不包括个人日程的名称。拿到链接的人都能看到这些内容。", transferTitle: "来自其他设备的方案", transferBody: "这个链接里有 {courses} 门计划课程{taken}。要在这里载入吗？这会替换这个浏览器里保存的方案。", transferTaken: "和 {n} 门修过的课程", transferLoad: "载入方案", transferDismiss: "暂不", transferInvalid: "这个链接不完整或已损坏，请在另一台设备上重新生成。", resultsCapped: "只列出前 {n} 个匹配结果。输入更完整的课号或课名可以缩小范围。",
-    prereqNeeds: "先修课还没满足：{needs}", prereqMet: "你修过的课程已满足先修要求。", prereqAddTaken: "在页面上方填写修过的课程，就能检查这门课的先修要求。", prereqOrHigher: " 或更高", prereqSameTerm: "（可同学期修）", prereqOf: "任选 {k} 门：",
+    prereqNeeds: "先修课还没满足：{needs}", prereqMet: "你修过的课程已满足先修要求。", prereqAddTaken: "在页面上方填写修过的课程，就能检查这门课的先修要求。", prereqOrHigher: " 或更高", prereqSameTerm: "（可同学期修）", prereqOf: "任选 {k} 门：", creditNeed: "修满 {n} 学分（你到时有 {have}）", creditUnknown: "这门课要求已修满 {n} 学分。在页面上方“修过的课程”里填上你的学分就能检查。", creditShort: "要求已修满 {n} 学分，你到下学期只有 {have} 学分。", creditMet: "要求已修满 {n} 学分，你到时有 {have} 学分。",
     error: "发生错误，请重试。", seats: "个空位", seat: "个空位", credit: "学分", creditsUnit: "学分", openOf: "空位 {n} / {total}", waitlisted: "候补 {n} 人", groupSections: "{n} 个班次", groupShared: "所有班次都上", groupOwn: "各班次另外的时间", groupOpenIn: "{n} 个班次合计", fcOnly: "仅限 Freshman Connection", pickCourse: "从匹配结果中选择一门课程，查看它的班次。", waitlist: "候补人数", checked: "上次检查", status: "状态",
     freshness: "余位数据来自 UMD 课程数据，可能晚于学校官方课表。页面打开时最多每分钟检查一次。",
     open: "有空位", full: "已满", unknown: "未知", stale: "上次检查失败 · 显示已保存数据", checking: "检查中…",
@@ -240,6 +243,8 @@ export default function Home() {
   // Credits per "term|courseId" for the plan total; null once a lookup failed. Filled by opening a course
   // or, for courses restored from storage or added straight from a result list, by a lookup below.
   const [planCredits, setPlanCredits] = useState<Record<string, CreditRange | null>>({});
+  // Credits a course needs finished first ("24 credit hours completed"), by "term|courseId"; null for none.
+  const [minCredits, setMinCredits] = useState<Record<string, number | null>>({});
   const creditRequestsRef = useRef(new Set<string>());
   // Plans saved in this browser, one per term; kept in a ref so switching terms can restore them.
   const savedPlansRef = useRef<Record<string, PlanCourse[]>>({});
@@ -426,6 +431,7 @@ export default function Home() {
       setCourseSeatCheckedAt(payload.seatCheckedAt ?? null);
       setCourseCredits(creditsText(payload.course));
       setPlanCredits((current) => ({ ...current, [courseRequestKey]: creditRange(payload.course) }));
+      setMinCredits((current) => ({ ...current, [courseRequestKey]: minimumCredits(payload.course?.requirements) }));
       setCourseInfo({ requirements: Array.isArray(payload.course?.requirements) ? payload.course.requirements : [], description: payload.course?.description ?? null });
       setSections([...(payload.sections ?? [])].sort((a: Section, b: Section) => sectionId(a, course.course_id).localeCompare(sectionId(b, course.course_id), "en", { numeric: true })));
       const names = [...new Set((payload.sections ?? []).flatMap((section: Section) => section.instructors ?? []))];
@@ -540,11 +546,17 @@ export default function Home() {
   const takenSet = courseSet(takenCodes ?? []);
   const prereqLabels = { orHigher: t.prereqOrHigher, sameTerm: t.prereqSameTerm, of: (k: number) => t.prereqOf.replace("{k}", String(k)) };
   // What a course still needs, or null when there is nothing to say (no rule, or no courses entered yet).
-  const prereqNeeds = (courseId: string): string[] | null => {
+  // A credit minimum is included once the student has entered their credits (the course panel words it
+  // separately, so it passes withCredits = false).
+  const prereqNeeds = (courseId: string, withCredits = true): string[] | null => {
     const rule = prereqRules[term + "|" + courseId];
-    if (!rule || !taken) return null;
+    const creditsNeeded = withCredits ? minCredits[term + "|" + courseId] : null;
+    if ((!rule && !creditsNeeded) || !taken) return null;
     const sameTerm = courseSet(planCourses.map((course) => course.courseId).filter((id) => id !== courseId));
-    return unmetRequirements(rule, takenSet, sameTerm).map((node) => describeRequirement(node, prereqLabels));
+    const needs = rule ? unmetRequirements(rule, takenSet, sameTerm).map((node) => describeRequirement(node, prereqLabels)) : [];
+    if (creditsNeeded && taken.credits !== undefined && taken.credits < creditsNeeded) needs.push(t.creditNeed.replace("{n}", String(creditsNeeded)).replace("{have}", String(taken.credits)));
+    if (creditsNeeded && taken.credits === undefined && !needs.length) return null;
+    return needs;
   };
 
   // Search results with the filters applied, and how many of them are on screen ("Show more" adds 40).
@@ -558,7 +570,7 @@ export default function Home() {
     resultSort, (id) => resultSeats[term + "|" + id]?.summary, (id) => courseGpa[id]),
     // prereqNeeds reads prereqRules, planCourses and taken, which are listed instead of the function itself.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [results, resultFilters, resultSort, courseGpa, taken, resultSeats, term, prereqRules, planCourses]);
+    [results, resultFilters, resultSort, courseGpa, taken, resultSeats, term, prereqRules, minCredits, planCourses]);
   const displayedResults = shownResults.slice(0, resultLimit);
   // "Open seats" and "Most open seats" need every result's seats; otherwise only the ones on screen.
   const seatTargets = resultFilters.openSeats || resultSort === "seats" ? results : displayedResults;
@@ -603,9 +615,12 @@ export default function Home() {
       if (key in planCredits || creditRequestsRef.current.has(key)) continue;
       creditRequestsRef.current.add(key);
       void fetch(`/api/course?id=${encodeURIComponent(courseId)}&term=${encodeURIComponent(term)}`)
-        .then(async (response) => response.ok ? creditRange(((await response.json()) as CoursePayload).course) : null)
+        .then(async (response) => response.ok ? ((await response.json()) as CoursePayload).course ?? null : null)
         .catch(() => null)
-        .then((range) => setPlanCredits((current) => key in current ? current : { ...current, [key]: range }));
+        .then((course) => {
+          setPlanCredits((current) => key in current ? current : { ...current, [key]: creditRange(course) });
+          setMinCredits((current) => key in current ? current : { ...current, [key]: minimumCredits(course?.requirements) });
+        });
     }
   }, [restored, planCourses, term, planCredits]);
 
@@ -820,6 +835,8 @@ export default function Home() {
           </div>
         </section>}
 
+        {step === "find" && restored && <PopularCourses term={term} lang={language} courseIds={planCourses.map((course) => course.courseId)} />}
+
         {termUnavailable && <p className="mb-4 rounded-xl border border-[#ead8b5] bg-[#fff8e8] px-4 py-3 text-sm text-[#745424]">{t.termFallback}</p>}
         {message && <p role="status" className="mb-4 rounded-xl border border-[#bfd4c6] bg-[#edf6ef] px-4 py-3 text-sm text-[#315c43]">{t[message]}</p>}
         {error && <p role="alert" className="mb-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]">{error}</p>}
@@ -856,14 +873,16 @@ export default function Home() {
             {!searching && results.length >= MAX_RESULTS && shown.length <= displayedResults.length && <p className="mt-3 text-[11px] leading-5 text-[#646c68]">{t.resultsCapped.replace("{n}", String(MAX_RESULTS))}</p>}
             </>; })()}</>}
           </div>
-          <div className="course-detail-panel min-w-0 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-6"><div className="mb-5"><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{selected ? `${selected.course_id} · ${termLabel(term, language)}` : `02 · ${t.sections}`}</p><h2 className="mt-2 font-serif text-2xl">{selected?.name ?? t.sections}</h2>{selected && courseCredits && <p className="mt-1 text-sm font-medium text-[#48534f]">{courseCredits} {courseCredits === "1" ? t.credit : t.creditsUnit}</p>}{selected && courseInfo && <CourseRequirements requirements={courseInfo.requirements} description={courseInfo.description} language={language} currentCourseId={selected.course_id} onCourseClick={(courseId) => void jumpToCourse(courseId)} />}{selected && prereqRules[term + "|" + selected.course_id] && (() => { const needs = prereqNeeds(selected.course_id); return <p className={`mt-2 rounded-lg px-3 py-2 text-xs ${!needs ? "bg-[#f2f0eb] text-[#5d6561]" : needs.length ? "bg-[#fff8e8] text-[#745424]" : "bg-[#eaf4ec] text-[#367047]"}`}>{!needs ? t.prereqAddTaken : needs.length ? "⚠ " + t.prereqNeeds.replace("{needs}", needs.join("; ")) : "✓ " + t.prereqMet}</p>; })()}{selected && sections.length > 0 && <button onClick={() => addToSchedule(selected)} disabled={planCourses.some((item) => item.courseId === selected.course_id)} className="mt-4 rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:cursor-default disabled:opacity-60">{planCourses.some((item) => item.courseId === selected.course_id) ? t.courseInPlan : t.addSchedule}</button>}
+          <div className="course-detail-panel min-w-0 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-6"><div className="mb-5"><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{selected ? `${selected.course_id} · ${termLabel(term, language)}` : `02 · ${t.sections}`}</p><h2 className="mt-2 font-serif text-2xl">{selected?.name ?? t.sections}</h2>{selected && courseCredits && <p className="mt-1 text-sm font-medium text-[#48534f]">{courseCredits} {courseCredits === "1" ? t.credit : t.creditsUnit}</p>}{selected && courseInfo && <CourseRequirements requirements={courseInfo.requirements} description={courseInfo.description} language={language} currentCourseId={selected.course_id} onCourseClick={(courseId) => void jumpToCourse(courseId)} />}{selected && prereqRules[term + "|" + selected.course_id] && (() => { const needs = prereqNeeds(selected.course_id, false); return <p className={`mt-2 rounded-lg px-3 py-2 text-xs ${!needs ? "bg-[#f2f0eb] text-[#5d6561]" : needs.length ? "bg-[#fff8e8] text-[#745424]" : "bg-[#eaf4ec] text-[#367047]"}`}>{!needs ? t.prereqAddTaken : needs.length ? "⚠ " + t.prereqNeeds.replace("{needs}", needs.join("; ")) : "✓ " + t.prereqMet}</p>; })()}{selected && minCredits[term + "|" + selected.course_id] && (() => { const n = String(minCredits[term + "|" + selected.course_id]); const have = taken?.credits; const short = have !== undefined && have < Number(n); return <p className={`mt-2 rounded-lg px-3 py-2 text-xs ${have === undefined ? "bg-[#f2f0eb] text-[#5d6561]" : short ? "bg-[#fff8e8] text-[#745424]" : "bg-[#eaf4ec] text-[#367047]"}`}>{have === undefined ? t.creditUnknown.replace("{n}", n) : (short ? "⚠ " + t.creditShort : "✓ " + t.creditMet).replace("{n}", n).replace("{have}", String(have))}</p>; })()}{selected && sections.length > 0 && <button onClick={() => addToSchedule(selected)} disabled={planCourses.some((item) => item.courseId === selected.course_id)} className="mt-4 rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:cursor-default disabled:opacity-60">{planCourses.some((item) => item.courseId === selected.course_id) ? t.courseInPlan : t.addSchedule}</button>}
               {selected && visibleSections.length > 1 && (() => {
                 const ids = visibleSections.map((section) => sectionId(section, selected.course_id));
                 const all = ids.every((id) => watches.some((item) => item.term === term && item.sectionId === id));
                 const tooMany = ids.length > 20;
                 return <div className="mt-2"><button type="button" onClick={() => void addWatchAll(selected, visibleSections)} disabled={all || tooMany} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef] disabled:cursor-default disabled:opacity-60">{(all ? t.watchingAll : t.watchAll).replace("{n}", String(ids.length))}</button><p className="mt-1.5 text-[11px] leading-5 text-[#646c68]">{tooMany ? t.watchAllTooMany.replace("{n}", String(ids.length)) : t.watchAllHint}</p></div>;
               })()}
-              {selected && courseInstructors.length > 1 && <div className="mt-4"><p className="text-xs font-medium text-[#5d6561]">{t.instructorPick} <span className="font-normal text-[#646c68]">· {excludedInstructors.length ? `${keptInstructors.length}/${courseInstructors.length}` : t.allInstructors}</span></p><div className="mt-2 flex flex-wrap gap-2">{courseInstructors.map((name) => { const kept = !excludedInstructors.includes(name); return <button key={name} type="button" onClick={() => toggleInstructor(name)} disabled={Boolean(selectedPlan?.pinnedSectionId)} aria-pressed={kept} className={`rounded-full border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${kept ? "border-[#536d64] bg-[#edf3ef] font-medium text-[#24312d]" : "border-[#e0ddd5] bg-white text-[#9aa19d] line-through"}`}>{kept ? "✓ " : ""}{name}</button>; })}</div><p className="mt-2 text-[11px] text-[#646c68]">{selectedPlan?.pinnedSectionId ? t.pinnedInstructorHint : t.instructorHint}</p></div>}</div>
+              {selected && courseInstructors.length > 1 && <div className="mt-4"><p className="text-xs font-medium text-[#5d6561]">{t.instructorPick} <span className="font-normal text-[#646c68]">· {excludedInstructors.length ? `${keptInstructors.length}/${courseInstructors.length}` : t.allInstructors}</span></p><div className="mt-2 flex flex-wrap gap-2">{courseInstructors.map((name) => { const kept = !excludedInstructors.includes(name); return <button key={name} type="button" onClick={() => toggleInstructor(name)} disabled={Boolean(selectedPlan?.pinnedSectionId)} aria-pressed={kept} className={`rounded-full border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${kept ? "border-[#536d64] bg-[#edf3ef] font-medium text-[#24312d]" : "border-[#e0ddd5] bg-white text-[#9aa19d] line-through"}`}>{kept ? "✓ " : ""}{name}</button>; })}</div><p className="mt-2 text-[11px] text-[#646c68]">{selectedPlan?.pinnedSectionId ? t.pinnedInstructorHint : t.instructorHint}</p></div>}
+              {selected && visibleSections.length > 0 && <CourseTrends courseId={selected.course_id} term={term} sectionIds={visibleSections.slice(0, 10).map((section) => sectionId(section, selected.course_id))} lang={language} />}
+            </div>
             {!selected && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm leading-6 text-[#646c68]">{results.length ? t.pickCourse : t.noResults}</p>}{loadingDetail && <p className="py-8 text-sm text-[#646c68]">{t.loading}</p>}
             {selected && !loadingDetail && !sections.length && !error && <p className="rounded-xl bg-[#f2f0eb] p-4 text-sm text-[#646c68]">{language === "en" ? "No sections listed for this term." : "本学期没有列出班次。"}</p>}
             {visibleSections.length > 0 && <div aria-hidden="true" className="section-comparison-heading section-comparison-grid">

@@ -39,7 +39,7 @@ function shareable(state: SavedState): SavedState {
 }
 
 export async function encodeTransfer(state: SavedState, taken: TakenCourses | null) {
-  const body = JSON.stringify({ v: VERSION, s: shareable(state), t: taken ? { completed: taken.completed, inProgress: taken.inProgress, source: taken.source } : null });
+  const body = JSON.stringify({ v: VERSION, s: shareable(state), t: taken ? { completed: taken.completed, inProgress: taken.inProgress, credits: taken.credits, source: taken.source } : null });
   return toBase64Url(await pipe(new TextEncoder().encode(body), new CompressionStream("deflate-raw")));
 }
 
@@ -61,5 +61,5 @@ export const transferCourseCount = (transfer: Transfer) => [...Object.values(tra
 // Replace the receiving browser's plan data, including empty values, while keeping its language.
 export function applyTransfer(transfer: Transfer) {
   writeSavedState({ term: transfer.state.term, plans: transfer.state.plans, otherPlans: transfer.state.otherPlans ?? {}, showingB: transfer.state.showingB ?? {}, preferences: transfer.state.preferences });
-  writeTaken(transfer.taken ? { completed: transfer.taken.completed, inProgress: transfer.taken.inProgress, source: transfer.taken.source } : null);
+  writeTaken(transfer.taken ? { completed: transfer.taken.completed, inProgress: transfer.taken.inProgress, credits: transfer.taken.credits, source: transfer.taken.source } : null);
 }

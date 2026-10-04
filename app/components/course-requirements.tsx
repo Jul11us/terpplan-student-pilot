@@ -5,6 +5,7 @@ export type CourseRequirement = { kind: string; label: string; text: string };
 
 // The ones that decide whether a student can register; shown first and highlighted.
 const BLOCKING = ["prerequisite", "corequisite", "restriction"];
+const RESTRICTION_NOTE = /^\s*(?:restricted to|restriction:|prerequisite:|corequisite:|must be in|must have)/i;
 
 const LABELS: Record<Language, Record<string, string>> = {
   en: {
@@ -46,8 +47,12 @@ export default function CourseRequirements({ requirements, description, language
   const t = copy[language];
   const colon = language === "zh" ? "：" : ": ";
   const label = (item: CourseRequirement) => LABELS[language][item.kind] ?? (item.label === "Note" ? t.note : item.label);
-  const blocking = requirements.filter((item) => BLOCKING.includes(item.kind)).sort((a, b) => BLOCKING.indexOf(a.kind) - BLOCKING.indexOf(b.kind));
-  const other = requirements.filter((item) => !BLOCKING.includes(item.kind));
+  // Testudo puts some restrictions in an unlabelled note ("Restricted to students with 24 credit hours
+  // completed."); those go with the requirements, after the labelled ones.
+  const blocks = (item: CourseRequirement) => BLOCKING.includes(item.kind) || (item.kind === "other" && RESTRICTION_NOTE.test(item.text));
+  const rank = (item: CourseRequirement) => BLOCKING.includes(item.kind) ? BLOCKING.indexOf(item.kind) : BLOCKING.length;
+  const blocking = requirements.filter(blocks).sort((a, b) => rank(a) - rank(b));
+  const other = requirements.filter((item) => !blocks(item));
 
   return <div className="mt-4 space-y-2">
     {blocking.length > 0

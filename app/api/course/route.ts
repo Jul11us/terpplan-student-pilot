@@ -1,4 +1,5 @@
 import { courseIdIsValid, DEFAULT_TERM, getCourse } from "@/lib/umd";
+import { recordCourseHistory } from "@/lib/history-db";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -9,7 +10,10 @@ export async function GET(request: Request) {
   try {
     const detail = await getCourse(courseId, term);
     if (!detail) return Response.json({ error: `${courseId} was not found in the course catalog.` }, { status: 404 });
-    return Response.json({ ...detail, term });
+    // Optional history cannot prevent the student from reading the current course.
+    let historyRecorded = false;
+    try { await recordCourseHistory(term, courseId, detail.sections); historyRecorded = true; } catch { console.error("Course history could not be recorded."); }
+    return Response.json({ ...detail, term, historyRecorded });
   } catch {
     return Response.json({ error: "Course details could not be loaded. Try again shortly." }, { status: 503 });
   }

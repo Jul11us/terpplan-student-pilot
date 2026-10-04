@@ -19,7 +19,8 @@ test("audit import persists only passing and in-progress course codes and can be
     assert.deepEqual(taken.inProgress, ["MATH141"]);
     assert.equal(taken.source, "audit");
     const stored = JSON.parse(values.get(TAKEN_KEY));
-    assert.deepEqual(Object.keys(stored).sort(), ["completed", "inProgress", "source", "updatedAt"]);
+    assert.deepEqual(Object.keys(stored).sort(), ["completed", "credits", "inProgress", "source", "updatedAt"]);
+    assert.equal(stored.credits, 12);
     assert.equal(values.get(TAKEN_KEY).includes("Doe"), false);
     assert.deepEqual(events, [TAKEN_EVENT]);
     writeTaken(null);

@@ -218,6 +218,12 @@ export function displayClock(value: number) {
   return (hour % 12 || 12) + ":" + String(value % 60).padStart(2, "0") + (hour < 12 ? "am" : "pm");
 }
 
+// Hour lines on the timetable: "9am", "12pm". Short enough not to be cut off when text is enlarged.
+function hourLabel(value: number) {
+  const hour = Math.floor(value / 60);
+  return (hour % 12 || 12) + (hour < 12 || hour === 24 ? "am" : "pm");
+}
+
 function seatCount(value: string | number | null | undefined) {
   if (value === null || value === undefined || value === "") return null;
   const parsed = Number(value);
@@ -319,14 +325,15 @@ export function WeeklyCalendar({ sections: courseSections, language, busyBlocks 
   // Saturday and Sunday columns only when something meets then.
   const weekend = new Set(sections.flatMap((section) => (section.meetings ?? []).flatMap((meeting) => isAsyncOnline(meeting) ? [] : dayNames(meeting.days))));
   const gridDays = DAYS.filter((day) => (day !== "Sat" && day !== "Sun") || weekend.has(day));
-  const pixelsPerMinute = 1;
+  // 75px an hour, so a 50-minute class has room for its two lines even with enlarged text.
+  const pixelsPerMinute = 1.25;
   const height = (lastMinute - firstMinute) * pixelsPerMinute;
   const unknown = new Set<string>();
   const online = new Set<string>();
   const walks = tightWalks(courseSections);
   for (const section of sections) if (!section.meetings?.length) unknown.add(section.section_id);
   const colors = new Map([...new Set(sections.map((section) => section.course_id))].map((courseId, index) => [courseId, personalIds.has(courseId) ? "#dce2df" : COLORS[index % COLORS.length]]));
-  const columnClass = "relative border-l border-[#e6e4de] bg-[linear-gradient(to_bottom,transparent_59px,#e7e4dc_60px)] bg-[length:100%_60px]";
+  const columnClass = "relative border-l border-[#e6e4de] bg-[linear-gradient(to_bottom,transparent_74px,#e7e4dc_75px)] bg-[length:100%_75px]";
   // Phones show the week as a list by day; the 900px grid would need sideways scrolling there.
   const byDay = DAYS.map((day, dayIndex) => ({
     day,
@@ -357,7 +364,7 @@ export function WeeklyCalendar({ sections: courseSections, language, busyBlocks 
       {gridDays.map((day) => <div key={day} className="sticky top-0 z-10 border-l border-[#e6e4de] bg-white p-3 text-center text-xs font-semibold text-[#59635f]">{t.weekdays[DAYS.indexOf(day)]}</div>)}
       <div className="relative" style={{ height }}>
         {/* Labels sit centred on their hour line, except the first and last, which would be half hidden under the day header or past the bottom edge. */}
-        {Array.from({ length: (lastMinute - firstMinute) / 60 + 1 }, (_, index) => <span key={index} className={`absolute right-2 text-[10px] text-[#646c68] ${index === 0 ? "translate-y-0.5" : index === (lastMinute - firstMinute) / 60 ? "-translate-y-full" : "-translate-y-1/2"}`} style={{ top: index * 60 }}>{displayClock(firstMinute + index * 60)}</span>)}
+        {Array.from({ length: (lastMinute - firstMinute) / 60 + 1 }, (_, index) => <span key={index} className={`absolute right-2 text-[10px] text-[#646c68] ${index === 0 ? "translate-y-0.5" : index === (lastMinute - firstMinute) / 60 ? "-translate-y-full" : "-translate-y-1/2"}`} style={{ top: index * 60 * pixelsPerMinute }}>{hourLabel(firstMinute + index * 60)}</span>)}
       </div>
       {gridDays.map((day) => <div key={day} className={columnClass} style={{ height }}>
         {sections.flatMap((section) => (section.meetings ?? []).flatMap((meeting, index) => {
@@ -379,10 +386,12 @@ export function WeeklyCalendar({ sections: courseSections, language, busyBlocks 
           const room = roomLabel(meeting.building, meeting.room, language);
           const personal = personalIds.has(section.section_id);
           const title = (personal ? section.course_title : section.section_id) + " · " + displayClock(start) + "–" + displayClock(end) + (personal ? "" : " · " + room);
-          return [<div key={section.section_id + "-" + day + "-" + index} className="absolute inset-x-1 flex flex-col justify-center overflow-hidden rounded-md border border-white/80 text-center text-[10px] leading-tight text-[#24312d] shadow-sm" style={{ top: (clippedStart - firstMinute) * pixelsPerMinute, height: Math.max(30, (clippedEnd - clippedStart) * pixelsPerMinute), backgroundColor: colors.get(section.course_id) }}>
+          return [<div key={section.section_id + "-" + day + "-" + index} className="absolute inset-x-1 flex flex-col justify-center-safe overflow-hidden rounded-md border border-white/80 text-center text-[10px] leading-tight text-[#24312d] shadow-sm" style={{ top: (clippedStart - firstMinute) * pixelsPerMinute, height: Math.max(30, (clippedEnd - clippedStart) * pixelsPerMinute), backgroundColor: colors.get(section.course_id) }}>
             {/* The block opens the section swap; the building is a separate link on top of it. */}
             <button type="button" disabled={!onSelectSection || personal} onClick={() => onSelectSection?.(section)} title={title} aria-label={title} className="absolute inset-0 rounded-md enabled:hover:ring-2 enabled:hover:ring-inset enabled:hover:ring-[#536d64]" />
-            <div className="pointer-events-none relative px-1.5 py-1"><strong className="block truncate">{personal ? section.course_title : `${section.course_id} · ${sectionNumber}`}</strong><span className="block truncate">{displayClock(start)}–{displayClock(end)}</span>{!personal && <span className="block truncate"><RoomLink building={meeting.building} room={meeting.room} language={language} />{shortType ? " · " + shortType : ""}</span>}</div>
+            <div className="pointer-events-none relative px-1.5 py-1"><strong className="block truncate">{personal ? section.course_title : `${section.course_id} · ${sectionNumber}`}</strong>{/* Under an hour there is room for two lines: the start time goes next to the room (the full time is in the tooltip). */}{clippedEnd - clippedStart < 60
+              ? <span className="block truncate">{displayClock(start)}{!personal && <>{" · "}<RoomLink building={meeting.building} room={meeting.room} language={language} /></>}</span>
+              : <><span className="block truncate">{displayClock(start)}–{displayClock(end)}</span>{!personal && <span className="block truncate"><RoomLink building={meeting.building} room={meeting.room} language={language} />{shortType ? " · " + shortType : ""}</span>}</>}</div>
           </div>];
         }))}
       </div>)}

@@ -13,15 +13,20 @@ export type AuditResult = {
   requirements: AuditRequirement[];
   completedCourseIds: string[];
   inProgressCourseIds: string[];
+  // Credits from the course rows: earned (any passing grade, D included, and transfer credit) and in progress.
+  completedCredits: number;
+  inProgressCredits: number;
 };
 
 const GEN_ED_CODES = new Set<string>(GEN_ED_CATEGORIES.map((item) => item.code));
 const COURSE_ID = /^[A-Z]{2,6}\d{3}[A-Z]{0,2}$/;
-const COURSE_ROW = /^(?:Fa|Sp|Wi|Su|S1|S2)\d{2}\s+([A-Z]{2,6}\d{3}[A-Z0-9]{0,2})\s+[\d.]+\s+(\S+)/i;
+const COURSE_ROW = /^(?:Fa|Sp|Wi|Su|S1|S2)\d{2}\s+([A-Z]{2,6}\d{3}[A-Z0-9]{0,2})\s+([\d.]+)\s+(\S+)/i;
 // Unknown, failing, withdrawn, and incomplete grades must never hide a retake.
 // D grades can require a retake for some programs, so only clear passes are hidden.
 // TP is a transfer pass: AP, IB, and transfer credit that uAchieve applies like a completed course.
 const CLEAR_PASS = /^(?:[ABC][+-]?|P|S|CR|TP)$/;
+// Grades that earn credit, for the credit count (a D still counts toward credits earned).
+const EARNS_CREDIT = /^(?:[ABCD][+-]?|P|S|CR|TP)$/;
 const SECTION = /^\[[\w/]+\]/;
 const NEEDS = /^NEEDS:\s*(.+)$/i;
 const SELECT = /^SELECT FROM:\s*(.*)$/i;
@@ -93,14 +98,24 @@ export function parseDegreeAudit(text: string): AuditResult {
     : text.includes("AT LEAST ONE REQUIREMENT HAS NOT BEEN SATISFIED") ? "in_progress" : "unknown";
   const completed = new Set<string>();
   const inProgress = new Set<string>();
+  // A course is listed under every requirement it counts for, so credits are kept once per course.
+  const earned = new Map<string, number>();
+  const taking = new Map<string, number>();
   for (const line of lines) {
     const row = line.match(COURSE_ROW);
     if (!row) continue;
     const courseId = row[1].toUpperCase();
-    const grade = row[2].toUpperCase();
-    if (grade === "IP") inProgress.add(courseId);
-    else if (CLEAR_PASS.test(grade)) completed.add(courseId);
+    const credits = Number(row[2]) || 0;
+    const grade = row[3].toUpperCase();
+    if (grade === "IP") { inProgress.add(courseId); taking.set(courseId, Math.max(taking.get(courseId) ?? 0, credits)); }
+    else {
+      if (CLEAR_PASS.test(grade)) completed.add(courseId);
+      if (EARNS_CREDIT.test(grade)) earned.set(courseId, Math.max(earned.get(courseId) ?? 0, credits));
+    }
   }
+  // A repeated course does not earn a second set of credits just because its retake is in progress.
+  for (const courseId of earned.keys()) taking.delete(courseId);
+  const sum = (values: Map<string, number>) => Math.round([...values.values()].reduce((total, value) => total + value, 0) * 10) / 10;
 
   const requirements: AuditRequirement[] = [];
   for (let index = 0; index < lines.length; index++) {
@@ -128,5 +143,5 @@ export function parseDegreeAudit(text: string): AuditResult {
       genEdCode,
     });
   }
-  return { status, requirements, completedCourseIds: [...completed], inProgressCourseIds: [...inProgress] };
+  return { status, requirements, completedCourseIds: [...completed], inProgressCourseIds: [...inProgress], completedCredits: sum(earned), inProgressCredits: sum(taking) };
 }
