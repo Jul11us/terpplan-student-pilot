@@ -71,75 +71,27 @@ export function CourseTrends({ courseId, term, sectionIds, lang }: CourseTrendsP
   }, [courseId, term, sectionKey, lang, requestKey]);
 
   if (loading) {
-    return (
-      <div className="course-trends loading">
-        <p>{t.loading}</p>
-        <style jsx>{`
-          .course-trends.loading {
-            padding: 2rem;
-            text-align: center;
-            color: #9ca3af;
-            font-size: 0.875rem;
-          }
-        `}</style>
-      </div>
-    );
+    return <p className="my-3 text-center text-xs text-[#646c68]">{t.loading}</p>;
   }
 
   const hasTrends = trends.size > 0;
   const hasHistory = history && history.terms.length > 0;
 
   if (!hasTrends && !hasHistory) {
-    return (
-      <div className="course-trends empty">
-        <p role={current?.failed ? "alert" : undefined}>{current?.failed ? t.failed : t.noData}</p>
-        <style jsx>{`
-          .course-trends.empty {
-            padding: 2rem;
-            text-align: center;
-            color: #9ca3af;
-            font-size: 0.875rem;
-            background: #fafafa;
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            margin-block: 0.75rem;
-          }
-
-          @media (prefers-color-scheme: dark) {
-            .course-trends.empty {
-              background: #1f2937;
-              border-color: #374151;
-            }
-          }
-        `}</style>
-      </div>
-    );
+    return <p role={current?.failed ? "alert" : undefined} className="my-3 rounded-xl border border-[#e3e0d8] bg-white px-4 py-6 text-center text-xs text-[#646c68]">{current?.failed ? t.failed : t.noData}</p>;
   }
 
   // Show the trend with the highest demand index
   const topTrend = Array.from(trends.values()).sort((a, b) => b.demandIndex - a.demandIndex)[0];
 
   return (
-    <div className="course-trends">
-      <h3 className="trends-title">{t.title}</h3>
+    <div className="my-6">
+      <h3 className="mb-3 text-[15px] font-semibold text-[#24312d]">{t.title}</h3>
       {current?.failed && <p role="alert" className="text-xs text-[#8c352c]">{t.failed}</p>}
 
       {topTrend && <SeatTrendChart trend={topTrend} lang={lang} />}
 
       {hasHistory && <OfferingHistory history={history!} lang={lang} />}
-
-      <style jsx>{`
-        .course-trends {
-          margin-block: 1.5rem;
-        }
-
-        .trends-title {
-          font-size: 0.9375rem;
-          font-weight: 600;
-          color: inherit;
-          margin-bottom: 0.75rem;
-        }
-      `}</style>
     </div>
   );
 }
