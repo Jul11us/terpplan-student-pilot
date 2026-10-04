@@ -1,5 +1,6 @@
-import { getCourseOfferingHistory } from "@/lib/history-db";
-import { courseIdIsValid } from "@/lib/umd";
+import { backfillCourseOfferings, getCourseOfferingHistory } from "@/lib/history-db";
+import { previousRegularTerms } from "@/lib/offering-backfill";
+import { courseIdIsValid, DEFAULT_TERM } from "@/lib/umd";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -15,6 +16,8 @@ export async function GET(request: Request) {
   }
 
   try {
+    // Earlier semesters are read from umd.io once per course; afterwards this is a database read.
+    try { await backfillCourseOfferings(courseId, previousRegularTerms(DEFAULT_TERM)); } catch { console.error("Course offerings could not be backfilled."); }
     const history = await getCourseOfferingHistory(courseId, lang);
     if (!history) {
       return Response.json({ courseId, terms: [], pattern: "irregular" as const });

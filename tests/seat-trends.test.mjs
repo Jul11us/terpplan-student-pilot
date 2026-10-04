@@ -113,3 +113,11 @@ test("short refresh histories cannot predict a daily filling rate", () => {
   assert.equal(trend.daysToFull, null);
   assert.ok(trend.demandIndex > 0);
 });
+
+test("earlier regular terms step back through fall and spring only", async () => {
+  const { previousRegularTerms } = await import("../lib/offering-backfill.ts");
+  assert.deepEqual(previousRegularTerms("202701"), ["202608", "202601", "202508", "202501"]);
+  assert.deepEqual(previousRegularTerms("202608", 2), ["202601", "202508"]);
+  assert.deepEqual(previousRegularTerms("202605", 2), ["202601", "202508"]);
+  assert.deepEqual(previousRegularTerms("202612", 2), ["202608", "202601"]);
+});

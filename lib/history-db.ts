@@ -5,6 +5,7 @@ import { seatHistory, planActivity, courseOfferings } from "@/db/schema";
 import { and, eq, gte, desc, inArray, sql } from "drizzle-orm";
 import { parseCount, type UmdSection } from "@/lib/umd";
 import type { SeatSnapshot, SeatTrend, OfferingHistory, PopularCourse } from "@/lib/seat-trends";
+import { fetchTermOffering } from "@/lib/offering-backfill";
 import {
   analyzeSeatTrend,
   detectOfferingPattern,
@@ -201,6 +202,25 @@ export async function getSeatTrends(term: string, sectionIds: string[]): Promise
   return trends;
 }
 
+// Reads the given semesters from umd.io for any the course has no row for yet, and stores them: the
+// sections and seats, or 0 sections when the course did not run that term (so "not offered" is known and
+// not asked again). A term umd.io could not answer is skipped and tried on a later request.
+export async function backfillCourseOfferings(courseId: string, terms: string[]) {
+  if (!terms.length) return;
+  const db = getDb();
+  const known = new Set((await db.select({ term: courseOfferings.term }).from(courseOfferings)
+    .where(and(eq(courseOfferings.courseId, courseId), inArray(courseOfferings.term, terms)))).map((row) => row.term));
+  const missing = terms.filter((term) => !known.has(term));
+  if (!missing.length) return;
+  const results = await Promise.all(missing.map(async (term) => [term, await fetchTermOffering(courseId, term)] as const));
+  for (const [term, result] of results) {
+    if (result === null) continue;
+    const offering = result === "none" ? { sectionCount: 0, totalSeats: 0 } : result;
+    // Never overwrite a row another request stored meanwhile (it may be the live term's real numbers).
+    await db.insert(courseOfferings).values({ courseId, term, ...offering }).onConflictDoNothing();
+  }
+}
+
 /**
  * Get offering history for a course
  */
@@ -225,7 +245,8 @@ export async function getCourseOfferingHistory(courseId: string, lang: "en" | "z
     totalSeats: row.totalSeats,
   }));
 
-  const pattern = detectOfferingPattern(rows.map((r) => r.term));
+  // Terms stored with 0 sections were checked and the course did not run; the pattern is from the terms it ran.
+  const pattern = detectOfferingPattern(rows.filter((row) => row.sectionCount > 0).map((row) => row.term));
 
   return { courseId, terms, pattern };
 }

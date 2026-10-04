@@ -23,7 +23,17 @@ beforeEach(() => {
   globalThis.__trendTestDb = database;
   originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
-    const courseId = new URL(String(input)).pathname.split("/").pop();
+    const url = new URL(String(input));
+    // Earlier Testudo semesters: CMSC131 ran every fall and spring except Spring 2025 (not offered);
+    // Fall 2025 fails, so it is not stored and is tried again later.
+    const term = url.pathname.split("/")[2];
+    if (term !== "202701") {
+      if (term === "202508") return new Response("busy", { status: 503 });
+      if (term === "202501") return new Response("<p>No courses matched your search filters above.</p>");
+      const section = (number, seats) => `<div class="section"><input name="sectionId" value="${number}"><span class="total-seats-count">${seats}</span><span class="open-seats-count">0</span></div>`;
+      return new Response(`<div id="CMSC131" class="course"><span class="course-title">Fixture course</span>${section("0101", 30)}${section("0201", 25)}</div><div id="CMSC131H" class="course"><span class="course-title">Honors</span>${section("0101", 99)}</div>`);
+    }
+    const courseId = url.pathname.split("/").pop();
     return new Response(`<div id="${courseId}" class="course"><span class="course-title">Fixture course</span><div class="section"><input name="sectionId" value="0101"><span class="total-seats-count">20</span><span class="open-seats-count">8</span></div></div>`);
   };
 });
@@ -54,6 +64,20 @@ test("real migrated tables store observations once per half hour and keep unknow
   const history = await response.json();
   assert.equal(history.terms[0].termName, "2027 春季");
   assert.equal(history.terms[0].sectionCount, 1);
+});
+
+test("offering history reads earlier fall and spring terms once, keeping 'not offered' and retrying failures", async () => {
+  await recordCourseHistory("202701", "CMSC131", [{ section_id: "CMSC131-0101", seats: 20, open_seats: 8, waitlist: 0 }]);
+  const history = await (await offerings(request("offerings", { id: "CMSC131", lang: "en" }))).json();
+  assert.deepEqual(history.terms.map((term) => [term.term, term.sectionCount, term.totalSeats]), [["202701", 1, 20], ["202608", 2, 55], ["202601", 2, 55], ["202501", 0, 0]]);
+  assert.equal(history.pattern, "fall-spring");
+  // The live term's own row is never replaced by the umd.io numbers.
+  assert.equal(database.sqlite.prepare("SELECT section_count AS n FROM course_offerings WHERE term = '202701'").get().n, 1);
+  let calls = 0;
+  const previous = globalThis.fetch;
+  globalThis.fetch = async (input) => { calls += 1; return previous(input); };
+  await offerings(request("offerings", { id: "CMSC131", lang: "en" }));
+  assert.equal(calls, 1, "only the failed Fall 2025 is asked again");
 });
 
 test("seat API reads real SQL, excludes other sections and records the current upstream observation", async () => {

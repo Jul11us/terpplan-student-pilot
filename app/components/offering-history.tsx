@@ -16,7 +16,9 @@ const texts = {
     sections: "sections",
     seats: "seats",
     noHistory: "No historical data available",
-    note: "Only semesters observed by TerpPlan are listed. Future offerings may differ.",
+    notOffered: "Not offered",
+    noneRecent: "Not offered in these semesters",
+    note: "Fall and spring semesters from UMD's schedule data, plus terms seen on TerpPlan. Future offerings may differ.",
   },
   zh: {
     title: "开课历史",
@@ -25,7 +27,9 @@ const texts = {
     sections: "节",
     seats: "座位",
     noHistory: "暂无历史数据",
-    note: "仅显示 TerpPlan 已读取的学期；不能据此保证未来开课。",
+    notOffered: "未开课",
+    noneRecent: "这几个学期都没开课",
+    note: "来自 UMD 课表数据的近几个秋季和春季学期，加上 TerpPlan 读取过的学期；不能据此保证未来开课。",
   },
 };
 
@@ -39,9 +43,11 @@ export function OfferingHistory({ history, lang }: OfferingHistoryProps) {
     return <p className="my-3 rounded-xl border border-[#e3e0d8] bg-white px-4 py-6 text-center text-xs text-[#646c68]">{t.noHistory}</p>;
   }
 
-  const patternLabel = formatOfferingPattern(history.pattern, lang);
+  // Every listed term checked and empty: say so rather than "no consistent pattern".
+  const noneOffered = history.terms.every((term) => !term.sectionCount);
+  const patternLabel = noneOffered ? t.noneRecent : formatOfferingPattern(history.pattern, lang);
   const recentTerms = history.terms.slice(0, 6);
-  const patternClass = REGULAR.has(history.pattern) ? "border-[#cddbd1] bg-[#edf3ef] text-[#315c43]"
+  const patternClass = noneOffered ? "border-[#e0ddd5] bg-[#f6f4ef] text-[#48534f]" : REGULAR.has(history.pattern) ? "border-[#cddbd1] bg-[#edf3ef] text-[#315c43]"
     : history.pattern === "irregular" ? "border-[#ead8b5] bg-[#fff8e8] text-[#745424]"
     : "border-[#e0ddd5] bg-[#f6f4ef] text-[#48534f]";
 
@@ -59,8 +65,8 @@ export function OfferingHistory({ history, lang }: OfferingHistoryProps) {
       <ul className="divide-y divide-[#f0ede7]">
         {recentTerms.map((term) => (
           <li key={term.term} className="flex items-center justify-between gap-3 py-2 text-xs">
-            <span className="font-medium text-[#24312d]">{term.termName}</span>
-            <span className="text-[#5d6561]">{term.sectionCount} {t.sections} · {term.totalSeats} {t.seats}</span>
+            <span className={term.sectionCount ? "font-medium text-[#24312d]" : "text-[#646c68]"}>{term.termName}</span>
+            <span className="text-[#5d6561]">{term.sectionCount ? <>{term.sectionCount} {t.sections} · {term.totalSeats} {t.seats}</> : t.notOffered}</span>
           </li>
         ))}
       </ul>
