@@ -1,12 +1,14 @@
 import { historicalAverageGpa } from "@/lib/audit-recommendations";
 import { courseIdIsValid } from "@/lib/umd";
 
-type RequestBody = { courseIds?: unknown };
+import { readJsonObject, sameOriginMutation } from "@/lib/request-security";
 
 export async function POST(request: Request) {
-  let body: RequestBody;
-  try { body = await request.json() as RequestBody; }
-  catch { return Response.json({ error: "Invalid request." }, { status: 400 }); }
+  const denied = sameOriginMutation(request);
+  if (denied) return denied;
+  const parsed = await readJsonObject(request, 32768);
+  if (parsed.error) return parsed.error;
+  const body = parsed.value;
   const courseIds = Array.isArray(body.courseIds)
     ? [...new Set(body.courseIds.filter((value): value is string => typeof value === "string").map((value) => value.trim().toUpperCase()))]
     : [];

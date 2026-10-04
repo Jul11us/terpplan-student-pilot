@@ -121,3 +121,22 @@ test("earlier regular terms step back through fall and spring only", async () =>
   assert.deepEqual(previousRegularTerms("202605", 2), ["202601", "202508"]);
   assert.deepEqual(previousRegularTerms("202612", 2), ["202608", "202601"]);
 });
+
+test("a term is upcoming before it starts, current while it runs and past after it ends", async () => {
+  const { termStatus } = await import("../lib/offering-backfill.ts");
+  assert.equal(termStatus("202701", new Date("2026-10-04T12:00:00Z")), "upcoming");
+  assert.equal(termStatus("202608", new Date("2026-10-04T12:00:00Z")), "current");
+  assert.equal(termStatus("202601", new Date("2026-10-04T12:00:00Z")), "past");
+  assert.equal(termStatus("202512", new Date("2026-01-10T12:00:00Z")), "current");
+});
+
+test("the outlook comes from finished semesters only", async () => {
+  const { offeringVerdict } = await import("../app/components/offering-history.tsx");
+  const term = (status, seats, open, full, sections = 10, code = "202601") => ({ term: code, termName: "x", sectionCount: sections, totalSeats: seats, openSeats: open, fullSections: full, status });
+  assert.equal(offeringVerdict([term("past", 500, 10, 8), term("past", 500, 5, 9)]), "full");
+  assert.equal(offeringVerdict([term("past", 500, 50, 3)]), "busy");
+  assert.equal(offeringVerdict([term("past", 500, 200, 0)]), "room");
+  assert.equal(offeringVerdict([term("current", 500, 0, 10), term("upcoming", 500, 0, 10)]), null);
+  // Only the same season counts: a spring term is judged by past springs, not by a full fall.
+  assert.equal(offeringVerdict([term("upcoming", 500, 500, 0, 10, "202701"), term("past", 500, 5, 9, 10, "202608"), term("past", 500, 200, 0, 10, "202601")]), "room");
+});

@@ -2,7 +2,7 @@
 // Pages are network-first, so a connected student always gets the current site; hashed build files are
 // cache-first, since their names change whenever their contents do. API calls are never cached here.
 
-const PAGES = "terpplan-pages-v1";
+const PAGES = "terpplan-pages-v2";
 const FILES = "terpplan-files-v1";
 const OFFLINE_PAGE = "/week";
 const PRECACHE = [OFFLINE_PAGE, "/manifest.webmanifest", "/icon-192.png", "/favicon.svg"];
@@ -44,6 +44,8 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
+  // Token-bearing confirmation pages must always use the network, never an offline copy.
+  if (url.pathname === "/unsubscribe") return;
 
   if (request.mode === "navigate") {
     event.respondWith((async () => {

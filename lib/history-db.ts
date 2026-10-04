@@ -5,7 +5,7 @@ import { seatHistory, planActivity, courseOfferings } from "@/db/schema";
 import { and, eq, gte, desc, inArray, sql } from "drizzle-orm";
 import { parseCount, type UmdSection } from "@/lib/umd";
 import type { SeatSnapshot, SeatTrend, OfferingHistory, PopularCourse } from "@/lib/seat-trends";
-import { fetchTermOffering } from "@/lib/offering-backfill";
+import { fetchTermOffering, summarizeSections, termEnd, termStatus } from "@/lib/offering-backfill";
 import {
   analyzeSeatTrend,
   detectOfferingPattern,
@@ -40,7 +40,10 @@ export async function recordSeatSnapshot(
 export async function recordCourseHistory(term: string, courseId: string, sections: UmdSection[]) {
   if (!sections.length) return;
   const capacities = sections.map((section) => parseCount(section.seats));
-  if (capacities.every((count) => count !== null)) await recordCourseOffering(courseId, term, sections.length, capacities.reduce<number>((sum, count) => sum + (count ?? 0), 0));
+  if (capacities.every((count) => count !== null)) {
+    const summary = summarizeSections(sections);
+    await recordCourseOffering(courseId, term, summary.sectionCount, summary.totalSeats, summary.openSeats, summary.fullSections);
+  }
   for (const section of sections) {
     const seats = parseCount(section.seats), open = parseCount(section.open_seats);
     if (!section.section_id || seats === null || open === null) continue;
@@ -106,6 +109,8 @@ export async function recordCourseOffering(
   term: string,
   sectionCount: number,
   totalSeats: number,
+  openSeats: number | null = null,
+  fullSections: number | null = null,
 ) {
   const db = getDb();
   const now = new Date().toISOString();
@@ -116,6 +121,8 @@ export async function recordCourseOffering(
       term,
       sectionCount,
       totalSeats,
+      openSeats,
+      fullSections,
       firstSeenAt: now,
       lastSeenAt: now,
     })
@@ -124,6 +131,8 @@ export async function recordCourseOffering(
       set: {
         sectionCount,
         totalSeats,
+        openSeats,
+        fullSections,
         lastSeenAt: now,
       },
     });
@@ -202,22 +211,35 @@ export async function getSeatTrends(term: string, sectionIds: string[]): Promise
   return trends;
 }
 
-// Reads the given semesters from umd.io for any the course has no row for yet, and stores them: the
-// sections and seats, or 0 sections when the course did not run that term (so "not offered" is known and
-// not asked again). A term umd.io could not answer is skipped and tried on a later request.
-export async function backfillCourseOfferings(courseId: string, terms: string[]) {
+const REFRESH_DAYS = 7;
+
+// A stored earlier term is read again when its numbers may have changed: it was last read before the term
+// ended and at least a week ago (so an in-progress term updates weekly, and once more after it ends to get
+// the final seats), or it was stored before open seats were kept.
+function needsRefresh(term: string, row: { sectionCount: number; openSeats: number | null; lastSeenAt: string }, now: Date) {
+  if (row.sectionCount > 0 && row.openSeats === null) return true;
+  const lastSeen = Date.parse(row.lastSeenAt.includes("T") ? row.lastSeenAt : row.lastSeenAt.replace(" ", "T") + "Z");
+  if (!Number.isFinite(lastSeen)) return true;
+  return lastSeen < termEnd(term).getTime() && now.getTime() - lastSeen > REFRESH_DAYS * 86_400_000;
+}
+
+// Reads the given earlier semesters from Testudo when the course has no row for them yet (or the row is
+// stale, see needsRefresh), and stores them: the sections, seats and how many were still open, or 0
+// sections when the course did not run that term (so "not offered" is known). A term Testudo could not
+// answer is skipped and tried on a later request.
+export async function backfillCourseOfferings(courseId: string, terms: string[], now = new Date()) {
   if (!terms.length) return;
   const db = getDb();
-  const known = new Set((await db.select({ term: courseOfferings.term }).from(courseOfferings)
-    .where(and(eq(courseOfferings.courseId, courseId), inArray(courseOfferings.term, terms)))).map((row) => row.term));
-  const missing = terms.filter((term) => !known.has(term));
-  if (!missing.length) return;
-  const results = await Promise.all(missing.map(async (term) => [term, await fetchTermOffering(courseId, term)] as const));
+  const rows = await db.select({ term: courseOfferings.term, sectionCount: courseOfferings.sectionCount, openSeats: courseOfferings.openSeats, lastSeenAt: courseOfferings.lastSeenAt })
+    .from(courseOfferings).where(and(eq(courseOfferings.courseId, courseId), inArray(courseOfferings.term, terms)));
+  const stored = new Map(rows.map((row) => [row.term, row]));
+  const due = terms.filter((term) => { const row = stored.get(term); return !row || needsRefresh(term, row, now); });
+  if (!due.length) return;
+  const results = await Promise.all(due.map(async (term) => [term, await fetchTermOffering(courseId, term)] as const));
   for (const [term, result] of results) {
     if (result === null) continue;
-    const offering = result === "none" ? { sectionCount: 0, totalSeats: 0 } : result;
-    // Never overwrite a row another request stored meanwhile (it may be the live term's real numbers).
-    await db.insert(courseOfferings).values({ courseId, term, ...offering }).onConflictDoNothing();
+    const offering = result === "none" ? { sectionCount: 0, totalSeats: 0, openSeats: null, fullSections: null } : result;
+    await recordCourseOffering(courseId, term, offering.sectionCount, offering.totalSeats, offering.openSeats, offering.fullSections);
   }
 }
 
@@ -231,6 +253,8 @@ export async function getCourseOfferingHistory(courseId: string, lang: "en" | "z
       term: courseOfferings.term,
       sectionCount: courseOfferings.sectionCount,
       totalSeats: courseOfferings.totalSeats,
+      openSeats: courseOfferings.openSeats,
+      fullSections: courseOfferings.fullSections,
     })
     .from(courseOfferings)
     .where(eq(courseOfferings.courseId, courseId))
@@ -243,6 +267,9 @@ export async function getCourseOfferingHistory(courseId: string, lang: "en" | "z
     termName: formatTermName(row.term, lang),
     sectionCount: row.sectionCount,
     totalSeats: row.totalSeats,
+    openSeats: row.openSeats,
+    fullSections: row.fullSections,
+    status: termStatus(row.term),
   }));
 
   // Terms stored with 0 sections were checked and the course did not run; the pattern is from the terms it ran.

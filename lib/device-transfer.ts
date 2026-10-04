@@ -7,6 +7,8 @@ import { parseTaken, writeTaken, type TakenCourses } from "@/lib/taken-courses";
 
 export const TRANSFER_PREFIX = "#move=";
 const VERSION = 1;
+export const MAX_TRANSFER_BYTES = 256 * 1024;
+const MAX_TRANSFER_CHARACTERS = 64 * 1024;
 
 export type Transfer = { state: SavedState; taken: TakenCourses | null };
 
@@ -21,9 +23,27 @@ const fromBase64Url = (text: string) => {
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 };
 
-async function pipe(bytes: Uint8Array, stream: CompressionStream | DecompressionStream) {
+async function pipe(bytes: Uint8Array, stream: CompressionStream | DecompressionStream, limit = MAX_TRANSFER_BYTES) {
   const output = new Blob([bytes as BlobPart]).stream().pipeThrough(stream);
-  return new Uint8Array(await new Response(output).arrayBuffer());
+  const reader = output.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      length += chunk.value.byteLength;
+      if (length > limit) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error("Transfer is too large.");
+      }
+      chunks.push(chunk.value);
+    }
+    const result = new Uint8Array(length);
+    let offset = 0;
+    for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.byteLength; }
+    return result;
+  } finally { reader.releaseLock(); }
 }
 
 // Without labels; the student's language stays whatever the other device uses.
@@ -40,12 +60,17 @@ function shareable(state: SavedState): SavedState {
 
 export async function encodeTransfer(state: SavedState, taken: TakenCourses | null) {
   const body = JSON.stringify({ v: VERSION, s: shareable(state), t: taken ? { completed: taken.completed, inProgress: taken.inProgress, credits: taken.credits, source: taken.source } : null });
-  return toBase64Url(await pipe(new TextEncoder().encode(body), new CompressionStream("deflate-raw")));
+  const bytes = new TextEncoder().encode(body);
+  if (bytes.byteLength > MAX_TRANSFER_BYTES) throw new Error("Transfer is too large.");
+  const code = toBase64Url(await pipe(bytes, new CompressionStream("deflate-raw")));
+  if (code.length > MAX_TRANSFER_CHARACTERS) throw new Error("Transfer is too large.");
+  return code;
 }
 
 // null when the text is not a TerpPlan transfer (cut short, edited, or from a future version).
 export async function decodeTransfer(code: string): Promise<Transfer | null> {
   try {
+    if (!code || code.length > MAX_TRANSFER_CHARACTERS || !/^[A-Za-z0-9_-]+$/.test(code)) return null;
     const parsed = JSON.parse(new TextDecoder().decode(await pipe(fromBase64Url(code), new DecompressionStream("deflate-raw")))) as { v?: unknown; s?: unknown; t?: unknown };
     if (parsed.v !== VERSION) return null;
     const state = parseSavedState(parsed.s);

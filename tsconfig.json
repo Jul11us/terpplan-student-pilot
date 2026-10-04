@@ -41,6 +41,10 @@
     "**/*.mts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "outputs",
+    "dist",
+    ".wrangler",
+    ".sites-runtime"
   ]
 }

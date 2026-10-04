@@ -2,12 +2,14 @@ import { compareAuditCandidates, historicalAverageGpa, summarizeAuditCandidate }
 import { getGenEdCourses, isGenEdCode } from "@/lib/gened";
 import { courseIdIsValid, getCourse } from "@/lib/umd";
 
-type RequestBody = { term?: unknown; courseIds?: unknown; genEdCode?: unknown };
+import { readJsonObject, sameOriginMutation } from "@/lib/request-security";
 
 export async function POST(request: Request) {
-  let body: RequestBody;
-  try { body = await request.json() as RequestBody; }
-  catch { return Response.json({ error: "Invalid request." }, { status: 400 }); }
+  const denied = sameOriginMutation(request);
+  if (denied) return denied;
+  const parsed = await readJsonObject(request, 32768);
+  if (parsed.error) return parsed.error;
+  const body = parsed.value;
   const term = typeof body.term === "string" ? body.term : "";
   const genEdCode = typeof body.genEdCode === "string" ? body.genEdCode.toUpperCase() : "";
   const validGenEdCode = isGenEdCode(genEdCode) ? genEdCode : null;

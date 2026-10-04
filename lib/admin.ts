@@ -16,7 +16,7 @@ export async function adminAccess(user: CurrentUser): Promise<AdminAccess> {
   return "forbidden";
 }
 
-// "terp@gmail.com" -> "t•••@gmail.com".
+// "owner@example.test" -> "o•••@example.test".
 export function maskEmail(email: string) {
   const at = email.lastIndexOf("@");
   if (at < 1) return "•••";

@@ -1,4 +1,5 @@
 import { reviewThemes, type ReviewTheme } from "@/lib/review-themes";
+import { BoundedCache } from "@/lib/bounded-cache";
 
 export type ProfessorStatus = "ok" | "empty" | "unmatched" | "failed" | "tba" | "limited";
 
@@ -36,7 +37,7 @@ const CACHE_TTL_MS = 10 * 60_000;
 const REVIEW_LIMIT = 3;
 const EXCERPT_LIMIT = 280;
 const MAX_SUMMARY_LOOKUPS = 40;
-const cache = new Map<string, { expiresAt: number; value: Record<string, unknown> | null }>();
+const cache = new BoundedCache<string, { expiresAt: number; value: Record<string, unknown> | null }>(200);
 
 export function normalizeProfessorName(value: string) {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("en-US");
@@ -274,7 +275,7 @@ export function averageGpa(rows: unknown[]): { gpa: number; students: number } |
   return students ? { gpa: Math.round((points / students) * 100) / 100, students } : null;
 }
 
-const gradeCache = new Map<string, { expiresAt: number; value: unknown[] }>();
+const gradeCache = new BoundedCache<string, { expiresAt: number; value: unknown[] }>(200);
 
 async function fetchGrades(params: Record<string, string>) {
   const key = JSON.stringify(params);

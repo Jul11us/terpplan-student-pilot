@@ -87,6 +87,10 @@ export const courseOfferings = sqliteTable(
     term: text("term").notNull(),
     sectionCount: integer("section_count").notNull(),
     totalSeats: integer("total_seats").notNull(),
+    // Seats still open and sections with none open when last read. For a finished term Testudo keeps the
+    // final numbers, so this is how full the course ended up; null for rows stored before these were kept.
+    openSeats: integer("open_seats"),
+    fullSections: integer("full_sections"),
     firstSeenAt: text("first_seen_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     lastSeenAt: text("last_seen_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },

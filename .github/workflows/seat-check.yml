@@ -1,5 +1,7 @@
 name: Background seat check
 
+permissions: {}
+
 on:
   schedule:
     # Every 10 minutes (UTC). GitHub may start scheduled runs a few minutes late at busy times.

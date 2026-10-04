@@ -1,10 +1,11 @@
 import { courseIdIsValid, DEFAULT_TERM, getCourse, type CatalogItem, umdJson } from "@/lib/umd";
 import spring2027Catalog from "@/data/202701-catalog.json";
+import { BoundedCache } from "@/lib/bounded-cache";
 
 type CacheEntry = { expiresAt: number; courses: CatalogItem[] };
 // The page shows 40 at a time; the rest are there for "Show more" and for its result filters.
 export const MAX_RESULTS = 120;
-const catalogCache = new Map<string, CacheEntry>();
+const catalogCache = new BoundedCache<string, CacheEntry>(12);
 
 // Course codes beat titles: "MATH" should list MATH courses before AMSC "Mathematical Modeling".
 // Rank: exact code, code prefix, code contains, a title word starting with the query, anything else.
@@ -35,6 +36,7 @@ export async function GET(request: Request) {
   const compactQuery = query.replace(/\s+/g, "");
   const term = url.searchParams.get("term") ?? DEFAULT_TERM;
   if (!/^\d{6}$/.test(term)) return Response.json({ error: "Choose a valid term." }, { status: 400 });
+  if (query.length > 120) return Response.json({ error: "Search text is too long." }, { status: 400 });
   if (query.length < 2) return Response.json({ results: [] });
 
   if (term === "202701") {

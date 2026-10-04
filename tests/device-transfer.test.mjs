@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyTransfer, decodeTransfer, encodeTransfer, transferCourseCount } from "../lib/device-transfer.ts";
+import { applyTransfer, decodeTransfer, encodeTransfer, transferCourseCount, MAX_TRANSFER_BYTES } from "../lib/device-transfer.ts";
+import { deflateRawSync } from "node:zlib";
 import { readSavedState, writeSavedState } from "../lib/saved-state.ts";
 import { readTaken, writeTaken } from "../lib/taken-courses.ts";
 
@@ -31,6 +32,14 @@ test("damaged or foreign links are rejected", async () => {
   assert.equal((await decodeTransfer(code)).taken, null);
   assert.equal(await decodeTransfer(code.slice(0, code.length / 2)), null);
   assert.equal(await decodeTransfer("not-a-transfer"), null);
+});
+
+test("small compressed links cannot expand into an unbounded browser allocation", async () => {
+  const bomb = deflateRawSync(JSON.stringify({ v: 1, s: { plans: {}, padding: "x".repeat(MAX_TRANSFER_BYTES * 4) } })).toString("base64url");
+  assert.ok(bomb.length < 4096);
+  assert.equal(await decodeTransfer(bomb), null);
+  assert.equal(await decodeTransfer("x".repeat(65537)), null);
+  await assert.rejects(encodeTransfer({ plans: { "202701": [{ courseId: "CMSC131", courseTitle: "x".repeat(MAX_TRANSFER_BYTES) }] } }, null), /too large/);
 });
 
 test("loading another device's plan replaces old preferences and taken courses, even when absent", async () => {
