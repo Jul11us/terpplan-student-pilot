@@ -34,6 +34,7 @@ export async function POST(request: Request) {
   if (rawPreferences.bufferMinutes !== undefined && !validBuffer(rawPreferences.bufferMinutes)) return Response.json({ error: "Choose a whole-number buffer between 0 and 120 minutes.", code: "invalidBuffer" }, { status: 400 });
   const preferences: PlanPreferences = {
     earliestStart: typeof rawPreferences.earliestStart === "string" ? rawPreferences.earliestStart : null,
+    earlyBefore: typeof rawPreferences.earlyBefore === "string" && /^(off|\d{2}:\d{2})$/.test(rawPreferences.earlyBefore) ? rawPreferences.earlyBefore : null,
     excludedDays: Array.isArray(rawPreferences.excludedDays) ? rawPreferences.excludedDays.filter((day): day is string => typeof day === "string") : [],
     windowStart: typeof rawPreferences.windowStart === "string" ? rawPreferences.windowStart : null,
     windowEnd: typeof rawPreferences.windowEnd === "string" ? rawPreferences.windowEnd : null,

@@ -19,6 +19,8 @@ export type SavedPlanCourse = {
 export type SavedPreferences = {
   excludedDays: string[];
   earliestStart: string;
+  // When early classes start costing points ("HH:MM" or "off"); empty means the default, 9am.
+  earlyBefore?: string;
   windowStart: string;
   windowEnd: string;
   strictTime: boolean;
@@ -73,6 +75,7 @@ function preferences(value: unknown): SavedPreferences | undefined {
   return {
     excludedDays: strings(record.excludedDays),
     earliestStart: text("earliestStart"),
+    earlyBefore: /^(off|\d{2}:\d{2})$/.test(text("earlyBefore")) ? text("earlyBefore") : "",
     windowStart: text("windowStart"),
     windowEnd: text("windowEnd"),
     strictTime: record.strictTime === true,

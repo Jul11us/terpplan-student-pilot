@@ -37,6 +37,8 @@ export type PlanCourse = {
 
 export type PlanPreferences = {
   earliestStart?: string | null;
+  // Classes starting before this time ("HH:MM") lose points; "off" turns that off. Default 9:00.
+  earlyBefore?: string | null;
   excludedDays?: string[];
   windowStart?: string | null;
   windowEnd?: string | null;
@@ -71,6 +73,8 @@ export type ScorePart = {
   points: number;
   // How many of the thing were counted (minutes for gaps, meetings for early classes, ...), when it helps explain.
   count?: number;
+  // The time it is measured against, when the student chose it ("9am" for early classes).
+  at?: string;
 };
 
 export type ScheduleOption = {
@@ -268,6 +272,15 @@ function sectionRatings(section: PlanSection, ratings: Record<string, ProfessorS
   });
 }
 
+export const DEFAULT_EARLY_BEFORE = 9 * 60;
+
+// When early classes start counting against a schedule: the student's choice, or 9am; null when turned off.
+export function earlyBeforeMinutes(value: string | null | undefined) {
+  if (value === "off") return null;
+  const parsed = minutes(value);
+  return parsed === null ? DEFAULT_EARLY_BEFORE : parsed;
+}
+
 function parsePrefs(preferences: PlanPreferences) {
   const earliest = minutes(preferences.earliestStart);
   const start = minutes(preferences.windowStart);
@@ -275,6 +288,7 @@ function parsePrefs(preferences: PlanPreferences) {
   const interval = start !== null && end !== null && end > start ? [start, end] as const : null;
   return {
     earliest,
+    earlyBefore: earlyBeforeMinutes(preferences.earlyBefore),
     excludedDays: new Set((preferences.excludedDays ?? []).flatMap((day) => dayNames(day))),
     interval,
     strictTime: Boolean(preferences.strictTime && interval),
@@ -378,7 +392,7 @@ function summarize(sections: ScheduledSection[], preferences: ReturnType<typeof 
       const end = minutes(meeting.end_time) as number;
       earliestStart = earliestStart === null ? start : Math.min(earliestStart, start);
       latestEnd = latestEnd === null ? end : Math.max(latestEnd, end);
-      if (start < 9 * 60) earlyCount += 1;
+      if (preferences.earlyBefore !== null && start < preferences.earlyBefore) earlyCount += 1;
       const duration = end - start;
       knownMinutes += duration;
       const inside = preferences.interval
@@ -415,7 +429,7 @@ function summarize(sections: ScheduledSection[], preferences: ReturnType<typeof 
     ...(preferences.preferFewerDays ? [{ key: "days" as const, points: -DAY_PENALTY * campusDays.length, count: campusDays.length }] : []),
     ...(preferences.preferNearbyClasses ? [{ key: "walkTime" as const, points: -WALK_MINUTE_PENALTY * walkMinutes, count: walkMinutes }] : []),
     { key: "longWalks", points: -LONG_WALK_PER_MINUTE * extraWalkMinutes, count: extraWalkMinutes },
-    { key: "early", points: -0.7 * earlyCount, count: earlyCount },
+    ...(preferences.earlyBefore !== null ? [{ key: "early" as const, points: -0.7 * earlyCount, count: earlyCount, at: formatHour(preferences.earlyBefore) }] : []),
     { key: "unknown", points: -0.35 * unknownCount, count: unknownCount },
     { key: "window", points: preferences.interval ? -0.05 * (outsideMinutes + 90 * unknownSectionIds.length) : 0, count: Math.round(outsideMinutes) },
     { key: "full", points: -FULL_SECTION_PENALTY * fullSectionIds.length, count: fullSectionIds.length },
@@ -441,6 +455,12 @@ function summarize(sections: ScheduledSection[], preferences: ReturnType<typeof 
     unknownSectionIds,
     fullSectionIds,
   };
+}
+
+// "9am", "8:30am" for the early-class line of the score.
+function formatHour(value: number) {
+  const hour = Math.floor(value / 60), minute = value % 60;
+  return `${hour % 12 || 12}${minute ? ":" + String(minute).padStart(2, "0") : ""}${hour < 12 ? "am" : "pm"}`;
 }
 
 function formatClock(value: number) {
@@ -488,7 +508,7 @@ function searchOptions(
       const localScore = (section: ScheduledSection) => {
         const rated = section.instructorRatings.map((item) => item.averageRating).filter((item): item is number => item !== null);
         const rating = rated.length ? rated.reduce((sum, item) => sum + item, 0) / rated.length : 0;
-        const early = (section.meetings ?? []).filter((meeting) => hasKnownTime(meeting) && (minutes(meeting.start_time) as number) < 540).length;
+        const early = parsed.earlyBefore === null ? 0 : (section.meetings ?? []).filter((meeting) => hasKnownTime(meeting) && (minutes(meeting.start_time) as number) < parsed.earlyBefore!).length;
         const unknown = Number(hasUnknownTime(section)) + section.instructorRatings.filter((item) => !item.matched || item.averageRating === null).length;
         return rating + gpaPoints(section.instructorGpa, parsed.preferGpa) - 0.7 * early - 0.35 * unknown - (isFull(section) ? FULL_SECTION_PENALTY : 0);
       };
