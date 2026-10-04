@@ -136,14 +136,8 @@ export function CourseTrends({ courseId, term, sectionIds, lang }: CourseTrendsP
         .trends-title {
           font-size: 0.9375rem;
           font-weight: 600;
-          color: #111827;
+          color: inherit;
           margin-bottom: 0.75rem;
-        }
-
-        @media (prefers-color-scheme: dark) {
-          .trends-title {
-            color: #f9fafb;
-          }
         }
       `}</style>
     </div>
