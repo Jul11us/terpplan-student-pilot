@@ -1,3 +1,5 @@
+import { reviewThemes, type ReviewTheme } from "@/lib/review-themes";
+
 export type ProfessorStatus = "ok" | "empty" | "unmatched" | "failed" | "tba" | "limited";
 
 export type ProfessorSummary = {
@@ -25,6 +27,8 @@ export type ReviewHighlight = {
 
 export type ProfessorReviews = ProfessorSummary & {
   highlights: ReviewHighlight[];
+  // Themes counted across every review of this instructor (see lib/review-themes).
+  themes?: ReviewTheme[];
 };
 
 const API_BASE = "https://planetterp.com/api/v1";
@@ -199,12 +203,14 @@ export async function getProfessorReviews(name: string, courseId: string): Promi
     const sourceUrl = base.sourceUrl ?? "https://planetterp.com/professor";
     const reviews = Array.isArray(professor.reviews) ? professor.reviews : [];
     const highlights = reviewHighlights(reviews, courseId, sourceUrl);
+    const themes = reviewThemes(reviews.map((review) => review && typeof review === "object" ? String((review as Record<string, unknown>).review ?? "") : ""));
     return {
       ...base,
       status: highlights.length ? "ok" : "empty",
       reviewCount: reviews.length,
       sourceUrl,
       highlights,
+      themes,
     };
   } catch {
     return { name: normalized, matched: false, status: "failed", averageRating: null, reviewCount: null, sourceUrl: null, highlights: [] };

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import ProfessorDetailCard from "@/app/components/professor-card";
 import type { ProfessorReviews, ProfessorSummary } from "@/lib/planetterp";
+import ReviewThemes from "@/app/components/review-themes";
 
 type Props = {
   names: string[];
@@ -172,6 +173,7 @@ export default function SectionProfessors({ names, courseId, ratings, language, 
               {data?.status === "unmatched" && <p className="text-[#5d6561]">{t.unmatched}</p>}
               {data && data.status !== "failed" && data.status !== "unmatched" && data.highlights.length === 0 && <p className="text-[#5d6561]">{t.empty}</p>}
               {data && data.highlights.length > 0 && <>
+                <ReviewThemes themes={data.themes} total={data.reviewCount} language={language} />
                 <p className="mb-3 leading-5 text-[#646c68]">{t.disclaimer}</p>
                 <div className={target ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3" : "space-y-3"}>
                   {data.highlights.map((item, index) => <div key={index} className={target ? "rounded-md border border-[#ece9e2] bg-white p-3" : "border-t border-[#e7e4dc] pt-3 first:border-0 first:pt-0"}>

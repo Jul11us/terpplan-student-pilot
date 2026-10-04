@@ -7,6 +7,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import type { ProfessorCard } from "@/lib/planetterp";
+import ReviewThemes from "@/app/components/review-themes";
 
 type Language = "en" | "zh";
 
@@ -91,7 +92,8 @@ function CardBody({ card, courseId, language }: { card: ProfessorCard; courseId:
       {card.grades ? <GradeBar grades={card.grades} language={language} /> : <p className="mt-1 text-[11px] text-[#7b837f]">{t.noGrades}</p>}
     </section>
     <section className="mt-3 border-t border-[#ece9e2] pt-2">
-      <h4 className="text-[11px] font-semibold text-[#5d6561]">{t.comments}</h4>
+      <ReviewThemes themes={card.themes} total={card.reviewCount} language={language} compact />
+      <h4 className="mt-2 text-[11px] font-semibold text-[#5d6561]">{t.comments}</h4>
       {card.highlights.length ? <ul className="mt-1 space-y-1.5">
         {card.highlights.map((item, index) => <li key={index} className="text-[11px] leading-5 text-[#3e4945]">
           <span className="text-[#7b837f]">{[item.courseId ?? course, item.rating !== null ? `★ ${item.rating}/5` : null].filter(Boolean).join(" · ")}</span>

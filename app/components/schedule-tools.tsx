@@ -102,7 +102,8 @@ export function ScheduleRecovery({ diagnostics, repairs, blocks, language, disab
 }
 
 function meetingSummary(section: ScheduledSection, language: Language) {
-  return (section.meetings ?? []).map((meeting) => `${meeting.days || "TBA"} ${meeting.start_time || "TBA"}–${meeting.end_time || "TBA"} · ${roomLabel(meeting.building, meeting.room, language)}`).join("; ") || (language === "zh" ? "时间待定" : "Time TBA");
+  const lines = (section.meetings ?? []).map((meeting) => `${meeting.days || "TBA"} ${meeting.start_time || "TBA"}–${meeting.end_time || "TBA"} · ${roomLabel(meeting.building, meeting.room, language)}`);
+  return lines.length ? lines : [language === "zh" ? "时间待定" : "Time TBA"];
 }
 
 export function SectionSwap({ section, language, request, disabled, forceOpen, onApply }: { section: ScheduledSection; language: Language; request: Record<string, unknown>; disabled: boolean; forceOpen: boolean; onApply: (option: ScheduleOption) => void }) {
@@ -139,8 +140,8 @@ export function SectionSwap({ section, language, request, disabled, forceOpen, o
         const known = seats !== null && seats !== undefined && seats !== "";
         return <article key={candidate.section_id} className="rounded-lg border border-[#dce4de] bg-[#f7faf7] p-3">
           <div className="flex flex-wrap items-start justify-between gap-2"><strong className="text-sm">{candidate.section_id}</strong><span className="text-xs text-[#59635f]">{known ? (Number(seats) === 0 ? (zh ? "已满" : "Full") : `${seats} ${zh ? "个空位" : "seats open"}`) : (zh ? "余位未知" : "Seats unknown")}</span></div>
-          <p className="mt-2 text-xs leading-5 text-[#646c68]">{zh ? "原班次：" : "Before: "}{meetingSummary(original, language)}</p>
-          <p className="mt-1 text-xs leading-5 text-[#315c43]">{zh ? "换班后：" : "After: "}{meetingSummary(candidate, language)}</p>
+          <div className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 text-xs leading-5 text-[#646c68]"><span>{zh ? "原班次：" : "Before:"}</span><div>{meetingSummary(original, language).map((line, index) => <p key={index}>{line}</p>)}</div></div>
+          <div className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 text-xs leading-5 text-[#315c43]"><span>{zh ? "换班后：" : "After:"}</span><div>{meetingSummary(candidate, language).map((line, index) => <p key={index}>{line}</p>)}</div></div>
           <p className="mt-2 text-xs text-[#59635f]">{candidate.instructorRatings.map((rating) => `${rating.name}${rating.averageRating === null ? "" : ` · ${rating.averageRating.toFixed(2)}/5`}`).join(" · ") || (zh ? "教师待定" : "Instructor TBA")}</p>
           <p className="mt-1 text-[11px] text-[#646c68]">{zh ? "整周课间空档：" : "Weekly gaps: "}{result.current.gapMinutes} → {option.gapMinutes} {zh ? "分钟" : "min"} · {zh ? "到校天数：" : "Campus days: "}{result.current.campusDays.length} → {option.campusDays.length}{result.current.tightWalkCount || option.tightWalkCount ? <>{zh ? " · 课间来不及走：" : " · Hard-to-reach classes: "}{result.current.tightWalkCount ?? 0} → {option.tightWalkCount ?? 0}</> : null}</p>
           {formatSeatReadTime(candidate.seatCheckedAt, language) && <p className="mt-1 text-[11px] text-[#646c68]">{zh ? "余位读取于：" : "Seats read: "}{formatSeatReadTime(candidate.seatCheckedAt, language)}</p>}

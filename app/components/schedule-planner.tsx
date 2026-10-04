@@ -379,7 +379,7 @@ export function WeeklyCalendar({ sections: courseSections, language, busyBlocks 
           const room = roomLabel(meeting.building, meeting.room, language);
           const personal = personalIds.has(section.section_id);
           const title = (personal ? section.course_title : section.section_id) + " · " + displayClock(start) + "–" + displayClock(end) + (personal ? "" : " · " + room);
-          return [<div key={section.section_id + "-" + day + "-" + index} className="absolute inset-x-1 overflow-hidden rounded-md border border-white/80 text-center text-[10px] leading-tight text-[#24312d] shadow-sm" style={{ top: (clippedStart - firstMinute) * pixelsPerMinute, height: Math.max(30, (clippedEnd - clippedStart) * pixelsPerMinute), backgroundColor: colors.get(section.course_id) }}>
+          return [<div key={section.section_id + "-" + day + "-" + index} className="absolute inset-x-1 flex flex-col justify-center overflow-hidden rounded-md border border-white/80 text-center text-[10px] leading-tight text-[#24312d] shadow-sm" style={{ top: (clippedStart - firstMinute) * pixelsPerMinute, height: Math.max(30, (clippedEnd - clippedStart) * pixelsPerMinute), backgroundColor: colors.get(section.course_id) }}>
             {/* The block opens the section swap; the building is a separate link on top of it. */}
             <button type="button" disabled={!onSelectSection || personal} onClick={() => onSelectSection?.(section)} title={title} aria-label={title} className="absolute inset-0 rounded-md enabled:hover:ring-2 enabled:hover:ring-inset enabled:hover:ring-[#536d64]" />
             <div className="pointer-events-none relative px-1.5 py-1"><strong className="block truncate">{personal ? section.course_title : `${section.course_id} · ${sectionNumber}`}</strong><span className="block truncate">{displayClock(start)}–{displayClock(end)}</span>{!personal && <span className="block truncate"><RoomLink building={meeting.building} room={meeting.room} language={language} />{shortType ? " · " + shortType : ""}</span>}</div>
@@ -702,14 +702,14 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
         <WeekLoadChart sections={chosen.selectedSections} language={language} />
         <WeeklyCalendar sections={chosen.selectedSections} language={language} busyBlocks={busyBlocks} onSelectSection={(section) => { const control = document.getElementById(`section-swap-${section.section_id}`); control?.scrollIntoView({ block: "center", behavior: "smooth" }); control?.click(); }} />
         <a href={reportMailto({ term: termName, sectionIds: chosen.selectedSections.map((section) => section.section_id), language })} className="mt-2 inline-block text-xs font-medium text-[#a34a39] hover:underline">{t.reportSchedule} ↗</a>
-        <div className="mt-4 space-y-2">{chosen.selectedSections.map((section) => <article key={section.section_id} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{section.course_id} · {section.course_title}</p><p className="mt-1 text-sm text-[#5d6561]">{section.section_id}{(section.meetings ?? []).length ? " · " + (section.meetings ?? []).map((meeting) => {
+        <div className="mt-4 space-y-2">{chosen.selectedSections.map((section) => <article key={section.section_id} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{section.course_id} · {section.course_title}</p><p className="mt-1 text-sm text-[#5d6561]">{section.section_id}</p>{/* One line per meeting (lecture, lab, discussion), so the times do not run together. */}<ul className="mt-1 space-y-0.5 text-sm text-[#5d6561]">{((section.meetings ?? []).length ? (section.meetings ?? []).map((meeting) => {
           const start = minutes(meeting.start_time), end = minutes(meeting.end_time);
           const kind = meetingType(meeting.classtype);
           const type = kind ? t[kind] : null;
           const days = dayNames(meeting.days).map((day) => t.weekdays[DAYS.indexOf(day as (typeof DAYS)[number])] ?? day);
           if (isAsyncOnline(meeting)) return (type ? type + " · " : "") + t.onlineNoTime;
           return start === null || end === null || !days.length ? (language === "zh" ? "时间待定" : "Time TBA") : (type ? type + " · " : "") + days.join(" ") + " " + displayClock(start) + "–" + displayClock(end) + " · " + roomLabel(meeting.building, meeting.room, language);
-        }).join(" · ") : language === "zh" ? " · 时间待定" : " · Time TBA"}</p>
+        }) : [language === "zh" ? "时间待定" : "Time TBA"]).map((line, index) => <li key={index}>{line}</li>)}</ul>
         {/* Each instructor in the chosen schedule opens the same details card as in course search. An
             instructor PlanetTerp has no page for keeps a plain name, since a card would have nothing in it. */}
         {section.instructorRatings.length > 0 && <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#646c68]">{section.instructorRatings.map((item) => {
