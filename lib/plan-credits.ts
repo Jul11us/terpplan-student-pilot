@@ -54,6 +54,32 @@ export function creditLimits(term: string): { max: number; beforeClasses: number
   return null;
 }
 
+export type CreditMark = { value: number; kind: "fullTime" | "beforeClasses" | "max" };
+
+export type CreditMeter = {
+  scaleMax: number;
+  min: number;
+  max: number;
+  marks: CreditMark[];
+  level: "under" | "ok" | "caution" | "over";
+};
+
+// Bar geometry for the plan's credit total. Fall and spring mark full-time status (12 credits), the
+// 16-credit limit before classes start and the 20-credit limit; other terms mark only their limit.
+export function creditMeter(total: PlanCreditTotal, term: string): CreditMeter | null {
+  const limits = creditLimits(term);
+  if (!limits) return null;
+  const regular = limits.beforeClasses !== null;
+  const marks: CreditMark[] = [
+    ...(regular ? [{ value: 12, kind: "fullTime" as const }, { value: limits.beforeClasses!, kind: "beforeClasses" as const }] : []),
+    { value: limits.max, kind: "max" },
+  ];
+  const level = total.min > limits.max ? "over"
+    : limits.beforeClasses !== null && total.min > limits.beforeClasses ? "caution"
+    : regular && total.max < 12 ? "under" : "ok";
+  return { scaleMax: Math.max(limits.max + (regular ? 2 : 1), Math.ceil(total.max)), min: total.min, max: total.max, marks, level };
+}
+
 // Uses the lowest possible total, so a variable-credit course does not raise a warning the student can avoid.
 export function creditWarning(total: PlanCreditTotal, term: string, language: "en" | "zh") {
   const limits = creditLimits(term);

@@ -18,6 +18,8 @@ import { weekFromSections, writeMyWeek } from "@/lib/my-week";
 import { anonymousBusyBlocks, type BusyBlock } from "@/lib/personal-schedule";
 import type { ScheduleOption, ScheduledSection, PlanDiagnosis, PlanRepair } from "@/lib/planner";
 import { PersonalSchedule, ScheduleRecovery, SectionSwap } from "@/app/components/schedule-tools";
+import { CreditMeter, WeekLoadChart } from "@/app/components/plan-insights";
+import type { CreditMeter as CreditMeterData } from "@/lib/plan-credits";
 export type { ScheduledSection } from "@/lib/planner";
 
 type Language = "en" | "zh";
@@ -125,6 +127,7 @@ type Props = {
   // Running credit total for the plan, before any option is generated.
   creditsLabel?: string;
   creditWarning?: string;
+  creditMeter?: CreditMeterData | null;
   // Unmet prerequisites per course, already worded (empty when met or not checked).
   prereqNeeds?: Record<string, string[]>;
   // Where the student enters the courses they've taken, shown above the course list.
@@ -401,7 +404,7 @@ export function CalendarExport({ sections, term, termName, language, incomplete 
   </div>;
 }
 
-export default function SchedulePlanner({ courses, term, termName, language, creditsLabel, creditWarning, prereqNeeds = {}, takenEditor, planSwitch, onRemove, onBack, onChosenChange, onUpdateCourse }: Props) {
+export default function SchedulePlanner({ courses, term, termName, language, creditsLabel, creditWarning, creditMeter, prereqNeeds = {}, takenEditor, planSwitch, onRemove, onBack, onChosenChange, onUpdateCourse }: Props) {
   const t = copy[language];
   const [generated, setGenerated] = useState<{ requestKey: string; prefsKey: string; options: ScheduleOption[]; warnings: PlanWarning[]; diagnostics?: PlanDiagnosis[]; repairs?: PlanRepair[] }>({ requestKey: "", prefsKey: "", options: [], warnings: [] });
   const [selectedOption, setSelectedOption] = useState(0);
@@ -545,7 +548,8 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
     </div>
     {planSwitch && <div className="mt-4">{planSwitch}</div>}
     {!courses.length ? <p className="mt-6 rounded-xl bg-[#f2f0eb] p-5 text-sm text-[#646c68]">{t.addCourse}</p> : <>
-      {creditsLabel && <p className="mt-6 text-xs font-medium text-[#48534f]">{creditsLabel}</p>}
+      {creditMeter && <CreditMeter meter={creditMeter} language={language} />}
+      {creditsLabel && <p className={`${creditMeter ? "mt-2" : "mt-6"} text-xs font-medium text-[#48534f]`}>{creditsLabel}</p>}
       {creditWarning && <p role="status" className="mt-2 rounded-lg bg-[#fff8e8] px-3 py-2 text-xs leading-5 text-[#745424]">⚠ {creditWarning}</p>}
       {takenEditor && <div className="mt-2">{takenEditor}</div>}
       <div className={`${creditsLabel ? "mt-2" : "mt-6"} space-y-2`}>{courses.map((course) => <article key={course.courseId} className="flex items-center justify-between gap-4 rounded-xl border border-[#e3e0d8] bg-white px-4 py-3"><div><p className="font-semibold">{course.courseId}</p><p className="mt-0.5 text-xs text-[#646c68]">{course.courseTitle}</p>{prereqNeeds[course.courseId]?.length ? <p className="mt-1 text-xs font-medium text-[#745424]">⚠ {t.prereqNeeds.replace("{needs}", prereqNeeds[course.courseId].join("; "))}</p> : null}{course.instructors?.length ? <p className="mt-1 text-xs text-[#536d64]">{t.onlyInstructors}: {course.instructors.join(", ")}</p> : null}{course.pinnedSectionId && <p className="mt-1 text-xs font-medium text-[#315c43]">{t.pinned}: {course.pinnedSectionId}</p>}{course.excludedSectionIds?.length ? <p className="mt-1 text-xs text-[#8f4538]">{t.excludedSections}: {course.excludedSectionIds.join(", ")}</p> : null}{(course.pinnedSectionId || course.excludedSectionIds?.length) && <button onClick={onBack} className="mt-1 text-xs font-medium text-[#536d64] underline underline-offset-2">{t.changeSections}</button>}</div><button onClick={() => onRemove(course.courseId)} className="rounded-lg border border-[#dedbd3] px-3 py-2 text-xs font-medium text-[#5d6561] hover:bg-[#f6f4ef]">{t.remove}</button></article>)}</div>
@@ -608,6 +612,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
           return <div className="mb-3 rounded-xl border border-[#e3e0d8] bg-white p-3 sm:p-4"><div className="flex flex-wrap items-center gap-2 sm:gap-3"><button type="button" onClick={() => { if (writeMyWeek(weekFromSections(chosen.selectedSections, term, termName))) setWeekSavedFor(weekKey); }} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]">{weekSavedFor === weekKey ? "✓ " : ""}{t.useWeek}</button>{weekSavedFor === weekKey ? <a href="/week" className="text-xs font-semibold text-[#a34a39] hover:underline">{t.weekSaved}</a> : <p className="w-full text-[11px] leading-5 text-[#646c68] sm:w-auto sm:min-w-0 sm:flex-1">{t.weekHint}</p>}</div></div>;
         })()}
         <p className="mb-2 text-xs leading-5 text-[#646c68]">{language === "zh" ? "点击课表中的课程可查看备选班次。个人日程仅显示在这里，不包含在分享链接或日历导出中。" : "Click a class to review alternative sections. Personal commitments appear here and are excluded from share links and calendar exports."}</p>
+        <WeekLoadChart sections={chosen.selectedSections} language={language} />
         <WeeklyCalendar sections={chosen.selectedSections} language={language} busyBlocks={busyBlocks} onSelectSection={(section) => { const control = document.getElementById(`section-swap-${section.section_id}`); control?.scrollIntoView({ block: "center", behavior: "smooth" }); control?.click(); }} />
         <a href={reportMailto({ term: termName, sectionIds: chosen.selectedSections.map((section) => section.section_id), language })} className="mt-2 inline-block text-xs font-medium text-[#a34a39] hover:underline">{t.reportSchedule} ↗</a>
         <div className="mt-4 space-y-2">{chosen.selectedSections.map((section) => <article key={section.section_id} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{section.course_id} · {section.course_title}</p><p className="mt-1 text-sm text-[#5d6561]">{section.section_id}{(section.meetings ?? []).length ? " · " + (section.meetings ?? []).map((meeting) => {
