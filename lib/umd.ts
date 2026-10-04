@@ -193,21 +193,25 @@ export function parseTestudoSections(html: string, courseId: string): UmdSection
 }
 
 function parseTestudoCourse(html: string, courseId: string) {
-  const escapedId = courseId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  if (!new RegExp(`<div\\s+id=["']${escapedId}["']\\s+class=["']course["']`, "i").test(html)) return null;
+  // A Testudo course-code URL can return several prefix matches, such as
+  // BMGT220 and BMGT220L. Parse only the exact course's block.
+  const starts = Array.from(html.matchAll(/<div\b[^>]*\bid=["']([A-Z]{4}\d{3}[A-Z0-9]*)["'][^>]*\bclass=["']course["'][^>]*>/gi));
+  const index = starts.findIndex((start) => start[1].toUpperCase() === courseId.toUpperCase());
+  if (index < 0) return null;
+  const courseHtml = html.slice(starts[index].index, starts[index + 1]?.index ?? html.length);
 
-  const name = firstClassText(html, "course-title");
+  const name = firstClassText(courseHtml, "course-title");
   if (!name) return null;
-  const department = firstClassText(html, "course-prefix-name") || courseId.slice(0, 4);
-  const creditsText = firstClassText(html, "course-min-credits");
+  const department = firstClassText(courseHtml, "course-prefix-name") || courseId.slice(0, 4);
+  const creditsText = firstClassText(courseHtml, "course-min-credits");
   const credits = creditsText && Number.isFinite(Number(creditsText)) ? Number(creditsText) : null;
   // Variable-credit courses (e.g. 1-3) also list a maximum; fixed-credit courses leave it out.
-  const maxCreditsText = firstClassText(html, "course-max-credits");
+  const maxCreditsText = firstClassText(courseHtml, "course-max-credits");
   const maxCredits = maxCreditsText && Number.isFinite(Number(maxCreditsText)) && Number(maxCreditsText) > (credits ?? 0) ? Number(maxCreditsText) : null;
-  const sections = parseTestudoSections(html, courseId);
+  const sections = parseTestudoSections(courseHtml, courseId);
 
   return {
-    course: { course_id: courseId, name, department, credits, max_credits: maxCredits, ...parseTestudoRequirements(html) },
+    course: { course_id: courseId, name, department, credits, max_credits: maxCredits, ...parseTestudoRequirements(courseHtml) },
     sections,
   };
 }
