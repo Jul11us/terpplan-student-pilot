@@ -835,7 +835,7 @@ export default function Home() {
           </div>
         </section>}
 
-        {step === "find" && restored && <PopularCourses term={term} lang={language} courseIds={planCourses.map((course) => course.courseId)} />}
+        {step === "find" && restored && <PopularCourses term={term} lang={language} courseIds={planCourses.map((course) => course.courseId)} onCourseClick={(courseId) => void jumpToCourse(courseId)} />}
 
         {termUnavailable && <p className="mb-4 rounded-xl border border-[#ead8b5] bg-[#fff8e8] px-4 py-3 text-sm text-[#745424]">{t.termFallback}</p>}
         {message && <p role="status" className="mb-4 rounded-xl border border-[#bfd4c6] bg-[#edf6ef] px-4 py-3 text-sm text-[#315c43]">{t[message]}</p>}
