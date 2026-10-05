@@ -22,6 +22,7 @@ import { anonymousBusyBlocks, type BusyBlock } from "@/lib/personal-schedule";
 import type { ScheduleOption, ScheduledSection, PlanDiagnosis, PlanRepair } from "@/lib/planner";
 import { PersonalSchedule, ScheduleRecovery, SectionSwap } from "@/app/components/schedule-tools";
 import { SeasonNote, useOfferingSeasons } from "@/app/components/season-note";
+import { PrintSchedule } from "@/app/components/print-sheet";
 import { CreditMeter, WeekLoadChart } from "@/app/components/plan-insights";
 import type { CreditMeter as CreditMeterData } from "@/lib/plan-credits";
 export type { ScheduledSection } from "@/lib/planner";
@@ -422,7 +423,7 @@ export function WeeklyCalendar({ sections: courseSections, language, busyBlocks 
   </div>;
 }
 
-export function CalendarExport({ sections, term, termName, language, incomplete }: { sections: ScheduledSection[]; term: string; termName: string; language: Language; incomplete: boolean }) {
+export function CalendarExport({ sections, term, termName, language, incomplete, children }: { sections: ScheduledSection[]; term: string; termName: string; language: Language; incomplete: boolean; children?: React.ReactNode }) {
   const t = copy[language];
   const calendar = TERM_CALENDARS[term];
   const [skipped, setSkipped] = useState<string[]>([]);
@@ -467,6 +468,7 @@ export function CalendarExport({ sections, term, termName, language, incomplete 
     </div>
     {calendar && <p className="mt-2 text-[11px] leading-5 text-[#646c68]">{t.exportNote}</p>}
     {skipped.length > 0 && <p className="mt-2 text-[11px] text-[#745424]">{t.exportSkipped} {skipped.join(", ")}</p>}
+    {children && <div className="mt-3 border-t border-[#eeeae3] pt-3">{children}</div>}
   </div>;
 }
 
@@ -744,7 +746,9 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
       {chosen && <div className="mt-6">
         {chosenMissing.length > 0 && <div role="alert" className="mb-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]"><p className="font-semibold">{t.incompleteTitle}</p><p className="mt-1 text-xs leading-5">{t.incompleteBody} <strong>{chosenMissing.join(", ")}</strong></p></div>}
         <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h4 className="font-semibold">{t.calendar}</h4><p className="mt-1 text-xs text-[#646c68]">{chosen.selectedSections.map((section) => section.section_id).join(" · ")}</p></div><span className="text-xs text-[#646c68]">{t.rating}: {chosen.professorRating === null ? "—" : chosen.professorRating.toFixed(2) + " / 5"}{chosen.totalCredits ? " · " + chosen.totalCredits + " " + (chosen.totalCredits === 1 ? t.credit : t.credits) : ""}</span></div>
-        <CalendarExport key={chosen.selectedSections.map((section) => section.section_id).join("|")} sections={chosen.selectedSections} term={term} termName={termName} language={language} incomplete={chosenMissing.length > 0} />
+        <CalendarExport key={chosen.selectedSections.map((section) => section.section_id).join("|")} sections={chosen.selectedSections} term={term} termName={termName} language={language} incomplete={chosenMissing.length > 0}>
+          <PrintSchedule option={chosen} busyBlocks={busyBlocks} request={{ ...scheduleRequest, selectedSectionIds: chosen.selectedSections.map((item) => item.section_id) }} termName={termName} language={language} canLoadBackups={!loading && upToDate && chosenMissing.length === 0} />
+        </CalendarExport>
         <div className="mb-3 rounded-xl border border-[#e3e0d8] bg-white p-3 sm:p-4">
           <div className="flex flex-wrap items-center gap-2 sm:gap-3"><button type="button" onClick={() => void shareSchedule()} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]">{shareCopied ? t.shareCopied : t.shareSchedule}</button><p className="w-full text-[11px] leading-5 text-[#646c68] sm:w-auto sm:min-w-0 sm:flex-1">{t.shareHint}</p></div>
           {shareUrl && <div className="mt-3"><label htmlFor="share-schedule-url" className="text-[11px] font-medium text-[#5d6561]">{shareCopied ? t.shareReady : t.shareCopyFailed}</label><input id="share-schedule-url" readOnly value={shareUrl} onFocus={(event) => event.target.select()} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-[#fbfaf8] px-3 py-2 text-xs text-[#273c38]" /></div>}

@@ -206,3 +206,19 @@ select:not([multiple]) {
     display: grid;
   }
 }
+
+/* "Print / save as PDF" (app/components/print-sheet.tsx): only the print sheet is printed. */
+#print-sheet { display: none; }
+@media print {
+  @page { margin: 10mm; }
+  body.printing-sheet { background: #fff !important; }
+  body.printing-sheet > *:not(#print-sheet) { display: none !important; }
+  body.printing-sheet #print-sheet { display: block; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  /* The week fits on the first page; the table may run onto the next without splitting a course. */
+  #print-sheet .print-calendar { zoom: 0.82; break-inside: avoid; }
+  #print-sheet .print-calendar .overflow-x-auto { overflow: visible; border-color: #b9b5ab; }
+  /* The weekday header sticks on screen; on paper it would land mid-page. */
+  #print-sheet .sticky { position: static !important; }
+  #print-sheet tr { break-inside: avoid; }
+  #print-sheet a { text-decoration: none; color: inherit; }
+}
