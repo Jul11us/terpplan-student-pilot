@@ -23,6 +23,10 @@ const texts = {
     upcoming: "Registration · {open} seats open now",
     fullSections: "{full} of {n} sections full",
     unknown: "Seat counts not recorded",
+    progressNow: "Since TerpPlan started reading: {a} open on {d1} → {b} on {d2}",
+    progressFull: "90% full {n} days after TerpPlan's first reading",
+    progressFullSameDay: "90% full on the day of TerpPlan's first reading",
+    progressNever: "Not 90% full while TerpPlan was reading it",
     verdictFull: "Past {season} semesters ended almost full: register as soon as your time opens.",
     verdictBusy: "Past {season} semesters ended mostly full and many sections filled, so don't wait long.",
     verdictRoom: "Past {season} semesters usually had seats left at the end.",
@@ -41,6 +45,10 @@ const texts = {
     upcoming: "注册中 · 目前剩 {open} 座",
     fullSections: "{full} / {n} 个班满员",
     unknown: "没有记录余位",
+    progressNow: "TerpPlan 记录以来：{d1} 剩 {a} 座 → {d2} 剩 {b} 座",
+    progressFull: "TerpPlan 开始记录后第 {n} 天就填满 90%",
+    progressFullSameDay: "TerpPlan 开始记录当天就填满 90%",
+    progressNever: "记录期间没有填满 90%",
     verdictFull: "往年{season}基本坐满：选课时间一开放就尽快注册。",
     verdictBusy: "往年{season}大多接近坐满，不少班次满员，别拖太久。",
     verdictRoom: "往年{season}到期末通常还有空位。",
@@ -73,6 +81,16 @@ const VERDICT_CLASS = {
   busy: "border-[#ead8b5] bg-[#fffbf0] text-[#745424]",
   room: "border-[#cddbd1] bg-[#edf3ef] text-[#315c43]",
 } as const;
+
+const shortDate = (value: string, lang: "en" | "zh") => new Date(value).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
+
+function progressText(term: Term, lang: "en" | "zh") {
+  const t = texts[lang], progress = term.progress;
+  if (!progress) return null;
+  if (term.status !== "past") return format(t.progressNow, { a: progress.firstOpen, b: progress.lastOpen, d1: shortDate(progress.firstAt, lang), d2: shortDate(progress.lastAt, lang) });
+  if (progress.daysTo90 === null) return t.progressNever;
+  return progress.daysTo90 === 0 ? t.progressFullSameDay : format(t.progressFull, { n: progress.daysTo90 });
+}
 
 export function OfferingHistory({ history, lang }: OfferingHistoryProps) {
   const t = texts[lang];
@@ -118,6 +136,7 @@ export function OfferingHistory({ history, lang }: OfferingHistoryProps) {
                 {term.fullSections !== null && <span>{format(t.fullSections, { full: term.fullSections, n: term.sectionCount })}</span>}
               </p>
             </>)}
+            {term.sectionCount > 0 && progressText(term, lang) && <p className="mt-0.5 text-[11px] text-[#315c43]">{progressText(term, lang)}</p>}
           </li>;
         })}
       </ul>

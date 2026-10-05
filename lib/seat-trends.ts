@@ -24,6 +24,21 @@ export type SeatTrend = {
 
 export type OfferingTermStatus = "past" | "current" | "upcoming";
 
+export type SeatProgress = { firstAt: string; firstOpen: number; lastAt: string; lastOpen: number; totalSeats: number; daysTo90: number | null };
+
+// First and last reading, and how many days after the first reading the course was 90% full (null if never).
+export function seatProgress(readings: Array<{ checkedAt: string; openSeats: number; totalSeats: number }>): SeatProgress | null {
+  if (readings.length < 2) return null;
+  const first = readings[0], last = readings[readings.length - 1];
+  const start = Date.parse(first.checkedAt);
+  if (Date.parse(last.checkedAt) - start < 86_400_000) return null;
+  const full = readings.find((reading) => reading.totalSeats > 0 && (reading.totalSeats - reading.openSeats) / reading.totalSeats >= 0.9);
+  return {
+    firstAt: first.checkedAt, firstOpen: first.openSeats, lastAt: last.checkedAt, lastOpen: last.openSeats, totalSeats: last.totalSeats,
+    daysTo90: full ? Math.round((Date.parse(full.checkedAt) - start) / 86_400_000) : null,
+  };
+}
+
 export type OfferingHistory = {
   courseId: string;
   terms: Array<{
@@ -35,6 +50,8 @@ export type OfferingHistory = {
     fullSections: number | null;
     // "past" (numbers are final), "current" (in progress) or "upcoming" (registration).
     status: OfferingTermStatus;
+    // How the seats went while TerpPlan was reading them (registration), when there are readings a day apart.
+    progress?: SeatProgress | null;
   }>;
   pattern: "every-fall" | "every-spring" | "every-summer" | "fall-spring" | "all-terms" | "irregular";
 };

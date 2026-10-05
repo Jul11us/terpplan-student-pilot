@@ -21,6 +21,7 @@ import { weekFromSections, writeMyWeek } from "@/lib/my-week";
 import { anonymousBusyBlocks, type BusyBlock } from "@/lib/personal-schedule";
 import type { ScheduleOption, ScheduledSection, PlanDiagnosis, PlanRepair } from "@/lib/planner";
 import { PersonalSchedule, ScheduleRecovery, SectionSwap } from "@/app/components/schedule-tools";
+import { SeasonNote, useOfferingSeasons } from "@/app/components/season-note";
 import { CreditMeter, WeekLoadChart } from "@/app/components/plan-insights";
 import type { CreditMeter as CreditMeterData } from "@/lib/plan-credits";
 export type { ScheduledSection } from "@/lib/planner";
@@ -64,8 +65,9 @@ const copy = {
     areasLabel: "Campus areas",
     sortedNote: "Same options, in the order you chose. Options without a value for it come last.",
     optionSort: { best: "Best overall", fewestDays: "Fewest days on campus", latestStart: "Latest first class", fewestGaps: "Fewest gaps", highestRating: "Highest instructor rating", leastWalking: "Least walking" },
-    openOnly: "Only use sections with open seats", preferGpa: "Prefer instructors who give higher grades (PlanetTerp average GPA in the course)", avgGpa: "Avg GPA", fullIn: "Full", seatsUnknown: "Seats unknown", full: "Full", seat: "seat open", seatsOpen: "seats open",
+    openOnly: "Only use sections with open seats", preferGpa: "Prefer instructors who give higher grades (PlanetTerp average GPA in the course)", avgGpa: "Avg GPA", fullIn: "Full", seatsUnknown: "Seats unknown", full: "Full", seat: "seat open", seatsOpen: "seats open", waitlisted: "{n} waitlisted", holdfiled: "{n} on hold file", noWaitlist: "nobody waitlisted yet",
     windowHint: "Classes outside this window lower the ranking; tick the box to exclude them.",
+    oddTime: "{field} is set to {time}, which looks like a typo: UMD classes run between about 7am and 10pm.", clearTime: "Clear it",
     earlyLabel: "Early classes lose points if they start before", earlyOff: "Don't count early classes", earlyDefault: "(default)",
     earlyHint: "Each class that starts earlier costs 0.7 points. Pick an earlier time if you don't mind 8am classes.",
     resetPrefs: "Clear preferences", resetDone: "Preferences cleared.", undo: "Undo",
@@ -132,8 +134,9 @@ const copy = {
     areasLabel: "校园区域",
     sortedNote: "方案不变，只是换了顺序。该指标没有数据的方案排在最后。",
     optionSort: { best: "综合最佳", fewestDays: "到校天数最少", latestStart: "第一节课最晚", fewestGaps: "课间空档最少", highestRating: "教师评分最高", leastWalking: "课间步行最少" },
-    openOnly: "只使用有空位的班次", preferGpa: "优先选给分高的老师（按 PlanetTerp 上该课的平均 GPA）", avgGpa: "平均 GPA", fullIn: "已满", seatsUnknown: "余位未知", full: "已满", seat: "个空位", seatsOpen: "个空位",
+    openOnly: "只使用有空位的班次", preferGpa: "优先选给分高的老师（按 PlanetTerp 上该课的平均 GPA）", avgGpa: "平均 GPA", fullIn: "已满", seatsUnknown: "余位未知", full: "已满", seat: "个空位", seatsOpen: "个空位", waitlisted: "候补 {n} 人", holdfiled: "Hold file {n} 人", noWaitlist: "还没有人候补",
     windowHint: "时间段外的课程会降低排名；勾选后会直接排除。",
+    oddTime: "{field}设成了 {time}，看起来像输错了：UMD 的课一般在早上 7 点到晚上 10 点之间。", clearTime: "清除",
     earlyLabel: "几点前开始的课算早课并扣分", earlyOff: "早课不扣分", earlyDefault: "（默认）",
     earlyHint: "每节早课扣 0.7 分。不介意早八的话，可以选更早的时间。",
     resetPrefs: "清空偏好", resetDone: "偏好已清空。", undo: "撤销",
@@ -484,6 +487,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
   const [excludedDays, setExcludedDays] = useState<string[]>(savedPreferences?.excludedDays ?? []);
   const [earliestStart, setEarliestStart] = useState(savedPreferences?.earliestStart ?? "");
   const [earlyBefore, setEarlyBefore] = useState(savedPreferences?.earlyBefore ?? "");
+  const courseSeasons = useOfferingSeasons(courses.map((course) => course.courseId));
   const [windowStart, setWindowStart] = useState(savedPreferences?.windowStart ?? "");
   const [windowEnd, setWindowEnd] = useState(savedPreferences?.windowEnd ?? "");
   const [strictTime, setStrictTime] = useState(savedPreferences?.strictTime ?? false);
@@ -651,7 +655,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
       {creditsLabel && <p className={`${creditMeter ? "mt-2" : "mt-6"} text-xs font-medium text-[#48534f]`}>{creditsLabel}</p>}
       {creditWarning && <p role="status" className="mt-2 rounded-lg bg-[#fff8e8] px-3 py-2 text-xs leading-5 text-[#745424]">⚠ {creditWarning}</p>}
       {takenEditor && <div className="mt-2">{takenEditor}</div>}
-      <div className={`${creditsLabel ? "mt-2" : "mt-6"} space-y-2`}>{courses.map((course) => <article key={course.courseId} className="flex items-center justify-between gap-4 rounded-xl border border-[#e3e0d8] bg-white px-4 py-3"><div><p className="font-semibold">{course.courseId}</p><p className="mt-0.5 text-xs text-[#646c68]">{course.courseTitle}</p>{prereqNeeds[course.courseId]?.length ? <p className="mt-1 text-xs font-medium text-[#745424]">⚠ {t.prereqNeeds.replace("{needs}", prereqNeeds[course.courseId].join("; "))}</p> : null}{course.instructors?.length ? <p className="mt-1 text-xs text-[#536d64]">{t.onlyInstructors}: {course.instructors.join(", ")}</p> : null}{course.pinnedSectionId && <p className="mt-1 text-xs font-medium text-[#315c43]">{t.pinned}: {course.pinnedSectionId}</p>}{course.excludedSectionIds?.length ? <p className="mt-1 text-xs text-[#8f4538]">{t.excludedSections}: {course.excludedSectionIds.join(", ")}</p> : null}{(course.pinnedSectionId || course.excludedSectionIds?.length) && <button onClick={onBack} className="mt-1 text-xs font-medium text-[#536d64] underline underline-offset-2">{t.changeSections}</button>}</div><button onClick={() => onRemove(course.courseId)} className="rounded-lg border border-[#dedbd3] px-3 py-2 text-xs font-medium text-[#5d6561] hover:bg-[#f6f4ef]">{t.remove}</button></article>)}</div>
+      <div className={`${creditsLabel ? "mt-2" : "mt-6"} space-y-2`}>{courses.map((course) => <article key={course.courseId} className="flex items-center justify-between gap-4 rounded-xl border border-[#e3e0d8] bg-white px-4 py-3"><div><p className="font-semibold">{course.courseId}</p><p className="mt-0.5 text-xs text-[#646c68]">{course.courseTitle}</p><SeasonNote season={courseSeasons[course.courseId]} term={term} language={language} />{prereqNeeds[course.courseId]?.length ? <p className="mt-1 text-xs font-medium text-[#745424]">⚠ {t.prereqNeeds.replace("{needs}", prereqNeeds[course.courseId].join("; "))}</p> : null}{course.instructors?.length ? <p className="mt-1 text-xs text-[#536d64]">{t.onlyInstructors}: {course.instructors.join(", ")}</p> : null}{course.pinnedSectionId && <p className="mt-1 text-xs font-medium text-[#315c43]">{t.pinned}: {course.pinnedSectionId}</p>}{course.excludedSectionIds?.length ? <p className="mt-1 text-xs text-[#8f4538]">{t.excludedSections}: {course.excludedSectionIds.join(", ")}</p> : null}{(course.pinnedSectionId || course.excludedSectionIds?.length) && <button onClick={onBack} className="mt-1 text-xs font-medium text-[#536d64] underline underline-offset-2">{t.changeSections}</button>}</div><button onClick={() => onRemove(course.courseId)} className="rounded-lg border border-[#dedbd3] px-3 py-2 text-xs font-medium text-[#5d6561] hover:bg-[#f6f4ef]">{t.remove}</button></article>)}</div>
       <div className="mt-5 rounded-xl border border-[#e3e0d8] bg-white p-4 sm:p-5">
         {/* On a phone the form is long enough to hide the options below it, so it folds to one line there. */}
         <button type="button" onClick={() => setPrefsOpen(!prefsOpen)} aria-expanded={prefsOpen} className="flex w-full items-center justify-between gap-3 text-left sm:hidden"><span className="font-semibold">{t.preferences}{prefsSet ? <span className="ml-2 text-xs font-normal text-[#5d6561]">· {t.prefsSet.replace("{n}", String(prefsSet))}</span> : null}</span><span aria-hidden="true" className="text-xs text-[#5d6561]">{prefsOpen ? "▲" : "▼"}</span></button>
@@ -670,6 +674,10 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
           <label className="grid gap-1.5 text-xs font-medium text-[#5d6561]">{t.window} · {t.end}<input type="time" value={windowEnd} onChange={(event) => setWindowEnd(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]" /></label>
           <label className="flex items-end gap-2 pb-2 text-xs text-[#5d6561]"><input type="checkbox" checked={strictTime} disabled={!windowStart || !windowEnd} onChange={(event) => setStrictTime(event.target.checked)} />{t.strict}</label>
         </div>
+        {/* A time no class meets at (a slip of the time picker, like 02:06) quietly filters everything, so it is pointed out. */}
+        {([[t.earliest, earliestStart, setEarliestStart], [`${t.window} · ${t.start}`, windowStart, setWindowStart], [`${t.window} · ${t.end}`, windowEnd, setWindowEnd]] as const)
+          .filter(([, value]) => value && (value < "06:00" || value > "23:00"))
+          .map(([field, value, clear]) => <p key={field} role="status" className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-[#fff8e8] px-3 py-2 text-xs text-[#745424]">⚠ {fill(t.oddTime, { field, time: displayClock(minutes(value) ?? 0) })}<button type="button" onClick={() => clear("")} className="font-semibold underline underline-offset-2">{t.clearTime}</button></p>)}
         <div className="mt-4">
           <label className="flex flex-wrap items-center gap-2 text-xs font-medium text-[#5d6561]">{t.earlyLabel}
             <select value={earlyBefore} onChange={(event) => setEarlyBefore(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-1.5 text-sm text-[#202728]">
@@ -693,7 +701,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
           <legend className="mb-2 text-xs font-medium text-[#5d6561]">{t.areasTitle}</legend>
           <div className="flex flex-wrap gap-2">{CAMPUS_AREA_KEYS.map((area) => <label key={area} className="inline-flex cursor-pointer items-start gap-2 rounded-lg border border-[#e3e0d8] bg-[#fbfaf8] px-3 py-2 text-xs">
             <input type="checkbox" className="mt-0.5" checked={campusAreas.includes(area)} onChange={(event) => setCampusAreas((current) => event.target.checked ? [...current, area] : current.filter((item) => item !== area))} />
-            <span>{t.area[area]}<span className="block text-[11px] text-[#7b837f]">{t.areaExample[area]}</span></span>
+            <span>{t.area[area]}<span className="block text-[11px] text-[#646c68]">{t.areaExample[area]}</span></span>
           </label>)}</div>
           <p className="mt-2 text-[11px] leading-5 text-[#646c68]">{t.areasNote}</p>
         </fieldset>
@@ -765,7 +773,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
             ? <span key={item.name}>{label}</span>
             : <ProfessorDetailCard key={item.name} name={item.name} courseId={section.course_id} language={language}><span>{label}</span></ProfessorDetailCard>;
         })}</div>}
-        </div><div className="text-right"><span className={`inline-block rounded-full px-2.5 py-1 text-xs ${seatCount(section.open_seats) === 0 ? "bg-[#f5e9e5] font-semibold text-[#8f4538]" : "bg-[#f1efe9] text-[#5d6561]"}`}>{seatText(section.open_seats, t)}</span>{formatSeatReadTime(section.seatCheckedAt, language) && <p className="mt-1 text-[11px] text-[#646c68]">{t.seatReadAt}: {formatSeatReadTime(section.seatCheckedAt, language)}</p>}</div></div>
+        </div><div className="text-right"><span className={`inline-block rounded-full px-2.5 py-1 text-xs ${seatCount(section.open_seats) === 0 ? "bg-[#f5e9e5] font-semibold text-[#8f4538]" : "bg-[#f1efe9] text-[#5d6561]"}`}>{seatText(section.open_seats, t)}</span>{seatCount(section.open_seats) === 0 && <p className="mt-1 text-[11px] text-[#8f4538]">{[seatCount(section.waitlist) ? t.waitlisted.replace("{n}", String(seatCount(section.waitlist))) : seatCount(section.waitlist) === 0 ? t.noWaitlist : "", seatCount(section.holdfile) ? t.holdfiled.replace("{n}", String(seatCount(section.holdfile))) : ""].filter(Boolean).join(" · ")}</p>}{formatSeatReadTime(section.seatCheckedAt, language) && <p className="mt-1 text-[11px] text-[#646c68]">{t.seatReadAt}: {formatSeatReadTime(section.seatCheckedAt, language)}</p>}</div></div>
         <SectionSwap key={`${requestKey}:${prefsKey}:${chosen.selectedSections.map((item) => item.section_id).join("|")}`} section={section} language={language} request={{ ...scheduleRequest, selectedSectionIds: chosen.selectedSections.map((item) => item.section_id) }} disabled={loading || !upToDate || chosenMissing.length > 0} forceOpen={false} onApply={(option) => applySwap(option, section.course_id)} />
         </article>)}</div>
         <p className="mt-3 text-xs leading-5 text-[#646c68]">{t.seatReadHint}</p>

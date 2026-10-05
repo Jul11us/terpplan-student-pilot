@@ -96,3 +96,19 @@ export const courseOfferings = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.courseId, table.term] })],
 );
+
+// A course's seats over time in the term being registered for, one row per reading (at most every two
+// hours per course), so a later year can say how fast a course filled after registration opened.
+export const courseSeatHistory = sqliteTable(
+  "course_seat_history",
+  {
+    term: text("term").notNull(),
+    courseId: text("course_id").notNull(),
+    checkedAt: text("checked_at").notNull(),
+    sectionCount: integer("section_count").notNull(),
+    totalSeats: integer("total_seats").notNull(),
+    openSeats: integer("open_seats").notNull(),
+    fullSections: integer("full_sections").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.term, table.courseId, table.checkedAt] })],
+);

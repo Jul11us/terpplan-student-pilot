@@ -29,6 +29,8 @@ const fill = (template: string, values: Record<string, string | number>) => temp
 const hours = (minutes: number) => String(Math.round(minutes / 6) / 10);
 
 const LEVEL_COLOR = { under: "#9aa59f", ok: "#536d64", caution: "#c08a2e", over: "#a34a39" } as const;
+// The level label is small text, so it uses darker shades of the bar colours (4.5:1 or more on white).
+const LEVEL_TEXT = { under: "#5d6561", ok: "#315c43", caution: "#80530f", over: "#a34a39" } as const;
 
 export function CreditMeter({ meter, language }: { meter: CreditMeterData; language: Language }) {
   const t = copy[language];
@@ -40,7 +42,7 @@ export function CreditMeter({ meter, language }: { meter: CreditMeterData; langu
   return <div className="mt-6 rounded-xl border border-[#e3e0d8] bg-white px-4 pb-3 pt-3">
     <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs">
       <span className="font-semibold text-[#273c38]">{t.credits}</span>
-      <span className="font-medium" style={{ color }}>{t.level[meter.level]}</span>
+      <span className="font-medium" style={{ color: LEVEL_TEXT[meter.level] }}>{t.level[meter.level]}</span>
     </div>
     <div role="meter" aria-label={t.credits} aria-valuemin={0} aria-valuemax={meter.scaleMax} aria-valuenow={meter.min} aria-valuetext={`${amount} · ${t.level[meter.level]}`} className="relative mt-2 h-3 rounded-full bg-[#eeece6]">
       <div className="absolute inset-y-0 left-0 rounded-full transition-[width] duration-300" style={{ width: percent(meter.min), backgroundColor: color }} />

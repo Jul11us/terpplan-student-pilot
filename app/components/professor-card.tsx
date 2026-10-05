@@ -67,7 +67,7 @@ function GradeBar({ grades, language }: { grades: NonNullable<ProfessorCard["gra
         <dd>{band.percent}%</dd>
       </div>)}
     </dl>
-    <p className="mt-1 text-[11px] text-[#7b837f]">
+    <p className="mt-1 text-[11px] text-[#646c68]">
       {[t.students.replace("{n}", grades.students.toLocaleString()), grades.semesters ? t.semesters.replace("{n}", String(grades.semesters)) : null, grades.withdrew ? t.withdrew.replace("{n}", String(grades.withdrew)) : null].filter(Boolean).join(" · ")}
     </p>
   </div>;
@@ -82,24 +82,24 @@ function CardBody({ card, courseId, language }: { card: ProfessorCard; courseId:
     <p className="text-xs font-semibold text-[#3e4945]">{card.name}</p>
     <p className="mt-1 text-xs text-[#48534f]">
       {card.averageRating === null ? t.noRating : <>★ {card.averageRating.toFixed(2)} / 5</>}
-      {card.reviewCount ? <span className="ml-1.5 text-[#7b837f]">{t.reviews.replace("{n}", String(card.reviewCount))}</span> : null}
+      {card.reviewCount ? <span className="ml-1.5 text-[#646c68]">{t.reviews.replace("{n}", String(card.reviewCount))}</span> : null}
     </p>
     {card.gpa && <p className="mt-2 text-xs text-[#48534f]">
       <span className="font-medium">{(card.gpa.scope === "course" ? t.gpaCourse : t.gpaAll).replace("{course}", course)}:</span> {card.gpa.gpa.toFixed(2)}
     </p>}
     <section className="mt-2">
       <h4 className="text-[11px] font-semibold text-[#5d6561]">{(card.grades?.scope === "course" ? t.gradesCourse : t.gradesAll).replace("{course}", course)}</h4>
-      {card.grades ? <GradeBar grades={card.grades} language={language} /> : <p className="mt-1 text-[11px] text-[#7b837f]">{t.noGrades}</p>}
+      {card.grades ? <GradeBar grades={card.grades} language={language} /> : <p className="mt-1 text-[11px] text-[#646c68]">{t.noGrades}</p>}
     </section>
     <section className="mt-3 border-t border-[#ece9e2] pt-2">
       <ReviewThemes themes={card.themes} total={card.reviewCount} language={language} compact />
       <h4 className="mt-2 text-[11px] font-semibold text-[#5d6561]">{t.comments}</h4>
       {card.highlights.length ? <ul className="mt-1 space-y-1.5">
         {card.highlights.map((item, index) => <li key={index} className="text-[11px] leading-5 text-[#3e4945]">
-          <span className="text-[#7b837f]">{[item.courseId ?? course, item.rating !== null ? `★ ${item.rating}/5` : null].filter(Boolean).join(" · ")}</span>
+          <span className="text-[#646c68]">{[item.courseId ?? course, item.rating !== null ? `★ ${item.rating}/5` : null].filter(Boolean).join(" · ")}</span>
           <span className="mt-0.5 block">{item.excerpt}</span>
         </li>)}
-      </ul> : <p className="mt-1 text-[11px] text-[#7b837f]">{t.noComments}</p>}
+      </ul> : <p className="mt-1 text-[11px] text-[#646c68]">{t.noComments}</p>}
     </section>
     {card.sourceUrl && <a href={card.sourceUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-[11px] font-semibold text-[#9a5040] hover:underline">{t.source} ↗</a>}
     <p className="mt-2 text-[10px] leading-4 text-[#8b918d]">{t.note}</p>

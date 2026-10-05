@@ -18,6 +18,7 @@ export type PlanSection = {
   seats?: string | number | null;
   open_seats?: string | number | null;
   waitlist?: string | number | null;
+  holdfile?: string | number | null;
   instructors?: string[];
   meetings?: PlanMeeting[];
 };

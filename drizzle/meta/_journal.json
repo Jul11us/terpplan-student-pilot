@@ -43,6 +43,13 @@
       "when": 1791151276387,
       "tag": "0005_offering_final_seats",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1791168181193,
+      "tag": "0006_course_seat_history",
+      "breakpoints": true
     }
   ]
 }

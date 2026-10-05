@@ -10,6 +10,7 @@ import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { compareAuditCandidates, compareAuditCandidatesByGpa, type AuditCandidate } from "@/lib/audit-recommendations";
 import { AUDIT_HANDOFF_KEY } from "@/lib/programs";
 import { writeTakenFromAudit } from "@/lib/taken-courses";
+import { SeasonNote, useOfferingSeasons } from "@/app/components/season-note";
 
 type Language = "en" | "zh";
 type CandidateResponse = { candidates?: AuditCandidate[]; totalCandidates?: number; error?: string };
@@ -112,6 +113,8 @@ export default function AuditPage() {
   const visible = (candidates ?? []).filter((candidate) => !completed.has(candidate.courseId) && !inProgress.has(candidate.courseId)
     && (!sortByGpa || gpaScope.has(candidate.courseId)))
     .sort(sortByGpa ? compareAuditCandidatesByGpa : compareAuditCandidates).slice(0, 30);
+  // "Spring only" badges for the listed courses, read in the background.
+  const candidateSeasons = useOfferingSeasons(visible.map((candidate) => candidate.courseId));
 
   function resetResults() {
     gradeRequest.current++;
@@ -281,7 +284,7 @@ export default function AuditPage() {
           {gradeError && <p role="alert" className="mt-2 text-xs text-[#8c352c]">{gradeError}</p>}
           {mode === "category" && totalCandidates > 30 && <p className="mt-2 text-[11px] text-[#745424]">{t.capped}</p>}
           {!visible.length && <p className="mt-5 rounded-xl bg-[#f2f0eb] p-4 text-sm text-[#5d6561]">{t.noOptions}</p>}
-        <div className="mt-4 space-y-3">{visible.map((candidate) => <article key={candidate.courseId} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{candidate.courseId} <span className="font-normal text-[#606966]">{candidate.title}</span></p><p className="mt-1 text-xs text-[#5d6561]">{candidate.credits ? `${candidate.credits} cr · ` : ""}{t.sections(candidate.sections)} · {candidate.knownSeatSections ? t.seats(candidate.openSeats) : t.seatsUnknown}{candidate.averageGpa !== null ? ` · ${t.historical} ${candidate.averageGpa.toFixed(2)}` : ""}</p></div><span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${candidate.openSections ? "bg-[#eaf4ec] text-[#367047]" : "bg-[#f2f0eb] text-[#5d6561]"}`}>{candidate.knownSeatSections ? t.openSections(candidate.openSections) : t.seatsUnknown}</span></div><div className="mt-3 flex flex-wrap gap-3"><button onClick={() => addToPlan(candidate)} disabled={planIds.includes(candidate.courseId) || planIds.length >= 10 || candidate.sections === 0} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] disabled:opacity-50">{planIds.includes(candidate.courseId) ? t.inPlan : planIds.length >= 10 ? t.limit : t.add}</button><a href={`https://app.testudo.umd.edu/soc/${term}/${candidate.courseId.slice(0, 4)}/${candidate.courseId}`} target="_blank" rel="noopener noreferrer" className="px-1 py-2 text-xs font-medium text-[#a34a39] hover:underline">{t.viewOfficial} ↗</a></div></article>)}</div></>}
+        <div className="mt-4 space-y-3">{visible.map((candidate) => <article key={candidate.courseId} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{candidate.courseId} <span className="font-normal text-[#606966]">{candidate.title}</span><SeasonNote season={candidateSeasons[candidate.courseId]} term={term} language={language} compact /></p><p className="mt-1 text-xs text-[#5d6561]">{candidate.credits ? `${candidate.credits} cr · ` : ""}{t.sections(candidate.sections)} · {candidate.knownSeatSections ? t.seats(candidate.openSeats) : t.seatsUnknown}{candidate.averageGpa !== null ? ` · ${t.historical} ${candidate.averageGpa.toFixed(2)}` : ""}</p></div><span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${candidate.openSections ? "bg-[#eaf4ec] text-[#367047]" : "bg-[#f2f0eb] text-[#5d6561]"}`}>{candidate.knownSeatSections ? t.openSections(candidate.openSections) : t.seatsUnknown}</span></div><div className="mt-3 flex flex-wrap gap-3"><button onClick={() => addToPlan(candidate)} disabled={planIds.includes(candidate.courseId) || planIds.length >= 10 || candidate.sections === 0} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] disabled:opacity-50">{planIds.includes(candidate.courseId) ? t.inPlan : planIds.length >= 10 ? t.limit : t.add}</button><a href={`https://app.testudo.umd.edu/soc/${term}/${candidate.courseId.slice(0, 4)}/${candidate.courseId}`} target="_blank" rel="noopener noreferrer" className="px-1 py-2 text-xs font-medium text-[#a34a39] hover:underline">{t.viewOfficial} ↗</a></div></article>)}</div></>}
       </> : <p className="mt-5 text-sm text-[#646c68]">{audit.requirements.length ? t.review : t.noNeeds}</p>}</div></section>}
     </div>
   </main>;
