@@ -1,12 +1,30 @@
+import { hasUnknownTime, meetingsConflict, type MeetingTime } from "@/lib/meeting-time";
+import type { SectionSlot } from "@/lib/seat-summary";
+
 // Filters for the course search results list. They work on the results already loaded (the first 40
 // matches), using the credits, seat counts and prerequisite checks the page has for each course.
 
 export type CreditFilter = "any" | "1" | "2" | "3" | "4+";
-export type ResultFilters = { openSeats: boolean; prereqsMet: boolean; credits: CreditFilter };
+export type ResultFilters = { openSeats: boolean; prereqsMet: boolean; credits: CreditFilter; fitsSchedule?: boolean };
 
-export const NO_FILTERS: ResultFilters = { openSeats: false, prereqsMet: false, credits: "any" };
+export const NO_FILTERS: ResultFilters = { openSeats: false, prereqsMet: false, credits: "any", fitsSchedule: false };
 
-export const filtersActive = (filters: ResultFilters) => filters.openSeats || filters.prereqsMet || filters.credits !== "any";
+export const filtersActive = (filters: ResultFilters) => filters.openSeats || filters.prereqsMet || filters.credits !== "any" || Boolean(filters.fitsSchedule);
+
+// How a course's sections sit against a schedule (its meetings plus personal commitments): sections with
+// set times that clash with none of them, and sections whose time is not listed (they cannot be checked).
+// With openOnly, full sections do not count.
+export type ScheduleFit = { fit: number; tba: number };
+
+export function scheduleFit(slots: SectionSlot[], schedule: MeetingTime[], openOnly = false): ScheduleFit {
+  let fit = 0, tba = 0;
+  for (const slot of slots) {
+    if (openOnly && slot.open !== null && slot.open <= 0) continue;
+    if (hasUnknownTime(slot.meetings)) tba += 1;
+    else if (!meetingsConflict(slot.meetings, schedule)) fit += 1;
+  }
+  return { fit, tba };
+}
 
 // "3" or a range "1–3". A variable-credit course matches every value its range covers; a course with
 // no known credits matches only "any".
@@ -24,8 +42,15 @@ export function filterResults<T extends { course_id: string; credits?: string }>
   filters: ResultFilters,
   seatsOf: (courseId: string) => SeatsKnown,
   needsOf: (courseId: string) => string[] | null,
+  fitOf: (courseId: string) => ScheduleFit | null | undefined = () => undefined,
 ): T[] {
   return courses.filter((course) => {
+    if (filters.fitsSchedule) {
+      // Still loading (undefined) stays; a course whose every timed section clashes goes. Untimed sections
+      // keep a course, since they might fit.
+      const fit = fitOf(course.course_id);
+      if (fit && fit.fit === 0 && fit.tba === 0) return false;
+    }
     if (!creditsMatch(course.credits, filters.credits)) return false;
     if (filters.openSeats) {
       // Still loading (undefined) or unreadable (null) stays: only a known count of zero is "no seats".

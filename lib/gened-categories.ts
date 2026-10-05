@@ -15,3 +15,24 @@ export const GEN_ED_CATEGORIES = [
   { code: "DVCC", en: "Cultural Competence", zh: "文化素养" },
   { code: "DVUP", en: "Understanding Plural Societies", zh: "理解多元社会" },
 ] as const;
+
+// Testudo lists a course's Gen Ed codes as groups: "DSHS, DVUP" counts for both, while "DSHU or DSSP"
+// counts for one of the two (the student's choice). "GenEd: DSHU or DSSP, DVUP" -> [["DSHU", "DSSP"], ["DVUP"]].
+export function parseGenEdGroups(text: string): string[][] {
+  const codes = text.replace(/^[^:]*GenEd\s*:?/i, "");
+  return codes.split(",").map((group) => [...new Set(group.split(/\s+or\s+/i).map((code) => code.trim()).filter((code) => /^[A-Z]{4}$/.test(code)))])
+    .filter((group) => group.length > 0);
+}
+
+// How many of the wanted categories one course can satisfy at once: each group covers at most one, and two
+// groups cannot both use the same category. ["DSHU or DSSP"] with DSHU and DSSP wanted -> 1, not 2.
+export function genEdCoverage(groups: string[][], wanted: string[]) {
+  const used = new Set<string>();
+  let covered = 0;
+  // Groups with fewer choices first, so a flexible group does not take a code a strict one needs.
+  for (const group of [...groups].sort((a, b) => a.length - b.length)) {
+    const pick = group.find((code) => wanted.includes(code) && !used.has(code));
+    if (pick) { used.add(pick); covered += 1; }
+  }
+  return covered;
+}

@@ -23,6 +23,7 @@ import type { ScheduleOption, ScheduledSection, PlanDiagnosis, PlanRepair } from
 import { PersonalSchedule, ScheduleRecovery, SectionSwap } from "@/app/components/schedule-tools";
 import { SeasonNote, useOfferingSeasons } from "@/app/components/season-note";
 import { PrintSchedule } from "@/app/components/print-sheet";
+import { WorkloadCard } from "@/app/components/workload-card";
 import { CreditMeter, WeekLoadChart } from "@/app/components/plan-insights";
 import type { CreditMeter as CreditMeterData } from "@/lib/plan-credits";
 export type { ScheduledSection } from "@/lib/planner";
@@ -196,6 +197,9 @@ type Props = {
   // Reports the option being viewed so the Gen Ed finder can check conflicts against it.
   onChosenChange?: (schedule: ReferenceSchedule) => void;
 };
+
+// Day names as Testudo writes them, so meeting-time parsing reads personal commitments like classes.
+const BUSY_DAY_CODES: Record<string, string> = { Mon: "M", Tue: "Tu", Wed: "W", Thu: "Th", Fri: "F", Sat: "Sa", Sun: "Su" };
 
 export function dayNames(raw: string | null | undefined) {
   if (!raw || /^(TBA|TBD|ARRANGED)$/i.test(raw.trim())) return [] as string[];
@@ -633,8 +637,10 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
   };
   useEffect(() => {
     if (!chosen || !onChosenChange) return;
-    onChosenChange({ term, planKey: requestKey, sectionIds: chosen.selectedSections.map((section) => section.section_id), meetings: chosen.selectedSections.flatMap((section) => section.meetings ?? []) });
-  }, [chosen, term, requestKey, onChosenChange]);
+    // Personal commitments are taken time too; only their days and times are passed on, never their names.
+    const busyMeetings = busyBlocks.map((block) => ({ days: block.days.map((day) => BUSY_DAY_CODES[day] ?? "").join(""), start_time: block.start, end_time: block.end }));
+    onChosenChange({ term, planKey: requestKey, sectionIds: chosen.selectedSections.map((section) => section.section_id), meetings: [...chosen.selectedSections.flatMap((section) => section.meetings ?? []), ...busyMeetings] });
+  }, [chosen, term, requestKey, onChosenChange, busyBlocks]);
   const shareSchedule = async () => {
     if (!chosen) return;
     const url = window.location.origin + sharePath(term, chosen.selectedSections.map((section) => section.section_id), language, chosenMissing);
@@ -759,6 +765,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
         })()}
         <p className="mb-2 text-xs leading-5 text-[#646c68]">{language === "zh" ? "点击课表中的课程可查看备选班次。个人日程仅显示在这里，不包含在分享链接或日历导出中。" : "Click a class to review alternative sections. Personal commitments appear here and are excluded from share links and calendar exports."}</p>
         <WeekLoadChart sections={chosen.selectedSections} language={language} />
+        <WorkloadCard courses={chosen.selectedSections.map((section) => ({ courseId: section.course_id, credits: section.credits }))} language={language} />
         <WeeklyCalendar sections={chosen.selectedSections} language={language} busyBlocks={busyBlocks} onSelectSection={(section) => { const control = document.getElementById(`section-swap-${section.section_id}`); control?.scrollIntoView({ block: "center", behavior: "smooth" }); control?.click(); }} />
         <a href={reportMailto({ term: termName, sectionIds: chosen.selectedSections.map((section) => section.section_id), language })} className="mt-2 inline-block text-xs font-medium text-[#a34a39] hover:underline">{t.reportSchedule} ↗</a>
         <div className="mt-4 space-y-2">{chosen.selectedSections.map((section) => <article key={section.section_id} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{section.course_id} · {section.course_title}</p><p className="mt-1 text-sm text-[#5d6561]">{section.section_id}</p>{/* One line per meeting (lecture, lab, discussion), so the times do not run together. */}<ul className="mt-1 space-y-0.5 text-sm text-[#5d6561]">{((section.meetings ?? []).length ? (section.meetings ?? []).map((meeting) => {

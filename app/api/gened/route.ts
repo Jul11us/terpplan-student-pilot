@@ -23,7 +23,7 @@ export async function GET(request: Request) {
   if (!isGenEdCode(code)) return Response.json({ error: "Choose a Gen Ed category." }, { status: 400 });
 
   const cache = edgeCache();
-  const cacheKey = new Request(`${url.origin}/api/gened?term=${term}&code=${code}&v=2`);
+  const cacheKey = new Request(`${url.origin}/api/gened?term=${term}&code=${code}&v=3`);
   try {
     const hit = await cache?.match(cacheKey);
     // The header shows whether the shared cache is working on this host.

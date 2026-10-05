@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { GEN_ED_CATEGORIES } from "@/lib/gened-categories";
+import { GEN_ED_CATEGORIES, genEdCoverage } from "@/lib/gened-categories";
 import { hasUnknownTime, isOnlineOnly, meetingsConflict, type MeetingTime } from "@/lib/meeting-time";
 import { formatSeatReadTime } from "@/lib/seat-time";
 import { courseSet, unmetRequirements } from "@/lib/prereq-check";
@@ -9,7 +9,7 @@ import type { PrereqNode } from "@/lib/programs";
 
 type Language = "en" | "zh";
 type GenEdSection = { section_id?: string; open_seats?: string | number | null; meetings?: MeetingTime[] };
-type GenEdCourse = { course_id: string; name: string; credits: string | null; genEd: string[]; hasPrerequisite?: boolean; hasRestriction?: boolean; programOnly?: boolean; pr?: PrereqNode | null; sections: GenEdSection[] };
+type GenEdCourse = { course_id: string; name: string; credits: string | null; genEd: string[]; genEdGroups?: string[][]; hasPrerequisite?: boolean; hasRestriction?: boolean; programOnly?: boolean; pr?: PrereqNode | null; sections: GenEdSection[] };
 
 // Historical averages are looked up for at most this many listed courses (in requests of up to 30).
 const GPA_LOOKUP_LIMIT = 90;
@@ -29,6 +29,9 @@ function isHonorsCourse(course: GenEdCourse, list: GenEdCourse[]) {
 
 // The schedule option the student last viewed in the planner, used to check time conflicts.
 // planKey ties it to the plan it was generated from, so an edited plan is not checked against old results.
+// A course's Gen Ed requirements as groups (lists cached before groups existed fall back to one per code).
+const groupsOf = (course: GenEdCourse) => course.genEdGroups?.length ? course.genEdGroups : course.genEd.map((code) => [code]);
+
 export type ReferenceSchedule = { term: string; planKey: string; sectionIds: string[]; meetings: MeetingTime[] };
 
 const copy = {
@@ -37,7 +40,8 @@ const copy = {
     sortGpa: "Sort by historical average GPA", sortDefault: "Default order", gpaLoading: "Loading historical averages…", gpaError: "Historical averages could not be loaded.",
     gpaNote: `Historical average GPA comes from PlanetTerp. It averages every past term and instructor, so it is not a promise about this term. Looked up for the first ${GPA_LOOKUP_LIMIT} courses listed.`,
     avgGpa: "Hist. avg GPA",
-    counts: (n: number) => `Counts for ${n}`, fromAudit: (codes: string) => `Selected from your degree audit: ${codes}. Courses that count for more of them are listed first.`,
+    counts: (n: number) => `Counts for ${n}`, or: " or ", orTitle: "Counts for one of these, not both",
+    twoForOne: "Only courses that also count for another Gen Ed (two requirements, one course)", fromAudit: (codes: string) => `Selected from your degree audit: ${codes}. Courses that count for more of them are listed first.`,
     category: "Gen Ed categories · pick one or more", choose: "Pick one or more categories above.", clear: "Clear",
     matchAll: "Only courses that count for every selected category (one course, several requirements)", loading: "Loading courses…", error: "Gen Ed courses could not be loaded. Try again shortly.",
     fitsOnly: "Only sections that fit my schedule", openOnly: "Only sections with open seats",
@@ -52,7 +56,8 @@ const copy = {
     sortGpa: "按历史平均 GPA 排序", sortDefault: "恢复默认排序", gpaLoading: "正在读取历史平均 GPA…", gpaError: "暂时无法读取历史平均 GPA。",
     gpaNote: `历史平均 GPA 来自 PlanetTerp，是这门课过去所有学期、所有老师的平均，不代表这学期的给分。只查询列表中前 ${GPA_LOOKUP_LIMIT} 门课。`,
     avgGpa: "历史平均 GPA",
-    counts: (n: number) => `抵 ${n} 项`, fromAudit: (codes: string) => `已按学位审计选好：${codes}。能同时抵多项要求的课排在前面。`,
+    counts: (n: number) => `抵 ${n} 项`, or: " 或 ", orTitle: "二选一，只能算其中一项",
+    twoForOne: "只看还能同时抵另一项 Gen Ed 的课（一门课抵两项）", fromAudit: (codes: string) => `已按学位审计选好：${codes}。能同时抵多项要求的课排在前面。`,
     category: "Gen Ed 类别 · 可多选", choose: "在上方选择一个或多个类别。", clear: "清除",
     matchAll: "只看同时满足所有所选类别的课（一门课抵多项要求）", loading: "正在读取课程…", error: "暂时无法读取 Gen Ed 课程，请稍后再试。",
     fitsOnly: "只看和我的课表不冲突的班", openOnly: "只看有空位的班",
@@ -93,6 +98,7 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
   const [hideHonors, setHideHonors] = useState(true);
   const [noPrereq, setNoPrereq] = useState(false);
   const [lowerLevel, setLowerLevel] = useState(false);
+  const [twoForOne, setTwoForOne] = useState(false);
   const [prereqsMet, setPrereqsMet] = useState(false);
   const canCheckPrereqs = term === "202701" && Boolean(takenCodes?.length);
   const takenSet = useMemo(() => courseSet(takenCodes ?? []), [takenCodes]);
@@ -133,7 +139,7 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
     if (!loadedAll) return null;
     const byId = new Map<string, GenEdCourse>();
     for (const key of neededKeys) for (const course of lists[key]!.courses) byId.set(course.course_id, course);
-    const courses = [...byId.values()].filter((course) => !matchAll || codes.every((code) => course.genEd.includes(code)));
+    const courses = [...byId.values()].filter((course) => !matchAll || genEdCoverage(groupsOf(course), codes) === codes.length);
     const times = neededKeys.map((key) => lists[key]!.seatCheckedAt).filter((value): value is string => Boolean(value)).sort();
     return { courses, seatCheckedAt: times[0] ?? null };
   }, [loadedAll, neededKeys, lists, matchAll, codes]);
@@ -144,6 +150,8 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
     && (!noPrereq || (!course.hasPrerequisite && !course.hasRestriction))
     // Course numbers start at the 5th character (AAAS100 -> 1); 100/200 are introductory levels.
     && (!lowerLevel || /^[12]$/.test(course.course_id.charAt(4)))
+    // Two requirements from one course: at least two groups (an "A or B" group is still only one).
+    && (!twoForOne || groupsOf(course).length >= 2)
     // Courses in the plan count as "same term" for prerequisites that allow it, as in the planner.
     && (!prereqsMet || !canCheckPrereqs || unmetRequirements(course.pr, takenSet, planSet).length === 0)).map((course) => {
     const usable = course.sections.filter((section) => !/-FC[A-Z0-9]*$/i.test(section.section_id ?? ""))
@@ -153,9 +161,9 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
     const fitting = usable.filter((section) => !hasUnknownTime(section.meetings ?? [])
       && (!fitsOnly || !referenceForTerm || !meetingsConflict(section.meetings ?? [], referenceForTerm.meetings)));
     // How many of the selected categories this one course would satisfy at once.
-    const matched = codes.filter((code) => course.genEd.includes(code)).length;
+    const matched = genEdCoverage(groupsOf(course), codes);
     return { course, matched, fitting: fitting.length, online: fitting.filter((section) => isOnlineOnly(section.meetings ?? [])).length, tba: tba.length };
-  }).sort((a, b) => Number(b.fitting > 0) - Number(a.fitting > 0) || b.matched - a.matched || Number(b.tba > 0) - Number(a.tba > 0) || a.course.course_id.localeCompare(b.course.course_id)), [current, openOnly, fitsOnly, referenceForTerm, codes, hideHonors, noPrereq, lowerLevel, prereqsMet, canCheckPrereqs, takenSet, planSet]);
+  }).sort((a, b) => Number(b.fitting > 0) - Number(a.fitting > 0) || b.matched - a.matched || Number(b.tba > 0) - Number(a.tba > 0) || a.course.course_id.localeCompare(b.course.course_id)), [current, openOnly, fitsOnly, referenceForTerm, codes, hideHonors, noPrereq, lowerLevel, twoForOne, prereqsMet, canCheckPrereqs, takenSet, planSet]);
   const baseShown = useMemo(() => baseRows.filter((row) => row.fitting > 0 || row.tba > 0 || (!fitsOnly && !openOnly)), [baseRows, fitsOnly, openOnly]);
   // Averages are fetched for the default-order list, so re-sorting by them never triggers more lookups.
   const gpaIds = useMemo(() => baseShown.slice(0, GPA_LOOKUP_LIMIT).map((row) => row.course.course_id), [baseShown]);
@@ -190,6 +198,7 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
       <label className="inline-flex items-center gap-2"><input type="checkbox" checked={fitsOnly} onChange={(event) => setFitsOnly(event.target.checked)} />{t.fitsOnly}</label>
       <label className="inline-flex items-center gap-2"><input type="checkbox" checked={openOnly} onChange={(event) => setOpenOnly(event.target.checked)} />{t.openOnly}</label>
       <label className="inline-flex items-center gap-2"><input type="checkbox" checked={hideHonors} onChange={(event) => setHideHonors(event.target.checked)} />{t.hideHonors}</label>
+      <label className="inline-flex items-center gap-2 font-medium text-[#273c38]"><input type="checkbox" checked={twoForOne} onChange={(event) => setTwoForOne(event.target.checked)} />{t.twoForOne}</label>
     </div>
     <div className="mt-3 rounded-lg border border-[#e3e0d8] bg-[#f6f4ef] p-3 text-xs text-[#5d6561]">
       <p className="font-semibold text-[#48534f]">{t.lighter}</p>
@@ -217,7 +226,7 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
             {course.credits && <span>{course.credits} {t.credits}</span>}
             {typeof gpa[course.course_id] === "number" && <span className="font-medium text-[#536d64]">{t.avgGpa} {gpa[course.course_id]!.toFixed(2)}</span>}
             {codes.length > 1 && matched > 1 && <span className="rounded bg-[#a34a39] px-1.5 py-0.5 font-semibold text-white">{t.counts(matched)}</span>}
-            {course.genEd.map((tag) => <span key={tag} className={`rounded px-1.5 py-0.5 font-semibold ${codes.includes(tag) ? "bg-[#273c38] text-white" : "bg-[#eeece6] text-[#59635f]"}`}>{tag}</span>)}
+            {groupsOf(course).map((group) => <span key={group.join("|")} title={group.length > 1 ? t.orTitle : undefined} className={`rounded px-1.5 py-0.5 font-semibold ${group.some((tag) => codes.includes(tag)) ? "bg-[#273c38] text-white" : "bg-[#eeece6] text-[#59635f]"}`}>{group.join(t.or)}</span>)}
             
           </span>
         </span>
