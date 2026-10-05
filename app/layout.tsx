@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import ServiceWorker from "@/app/components/service-worker";
 import { SITE_URL } from "@/lib/site-config";
 import Analytics from "@/app/components/analytics";
+import ReferralTracker from "@/app/components/referral-tracker";
 import "./globals.css";
 
 const title = "TerpPlan · UMD course & schedule planner";
@@ -57,6 +58,7 @@ export default function RootLayout({
         {children}
         <ServiceWorker />
         <Analytics />
+        <ReferralTracker />
       </body>
     </html>
   );

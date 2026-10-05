@@ -6,6 +6,7 @@
 
 import { env } from "cloudflare:workers";
 import { hashEmail, type CurrentUser } from "@/lib/auth";
+import { easternDay } from "@/lib/referral";
 
 export type AdminAccess = "ok" | "notConfigured" | "forbidden";
 
@@ -36,6 +37,9 @@ export type AdminStats = {
   watchesByTerm: { term: string; watches: number; students: number }[];
   topCourses: { courseId: string; courseTitle: string; students: number }[];
   recentSubscribers: { email: string; createdAt: string; watches: number }[];
+  // Visits that came in with ?ref= (QR codes, shared links): totals per tag, and per day for 30 days.
+  referrals: { ref: string; total: number; last7Days: number; today: number }[];
+  referralsByDay: { day: string; ref: string; visits: number }[];
   generatedAt: string;
 };
 
@@ -53,7 +57,9 @@ export async function adminStats(now = new Date()): Promise<AdminStats> {
   const sqliteTime = (date: Date) => date.toISOString().slice(0, 19).replace("T", " ");
   const weekAgo = new Date(now.getTime() - 7 * 86_400_000);
   const monthAgo = new Date(now.getTime() - 30 * 86_400_000);
-  const [subs, watchTotals, alerts, signupsByDay, watchesByTerm, topCourses, recent] = await Promise.all([
+  // referral_visits days are Eastern-time dates.
+  const today = easternDay(now), weekStart = easternDay(new Date(now.getTime() - 6 * 86_400_000)), monthStart = easternDay(monthAgo);
+  const [subs, watchTotals, alerts, signupsByDay, watchesByTerm, topCourses, recent, referrals, referralsByDay] = await Promise.all([
     first<{ total: number; recent: number; watching: number }>(
       `SELECT COUNT(*) AS total,
         SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) AS recent,
@@ -75,6 +81,11 @@ export async function adminStats(now = new Date()): Promise<AdminStats> {
     all<{ email: string; createdAt: string; watches: number }>(
       `SELECT s.email AS email, s.created_at AS createdAt, (SELECT COUNT(*) FROM watches w WHERE w.user_id = s.user_id) AS watches
        FROM alert_subscriptions s ORDER BY s.created_at DESC LIMIT 20`),
+    all<{ ref: string; total: number; last7Days: number; today: number }>(
+      `SELECT ref, SUM(visits) AS total, SUM(CASE WHEN day >= ? THEN visits ELSE 0 END) AS last7Days, SUM(CASE WHEN day = ? THEN visits ELSE 0 END) AS today
+       FROM referral_visits GROUP BY ref ORDER BY total DESC, ref LIMIT 50`, weekStart, today),
+    all<{ day: string; ref: string; visits: number }>(
+      "SELECT day, ref, visits FROM referral_visits WHERE day >= ? ORDER BY day, ref", monthStart),
   ]);
   return {
     subscribers: subs?.total ?? 0,
@@ -89,6 +100,8 @@ export async function adminStats(now = new Date()): Promise<AdminStats> {
     watchesByTerm,
     topCourses,
     recentSubscribers: recent.map((row) => ({ ...row, email: maskEmail(row.email) })),
+    referrals,
+    referralsByDay,
     generatedAt: now.toISOString(),
   };
 }

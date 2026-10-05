@@ -24,6 +24,8 @@ const copy = {
     top: "Most watched courses", course: "Course",
     recent: "Latest sign-ups", recentNote: "Addresses are masked.", email: "Email", since: "Signed up", sections: "Watches", noneRecent: "No one has turned seat emails on yet.",
     updated: "Updated {t}",
+    referrals: "Visits from links and QR codes", referralsNote: "Counted when someone opens a link with ?ref=<tag>, once per browser per day. Add your own tags to new links, e.g. terpplan.com/?ref=wechat.",
+    refTag: "Tag", refToday: "Today", ref7: "Last 7 days", refTotal: "All time", refDaily: "Per day, last 30 days", noReferrals: "No tagged visits yet. Share terpplan.com/?ref=qr (the QR code) and they will show up here.",
   },
   zh: {
     eyebrow: "仅站长可见", title: "余位邮件通知注册情况", back: "← 返回 TerpPlan", refresh: "刷新",
@@ -40,6 +42,8 @@ const copy = {
     top: "关注最多的课程", course: "课程",
     recent: "最近注册", recentNote: "邮箱已部分隐藏。", email: "邮箱", since: "注册时间", sections: "关注数", noneRecent: "还没有人开通余位邮件。",
     updated: "更新于 {t}",
+    referrals: "通过链接和二维码来的访问", referralsNote: "有人打开带 ?ref=标记 的链接时计数，同一浏览器每天只算一次。新的渠道可以自己起标记，例如 terpplan.com/?ref=wechat。",
+    refTag: "标记", refToday: "今天", ref7: "最近 7 天", refTotal: "累计", refDaily: "最近 30 天每天", noReferrals: "还没有带标记的访问。分享 terpplan.com/?ref=qr（就是二维码里的链接）后会显示在这里。",
   },
 } as const;
 
@@ -113,6 +117,25 @@ export default function AdminPage() {
             <p className="mt-1 font-serif text-3xl text-[#24312d]">{value}</p>
             <p className="mt-1 text-[11px] text-[#646c68]">{note}</p>
           </div>)}
+        </section>
+
+        <section className="mt-4 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
+          <h2 className="text-sm font-semibold text-[#24312d]">{t.referrals}</h2>
+          <p className="mt-1 text-[11px] leading-4 text-[#646c68]">{t.referralsNote}</p>
+          {stats.referrals.length ? <>
+            <table className="mt-3 w-full text-xs"><thead><tr className="border-b border-[#ece9e2] text-left text-[#5d6561]"><th className="py-1.5 font-medium">{t.refTag}</th><th className="py-1.5 text-right font-medium">{t.refToday}</th><th className="py-1.5 text-right font-medium">{t.ref7}</th><th className="py-1.5 text-right font-medium">{t.refTotal}</th></tr></thead>
+              <tbody>{stats.referrals.map((row) => <tr key={row.ref} className="border-b border-[#f0ede7]"><td className="py-1.5 font-mono">{row.ref}</td><td className="py-1.5 text-right">{row.today}</td><td className="py-1.5 text-right">{row.last7Days}</td><td className="py-1.5 text-right font-semibold">{row.total}</td></tr>)}</tbody></table>
+            {stats.referralsByDay.length > 0 && (() => {
+              const days = [...new Set(stats.referralsByDay.map((row) => row.day))];
+              const perDay = days.map((day) => ({ day, visits: stats.referralsByDay.filter((row) => row.day === day).reduce((sum, row) => sum + row.visits, 0), parts: stats.referralsByDay.filter((row) => row.day === day) }));
+              const max = Math.max(1, ...perDay.map((row) => row.visits));
+              return <><p className="mt-4 text-xs font-medium text-[#5d6561]">{t.refDaily}</p><ul className="mt-2 space-y-1.5">{perDay.map((row) => <li key={row.day} title={row.parts.map((part) => `${part.ref}: ${part.visits}`).join(" · ")} className="grid grid-cols-[5.5rem_minmax(0,1fr)_2rem] items-center gap-3 text-xs">
+                <span className="text-[#5d6561]">{row.day.slice(5)}</span>
+                <span className="h-2.5 rounded-full bg-[#ece9e2]"><span className="block h-full rounded-full bg-[#a34a39]" style={{ width: `${(row.visits / max) * 100}%` }} /></span>
+                <span className="text-right font-semibold text-[#24312d]">{row.visits}</span>
+              </li>)}</ul></>;
+            })()}
+          </> : <p className="mt-2 text-xs text-[#646c68]">{t.noReferrals}</p>}
         </section>
 
         <section className="mt-4 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">

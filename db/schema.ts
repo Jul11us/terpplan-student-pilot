@@ -112,3 +112,15 @@ export const courseSeatHistory = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.term, table.courseId, table.checkedAt] })],
 );
+
+// Visits that arrived with a ?ref= tag (a QR code or a shared link), counted per tag per day (Eastern
+// time). Only the count is kept: no address, browser or anything that identifies a visitor.
+export const referralVisits = sqliteTable(
+  "referral_visits",
+  {
+    day: text("day").notNull(),
+    ref: text("ref").notNull(),
+    visits: integer("visits").notNull().default(0),
+  },
+  (table) => [primaryKey({ columns: [table.day, table.ref] })],
+);
