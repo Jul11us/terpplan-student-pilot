@@ -1,4 +1,4 @@
-import { GEN_ED_CATEGORIES } from "@/lib/gened-categories";
+import { GEN_ED_CATEGORIES, parseGenEdGroups } from "@/lib/gened-categories";
 import { classTexts, firstClassText, htmlText, parseTestudoSections, testudoHtml, type UmdSection } from "@/lib/umd";
 
 // Gen Ed lists always come from Testudo, for every term: it lists a whole category on one page and
@@ -12,6 +12,9 @@ export type GenEdCourse = {
   name: string;
   credits: string | null;
   genEd: string[];
+  // The same codes as Testudo groups them: one entry per requirement the course can count for, with the
+  // alternatives it may count for instead ("DSHU or DSSP").
+  genEdGroups: string[][];
   // True when the course lists a prerequisite/corequisite or an enrollment restriction.
   hasPrerequisite: boolean;
   hasRestriction: boolean;
@@ -72,6 +75,7 @@ async function testudoGenEd(term: string, code: GenEdCode): Promise<GenEdCourse[
       name: firstClassText(block, "course-title") || courseId,
       credits: min ? (max && max !== min ? `${min}–${max}` : min) : null,
       genEd: [...new Set(classTexts(block, "course-subcategory").filter((tag) => /^[A-Z]{4}$/.test(tag)))],
+      genEdGroups: genEdGroupsIn(block),
       // Testudo writes these as "<strong>Prerequisite:</strong> ..." in the course text block.
       hasPrerequisite: /<strong>\s*(?:Prerequisite|Corequisite)/i.test(block),
       ...restrictionFlags(block),
@@ -89,6 +93,14 @@ async function testudoGenEd(term: string, code: GenEdCode): Promise<GenEdCourse[
     }
   });
   return courses;
+}
+
+// The course's "GenEd: ..." line, as groups.
+function genEdGroupsIn(block: string) {
+  const start = block.indexOf("gen-ed-codes-group");
+  if (start < 0) return [];
+  const end = block.indexOf("approved-course-texts", start);
+  return parseGenEdGroups(htmlText(block.slice(start, end > start ? end : start + 1500).replace(/^[^>]*>/, "")));
 }
 
 export function getGenEdCourses(term: string, code: GenEdCode) {

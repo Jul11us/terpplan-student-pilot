@@ -4,14 +4,27 @@
 // planner skips them unless the student opts in.
 
 import { isFreshmanConnection } from "@/lib/planner";
-import { getTestudoSectionsBatch, isTestudoTerm, parseCount } from "@/lib/umd";
+import { getTestudoSectionsBatch, isTestudoTerm, parseCount, type UmdSection } from "@/lib/umd";
+import type { MeetingTime } from "@/lib/meeting-time";
 
 export type SeatSummary = {
   sections: number; // sections other than Freshman Connection
   openSections: number; // of those, sections with at least one open seat
   openSeats: number; // open seats across sections whose count is known
   unknownSections: number; // sections Testudo gave no seat count for
+  // Each section's open seats and meeting times, so the page can tell which sections fit a schedule.
+  slots?: SectionSlot[];
 };
+
+export type SectionSlot = { open: number | null; meetings: MeetingTime[] };
+
+// Only what the fit check needs: days, times, and the building/room that mark online-only meetings.
+export function sectionSlots(sections: UmdSection[]): SectionSlot[] {
+  return sections.filter((section) => !isFreshmanConnection(section)).map((section) => ({
+    open: parseCount(section.open_seats),
+    meetings: (section.meetings ?? []).map((meeting) => ({ days: meeting.days ?? null, start_time: meeting.start_time ?? null, end_time: meeting.end_time ?? null, building: meeting.building ?? null, room: meeting.room ?? null })),
+  }));
+}
 
 const CACHE_MS = 60_000;
 const cache = new Map<string, { expiresAt: number; summary: SeatSummary }>();
@@ -41,7 +54,8 @@ export async function seatSummaries(term: string, courseIds: string[]): Promise<
   }
   const sections = await getTestudoSectionsBatch(term, missing);
   for (const id of missing) {
-    const summary = summarizeSeats(sections.get(id) ?? []);
+    const list = sections.get(id) ?? [];
+    const summary: SeatSummary = { ...summarizeSeats(list), slots: sectionSlots(list) };
     result[id] = summary;
     if (cache.size >= 2000) cache.delete(cache.keys().next().value!);
     cache.set(`${term}|${id}`, { expiresAt: now + CACHE_MS, summary });
