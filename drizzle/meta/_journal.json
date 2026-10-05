@@ -50,6 +50,13 @@
       "when": 1791168181193,
       "tag": "0006_course_seat_history",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1791230826503,
+      "tag": "0007_referral_visits",
+      "breakpoints": true
     }
   ]
 }
