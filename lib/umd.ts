@@ -26,6 +26,8 @@ export type UmdSection = {
   seats?: string | number | null;
   open_seats?: string | number | null;
   waitlist?: string | number | null;
+  // Testudo hold file: students waiting for a seat in a restricted or controlled section.
+  holdfile?: string | number | null;
   instructors?: string[];
   meetings?: UmdMeeting[];
 };
@@ -86,6 +88,11 @@ export function classTexts(source: string, className: string, tag: "span" | "div
 
 export function firstClassText(source: string, className: string, tag: "span" | "div" = "span") {
   return classTexts(source, className, tag)[0] ?? "";
+}
+
+function holdfileCount(source: string) {
+  const match = /Holdfile:\s*<\/span>\s*<span class=["']waitlist-count["']>\s*(\d+)\s*</i.exec(source);
+  return match ? Number(match[1]) : null;
 }
 
 function numberClassText(source: string, className: string) {
@@ -187,6 +194,8 @@ export function parseTestudoSections(html: string, courseId: string): UmdSection
       seats: numberClassText(sectionHtml, "total-seats-count"),
       open_seats: numberClassText(sectionHtml, "open-seats-count"),
       waitlist: numberClassText(sectionHtml, "waitlist-count"),
+      // The hold file count is a second "waitlist-count" right after a "Holdfile:" label.
+      holdfile: holdfileCount(sectionHtml),
       meetings,
     }];
   });

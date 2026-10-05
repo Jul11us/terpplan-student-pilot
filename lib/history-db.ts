@@ -1,14 +1,15 @@
 // Database operations for historical trends and analytics
 
 import { getDb } from "@/db";
-import { seatHistory, planActivity, courseOfferings } from "@/db/schema";
+import { seatHistory, planActivity, courseOfferings, courseSeatHistory } from "@/db/schema";
 import { and, eq, gte, desc, inArray, sql } from "drizzle-orm";
-import { parseCount, type UmdSection } from "@/lib/umd";
+import { getTestudoSectionsBatch, parseCount, type UmdSection } from "@/lib/umd";
 import type { SeatSnapshot, SeatTrend, OfferingHistory, PopularCourse } from "@/lib/seat-trends";
-import { fetchTermOffering, summarizeSections, termEnd, termStatus } from "@/lib/offering-backfill";
+import { fetchTermOffering, summarizeSections, termEnd, termStatus, type TermOffering } from "@/lib/offering-backfill";
 import {
   analyzeSeatTrend,
   detectOfferingPattern,
+  seatProgress,
   formatTermName,
   calculateTrendDirection,
   calculateDemandIndex,
@@ -43,6 +44,7 @@ export async function recordCourseHistory(term: string, courseId: string, sectio
   if (capacities.every((count) => count !== null)) {
     const summary = summarizeSections(sections);
     await recordCourseOffering(courseId, term, summary.sectionCount, summary.totalSeats, summary.openSeats, summary.fullSections);
+    if (termStatus(term) !== "past") await recordCourseSeatReading(term, courseId, summary);
   }
   for (const section of sections) {
     const seats = parseCount(section.seats), open = parseCount(section.open_seats);
@@ -243,6 +245,52 @@ export async function backfillCourseOfferings(courseId: string, terms: string[],
   }
 }
 
+// ---- Seats over time during registration (course_seat_history)
+
+const READING_HOURS = 2;
+const TRACK_PER_RUN = 50;
+
+// One reading of a course's seats, at most every two hours per course (later calls in that time do nothing).
+export async function recordCourseSeatReading(term: string, courseId: string, summary: TermOffering, now = new Date()) {
+  if (!summary.sectionCount || summary.openSeats === null || summary.fullSections === null) return;
+  const checkedAt = now.toISOString();
+  const cutoff = new Date(now.getTime() - READING_HOURS * 3_600_000).toISOString();
+  await getDb().run(sql`INSERT INTO course_seat_history (term, course_id, checked_at, section_count, total_seats, open_seats, full_sections)
+    SELECT ${term}, ${courseId}, ${checkedAt}, ${summary.sectionCount}, ${summary.totalSeats}, ${summary.openSeats}, ${summary.fullSections}
+    WHERE NOT EXISTS (SELECT 1 FROM course_seat_history WHERE term = ${term} AND course_id = ${courseId} AND checked_at >= ${cutoff})`);
+}
+
+// Courses worth following in a term: ones opened on TerpPlan, watched, or in shared plans; those read
+// longest ago (or never) first, skipping any read in the last two hours.
+export async function coursesToTrack(term: string, limit = TRACK_PER_RUN, now = new Date()) {
+  const cutoff = new Date(now.getTime() - READING_HOURS * 3_600_000).toISOString();
+  const rows = await getDb().all<{ course_id: string }>(sql`SELECT c.course_id FROM (
+      SELECT course_id FROM course_offerings WHERE term = ${term} AND section_count > 0
+      UNION SELECT course_id FROM watches WHERE term = ${term}
+      UNION SELECT course_id FROM plan_activity WHERE term = ${term} AND removed_at IS NULL
+    ) c LEFT JOIN (SELECT course_id, MAX(checked_at) AS last FROM course_seat_history WHERE term = ${term} GROUP BY course_id) h ON h.course_id = c.course_id
+    WHERE h.last IS NULL OR h.last < ${cutoff}
+    ORDER BY h.last IS NOT NULL, h.last, c.course_id LIMIT ${limit}`);
+  return rows.map((row) => row.course_id);
+}
+
+// The background run's share: read up to 50 due courses from Testudo (25 per request) and record them.
+export async function trackCourseSeats(term: string, now = new Date()) {
+  const ids = await coursesToTrack(term, TRACK_PER_RUN, now);
+  if (!ids.length) return { tracked: 0 };
+  const sections = await getTestudoSectionsBatch(term, ids);
+  let tracked = 0;
+  for (const id of ids) {
+    const list = sections.get(id) ?? [];
+    if (!list.length) continue;
+    const summary = summarizeSections(list);
+    await recordCourseOffering(id, term, summary.sectionCount, summary.totalSeats, summary.openSeats, summary.fullSections);
+    await recordCourseSeatReading(term, id, summary, now);
+    tracked += 1;
+  }
+  return { tracked };
+}
+
 /**
  * Get offering history for a course
  */
@@ -262,6 +310,7 @@ export async function getCourseOfferingHistory(courseId: string, lang: "en" | "z
 
   if (!rows.length) return null;
 
+  const readings = await db.select().from(courseSeatHistory).where(eq(courseSeatHistory.courseId, courseId)).orderBy(courseSeatHistory.checkedAt);
   const terms = rows.map((row) => ({
     term: row.term,
     termName: formatTermName(row.term, lang),
@@ -270,6 +319,7 @@ export async function getCourseOfferingHistory(courseId: string, lang: "en" | "z
     openSeats: row.openSeats,
     fullSections: row.fullSections,
     status: termStatus(row.term),
+    progress: seatProgress(readings.filter((reading) => reading.term === row.term)),
   }));
 
   // Terms stored with 0 sections were checked and the course did not run; the pattern is from the terms it ran.

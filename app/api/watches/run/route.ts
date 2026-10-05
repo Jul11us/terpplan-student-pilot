@@ -3,6 +3,8 @@ import { getDb } from "@/db";
 import { watches } from "@/db/schema";
 import { removeExpiredWatches, sendPendingAlerts } from "@/lib/alerts";
 import { checkWatchGroup, groupByCourse, latestCheck } from "@/lib/seat-check";
+import { trackCourseSeats } from "@/lib/history-db";
+import { DEFAULT_TERM } from "@/lib/umd";
 
 // Background seat check for every student's watches, called by an external scheduler
 // (GitHub Actions) with `Authorization: Bearer <WATCH_RUNNER_SECRET>`.
@@ -53,6 +55,11 @@ export async function POST(request: Request) {
     }
     // Openings found here or by an open page are both queued on the watch row, so none are missed.
     const email = await sendPendingAlerts(db);
+    // With time to spare, record how full the courses students look at are, for "how fast it filled" later.
+    let seatTracking: { tracked: number } | { tracked: 0; failed: true } = { tracked: 0 };
+    if (Date.now() - startedAt < 20_000) {
+      try { seatTracking = await trackCourseSeats(DEFAULT_TERM); } catch { seatTracking = { tracked: 0, failed: true }; }
+    }
 
     // Counts only: no emails, user ids, or section details leave this endpoint.
     return Response.json({
@@ -65,6 +72,7 @@ export async function POST(request: Request) {
       openedFromFull,
       ...email,
       expiredWatches,
+      trackedCourses: seatTracking.tracked,
       durationMs: Date.now() - startedAt,
     });
   } catch (error) {
