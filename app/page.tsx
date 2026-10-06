@@ -31,6 +31,7 @@ import { reportMailto } from "@/lib/report-link";
 import { applyTransfer, decodeTransfer, encodeTransfer, TRANSFER_PREFIX, transferCourseCount, type Transfer } from "@/lib/device-transfer";
 import { CourseTrends } from "@/app/components/course-trends";
 import { PopularCourses } from "@/app/components/popular-courses";
+import { useTypingPlaceholder } from "@/app/components/typing-placeholder";
 
 type Course = { course_id: string; name: string; department?: string; credits?: string };
 type Meeting = { days?: string | null; start_time?: string | null; end_time?: string | null; building?: string | null; room?: string | null };
@@ -74,7 +75,7 @@ const copy = {
     eyebrow: "UNIVERSITY OF MARYLAND · STUDENT PILOT", title: "Plan your next semester",
     subtitle: "Find a course, build a schedule, and keep an eye on open seats.", find: "Find a course",
     schedule: "Build a schedule", watch: "Watch seats", search: "Search course code or title",
-    searchHint: "e.g. CMSC131 or Calculus", term: "Term", results: "Course matches", select: "View sections",
+    searchHint: "e.g. ", term: "Term", results: "Course matches", select: "View sections",
     quickAdd: "Add", inPlanShort: "In plan", searchMode: "Search courses", genEdMode: "Find by Gen Ed", noResults: "No matches yet. Search by a course code or title.", notOffered: "{course} is not offered in {term}. It may be offered in another term — try switching the term above.", sections: "Sections", addSchedule: "Add this course to plan", courseInPlan: "Course in plan", instructorPick: "Instructors to keep", instructorHint: "Tap a name to leave out that instructor's sections.", keepOne: "Keep at least one instructor.", allInstructors: "All",
     addWatch: "Watch this section", watchShort: "Watch", watchingShort: "Watching", scheduleTitle: "Your schedule", emptySchedule: "Add courses from search to generate schedule options.",
     watchesTitle: "Seat watches", emptyWatches: "Watch a section to see it here.", refresh: "Check now", remove: "Remove",
@@ -96,7 +97,7 @@ const copy = {
   },
   zh: {
     eyebrow: "马里兰大学 · 学生试用", title: "规划下一学期", subtitle: "找课程、排进课表，并关注空余名额。",
-    find: "找课程", schedule: "排课", watch: "关注余位", search: "搜索课程编号或名称", searchHint: "例如 CMSC131 或 Calculus",
+    find: "找课程", schedule: "排课", watch: "关注余位", search: "搜索课程编号或名称", searchHint: "例如 ",
     term: "学期", results: "匹配课程", select: "查看班次", quickAdd: "加入", inPlanShort: "已加入", searchMode: "搜索课程", genEdMode: "按 Gen Ed 查找", noResults: "暂无匹配结果。请按课程编号或名称搜索。", notOffered: "{term}没有开设 {course}。这门课可能在其他学期开设，可以在上方切换学期查看。",
     sections: "可选班次", addSchedule: "将整门课程加入排课", courseInPlan: "课程已加入", instructorPick: "保留哪些老师", instructorHint: "点老师名字即可排除他的班次。", keepOne: "至少保留一位老师。", allInstructors: "全部", addWatch: "关注这个班次", watchShort: "关注", watchingShort: "已关注", scheduleTitle: "我的课表",
     emptySchedule: "请从找课中添加课程，再生成排课方案。", watchesTitle: "余位关注", emptyWatches: "关注一个班次后会显示在这里。",
@@ -213,6 +214,7 @@ export default function Home() {
   const [termUnavailable, setTermUnavailable] = useState(false);
   const [query, setQuery] = useState("");
   const [findMode, setFindMode] = useState<"search" | "gened">("search");
+  const searchPlaceholder = useTypingPlaceholder(t.searchHint, !query);
   // Gen Ed categories handed over from the degree audit page (?gened=DSHU,DVUP); key remounts the finder.
   const [genEdPreset, setGenEdPreset] = useState<{ key: number; codes: string[] } | null>(null);
   // Last schedule option viewed in the planner, kept per term, for Gen Ed conflict checks.
@@ -860,7 +862,7 @@ export default function Home() {
             {/* Kept mounted while hidden so the chosen category and loaded list survive switching modes. */}
             <div hidden={findMode !== "gened"}><GenEdFinder key={genEdPreset?.key ?? 0} takenCodes={takenCodes} initialCodes={genEdPreset?.codes} fromAudit={Boolean(genEdPreset)} onAddCourse={(course) => quickAdd(course)} term={term} language={language} reference={referenceSchedule?.planKey === planKey(planCourses, term) ? referenceSchedule : null} referenceStale={referenceSchedule?.term === term && referenceSchedule.planKey !== planKey(planCourses, term)} planCourseIds={planCourses.map((course) => course.courseId)} onOpenCourse={(course) => void openCourse(course)} /></div>
             {findMode === "search" && <>
-            <label id="course-search" className="block scroll-mt-6"><span className="sr-only">{t.search}</span><div className="flex items-center gap-3 rounded-xl border border-[#d9d6ce] bg-white px-4 py-3 focus-within:border-[#a34a39] focus-within:ring-2 focus-within:ring-[#a34a39]/30"><span aria-hidden="true" className="text-lg text-[#646c68]">⌕</span><input value={query} onChange={(event) => changeSearchQuery(event.target.value)} placeholder={t.searchHint} className="w-full bg-transparent text-sm outline-none placeholder:text-[#646c68]" /><kbd title={language === "en" ? "Press / to search" : "按 / 快速搜索"} className="hidden rounded border border-[#dedbd3] px-1.5 text-[11px] text-[#646c68] sm:inline">/</kbd></div></label>
+            <label id="course-search" className="block scroll-mt-6"><span className="sr-only">{t.search}</span><div className="flex items-center gap-3 rounded-xl border border-[#d9d6ce] bg-white px-4 py-3 focus-within:border-[#a34a39] focus-within:ring-2 focus-within:ring-[#a34a39]/30"><span aria-hidden="true" className="text-lg text-[#646c68]">⌕</span><input value={query} onChange={(event) => changeSearchQuery(event.target.value)} aria-label={t.search} placeholder={searchPlaceholder} className="w-full bg-transparent text-sm outline-none placeholder:text-[#646c68]" /><kbd title={language === "en" ? "Press / to search" : "按 / 快速搜索"} className="hidden rounded border border-[#dedbd3] px-1.5 text-[11px] text-[#646c68] sm:inline">/</kbd></div></label>
             {!searching && results.length > 0 && <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
               {term === "202701" && <button type="button" aria-pressed={resultFilters.openSeats} onClick={() => setResultFilters((current) => ({ ...current, openSeats: !current.openSeats }))} className={`rounded-full border px-3 py-1.5 font-semibold ${resultFilters.openSeats ? "border-[#536d64] bg-[#edf3ef] text-[#273c38]" : "border-[#d9d6ce] text-[#48534f] hover:bg-[#f7f5f0]"}`}>{resultFilters.openSeats ? "✓ " : ""}{t.filterOpen}</button>}
               {term === "202701" && <button type="button" aria-pressed={Boolean(resultFilters.fitsSchedule && fitReference)} disabled={!fitReference} title={fitReference ? undefined : t.filterFitsNeedPlan} onClick={() => setResultFilters((current) => ({ ...current, fitsSchedule: !current.fitsSchedule }))} className={`rounded-full border px-3 py-1.5 font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${resultFilters.fitsSchedule && fitReference ? "border-[#536d64] bg-[#edf3ef] text-[#273c38]" : "border-[#d9d6ce] text-[#48534f] hover:bg-[#f7f5f0]"}`}>{resultFilters.fitsSchedule && fitReference ? "✓ " : ""}{t.filterFits}</button>}
