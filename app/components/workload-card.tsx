@@ -57,7 +57,7 @@ export function WorkloadCard({ courses, language }: { courses: Array<{ courseId:
   if (!courses.length) return null;
   const loading = courses.some((course) => !known.has(course.courseId));
   const workload = semesterWorkload(courses.map((course) => ({ ...course, averageGpa: known.get(course.courseId) })));
-  return <div className="mt-3 rounded-xl border border-[#e3e0d8] bg-white px-4 py-3">
+  return <div className="mb-3 rounded-xl border border-[#e3e0d8] bg-white px-4 py-3">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <p className="text-xs font-semibold text-[#273c38]">{t.title}</p>
       {!loading && <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${TONE[workload.level]}`}>{t.level[workload.level]}</span>}
