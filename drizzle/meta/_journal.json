@@ -57,6 +57,13 @@
       "when": 1791230826503,
       "tag": "0007_referral_visits",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1791315049193,
+      "tag": "0008_site_visits",
+      "breakpoints": true
     }
   ]
 }
