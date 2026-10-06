@@ -28,19 +28,19 @@ test("tags are short lower-case words, and days are Eastern dates", () => {
 
 test("a tagged visit adds one to that tag's count for the day, and nothing else is stored", async () => {
   assert.equal((await visit(post({ ref: "qr" }))).status, 200);
-  assert.equal((await visit(post({ ref: "qr" }))).status, 200);
+  assert.equal((await visit(post({ ref: "qr" }, { "cf-connecting-ip": "203.0.113.9" }))).status, 200);
   assert.equal((await visit(post({ ref: "wechat" }, { "cf-connecting-ip": "203.0.113.8" }))).status, 200);
   assert.deepEqual(rows(), [[easternDay(), "qr", 2], [easternDay(), "wechat", 1]]);
   const columns = database.sqlite.prepare("PRAGMA table_info(referral_visits)").all().map((column) => column.name);
   assert.deepEqual(columns, ["day", "ref", "visits"]);
 });
 
-test("bad tags, other sites and floods are not counted", async () => {
+test("bad tags, other sites, repeats and floods are not counted", async () => {
   assert.equal((await visit(post({ ref: "Bad Tag" }))).status, 400);
   assert.equal((await visit(post({ ref: "qr" }, { origin: "https://evil.test" }))).status, 403);
   for (let index = 0; index < 20; index += 1) assert.equal((await visit(post({ ref: "qr" }))).status, 200);
   assert.equal((await visit(post({ ref: "qr" }))).status, 429, "21st visit from one address within an hour");
-  assert.deepEqual(rows(), [[easternDay(), "qr", 20]]);
+  assert.deepEqual(rows(), [[easternDay(), "qr", 1]], "the same address and browser count once a day");
 });
 
 test("the owner page totals each tag and lists the last 30 days", async () => {
@@ -53,9 +53,12 @@ test("the owner page totals each tag and lists the last 30 days", async () => {
 });
 
 test("every visitor counts once a day, split into first-time and returning", async () => {
-  assert.equal((await visit(post({ visitor: "new" }))).status, 200);
-  assert.equal((await visit(post({ visitor: "returning", ref: "qr" }))).status, 200);
-  assert.equal((await visit(post({ visitor: "returning" }))).status, 200);
+  const phone = { "user-agent": "Phone Safari" }, laptop = { "user-agent": "Laptop Chrome" };
+  assert.equal((await visit(post({ visitor: "new" }, phone))).status, 200);
+  assert.equal((await visit(post({ visitor: "returning", ref: "qr" }, { ...phone, "cf-connecting-ip": "203.0.113.8" }))).status, 200);
+  assert.equal((await visit(post({ visitor: "returning" }, laptop))).status, 200);
+  // Refreshing after clearing storage (or a new private window) looks new to the page, but not to the server.
+  for (let index = 0; index < 5; index += 1) assert.deepEqual(await (await visit(post({ visitor: "new" }, phone))).json(), { counted: false });
   assert.equal((await visit(post({ visitor: "someone" }))).status, 400);
   assert.equal((await visit(post({}))).status, 400);
   const visits = database.sqlite.prepare("SELECT day, visitors, new_visitors FROM site_visits").all().map((row) => [row.day, row.visitors, row.new_visitors]);
