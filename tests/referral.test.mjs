@@ -51,3 +51,26 @@ test("the owner page totals each tag and lists the last 30 days", async () => {
   assert.deepEqual(JSON.parse(JSON.stringify(stats.referrals)), [{ ref: "qr", total: 17, last7Days: 7, today: 4 }, { ref: "wechat", total: 2, last7Days: 2, today: 0 }]);
   assert.deepEqual(stats.referralsByDay.map((row) => [row.day, row.ref, row.visits]), [["2026-10-16", "qr", 3], ["2026-10-19", "wechat", 2], ["2026-10-20", "qr", 4]]);
 });
+
+test("every visitor counts once a day, split into first-time and returning", async () => {
+  assert.equal((await visit(post({ visitor: "new" }))).status, 200);
+  assert.equal((await visit(post({ visitor: "returning", ref: "qr" }))).status, 200);
+  assert.equal((await visit(post({ visitor: "returning" }))).status, 200);
+  assert.equal((await visit(post({ visitor: "someone" }))).status, 400);
+  assert.equal((await visit(post({}))).status, 400);
+  const visits = database.sqlite.prepare("SELECT day, visitors, new_visitors FROM site_visits").all().map((row) => [row.day, row.visitors, row.new_visitors]);
+  assert.deepEqual(visits, [[easternDay(), 3, 1]]);
+  assert.deepEqual(rows(), [[easternDay(), "qr", 1]]);
+});
+
+test("the owner page shows today, the last 7 and 30 days, and everyone who has come so far", async () => {
+  const now = new Date("2026-10-20T16:00:00Z");
+  const insert = database.sqlite.prepare("INSERT INTO site_visits (day, visitors, new_visitors) VALUES (?, ?, ?)");
+  insert.run("2026-08-01", 50, 40); insert.run("2026-10-01", 20, 8); insert.run("2026-10-15", 12, 5); insert.run("2026-10-20", 9, 3);
+  const { visitors, visitorsByDay } = await adminStats(now);
+  assert.deepEqual({ ...visitors }, { today: 9, newToday: 3, last7Days: 21, last30Days: 41, newTotal: 56, since: "2026-08-01" });
+  assert.deepEqual(visitorsByDay.map((row) => [row.day, row.visitors, row.newVisitors]), [["2026-10-01", 20, 8], ["2026-10-15", 12, 5], ["2026-10-20", 9, 3]]);
+  const empty = testDatabase(); globalThis.__referralEnv.DB = empty;
+  assert.deepEqual({ ...(await adminStats(now)).visitors }, { today: 0, newToday: 0, last7Days: 0, last30Days: 0, newTotal: 0, since: null });
+  empty.sqlite.close(); globalThis.__referralEnv.DB = database;
+});

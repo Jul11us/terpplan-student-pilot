@@ -124,3 +124,11 @@ export const referralVisits = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.day, table.ref] })],
 );
+
+// Everyone who opens the site, counted once per browser per day (Eastern time); new_visitors are browsers
+// that had never opened TerpPlan before. Only the two counts are kept, nothing about any visitor.
+export const siteVisits = sqliteTable("site_visits", {
+  day: text("day").primaryKey(),
+  visitors: integer("visitors").notNull().default(0),
+  newVisitors: integer("new_visitors").notNull().default(0),
+});
