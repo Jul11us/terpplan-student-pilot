@@ -23,7 +23,7 @@ export function validBuffer(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 120;
 }
 
-// Event names stay in this browser; the scheduler only needs anonymous time constraints.
+// Event names are not sent to the scheduler, which only needs anonymous time constraints.
 export function anonymousBusyBlocks(blocks: BusyBlock[]) {
   return blocks.map(({ id, days, start, end }) => ({ id, days, start, end }));
 }

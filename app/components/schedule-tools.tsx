@@ -23,7 +23,7 @@ export function PersonalSchedule({ blocks, buffer, onBlocks, onBuffer, language 
   const reset = () => { setEditing(null); setLabel(""); setInvalid(false); };
   return <section className="mt-5 border-t border-[#e8e5dd] pt-5">
     <h4 className="font-semibold">{zh ? "个人日程与课间缓冲" : "Personal schedule & class buffer"}</h4>
-    <p className="mt-1 text-xs leading-5 text-[#646c68]">{zh ? "固定日程每周重复，排课和换班会避开这些时段。日程名称只保存在此浏览器中。" : "Weekly commitments reserve these times when generating or changing sections. Event names stay in this browser."}</p>
+    <p className="mt-1 text-xs leading-5 text-[#646c68]">{zh ? "固定日程每周重复，排课和换班会避开这些时段。日程名称不会随排课请求发送；登录后会和方案一起同步到你的账号。" : "Weekly commitments reserve these times when generating or changing sections. Event names are not sent with scheduling requests; when you are signed in, they sync to your account with your plan."}</p>
     <label className="mt-3 flex flex-wrap items-center gap-3 text-xs font-medium text-[#5d6561]">{zh ? "两次上课之间至少留出" : "Minimum time between classes"}
       <select aria-label={zh ? "课间缓冲" : "Class buffer"} value={buffer} onChange={(event) => onBuffer(Number(event.target.value))} className={field}>
         {[...new Set([0, 5, 10, 15, 20, 30, 45, 60, 90, 120, buffer])].sort((a, b) => a - b).map((value) => <option key={value} value={value}>{value} {zh ? "分钟" : "min"}</option>)}
