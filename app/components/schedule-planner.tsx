@@ -100,7 +100,7 @@ const copy = {
     seatReadAt: "Seat data read", seatReadHint: "“Seat data read” is when TerpPlan read the source, not when UMD updated it.",
     tightWalks: "Hard-to-reach classes", times: "a week",
     prereqNeeds: "Prerequisite not met yet: {needs}",
-    prefsSet: "{n} set",
+    prefsSet: "{n} set", prefsShow: "Show all", prefsHide: "Hide",
     openMap: "Open in Google Maps", walkTitle: "Classes that may be hard to reach in time",
     walkLine: "{day}: {from} ({fromBuilding}) ends {end}, {to} ({toBuilding}) starts {start}. {gap} min between them, about {walk} min walk.",
     walkNote: "Walking time is a rough estimate from the distance between buildings (about 80 m a minute along paths), not a route. Tap a building in the timetable to see it on a map.",
@@ -168,7 +168,7 @@ const copy = {
     seatReadAt: "余位数据读取于", seatReadHint: "“余位数据读取于”是 TerpPlan 读取数据的时间，不代表 UMD 更新数据的时间。",
     tightWalks: "课间来不及走", times: "处/周",
     prereqNeeds: "先修课还没满足：{needs}",
-    prefsSet: "已设 {n} 项",
+    prefsSet: "已设 {n} 项", prefsShow: "展开全部", prefsHide: "收起",
     openMap: "在 Google 地图中打开", walkTitle: "这些课之间可能来不及走过去",
     walkLine: "{day}：{from}（{fromBuilding}）{end} 下课，{to}（{toBuilding}）{start} 上课。课间 {gap} 分钟，步行约 {walk} 分钟。",
     walkNote: "步行时间是按楼与楼之间的距离粗略估算的（沿路约每分钟 80 米），不是实际路线。点课表里的教学楼可以在地图上查看。",
@@ -504,7 +504,18 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
   const [busyBlocks, setBusyBlocks] = useState<BusyBlock[]>(savedPreferences?.busyBlocks ?? []);
   const [bufferMinutes, setBufferMinutes] = useState(savedPreferences?.bufferMinutes ?? 0);
   // Phones show the preferences folded; this counts what is set, so a folded form still says something.
+  // Folded by default; each browser remembers whether the student keeps it open.
   const [prefsOpen, setPrefsOpen] = useState(false);
+  useEffect(() => {
+    try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (window.localStorage.getItem("terpplan:prefs-open") === "1") setPrefsOpen(true);
+    } catch { /* storage blocked: stays folded */ }
+  }, []);
+  const togglePrefs = (open: boolean) => {
+    setPrefsOpen(open);
+    try { window.localStorage.setItem("terpplan:prefs-open", open ? "1" : "0"); } catch { /* not remembered */ }
+  };
   const prefsSet = [earliestStart, earlyBefore, windowStart || windowEnd, excludedDays.length, openSeatsOnly, preferGpa, preferFewerDays, preferNearbyClasses, campusAreas.length, includeFreshmanConnection, busyBlocks.length, bufferMinutes].filter(Boolean).length;
   // The preferences form (not the personal schedule or buffer), so "Clear preferences" can reset and undo it.
   const formPrefs = { excludedDays, earliestStart, earlyBefore, windowStart, windowEnd, strictTime, openSeatsOnly, preferGpa, preferFewerDays, preferNearbyClasses, campusAreas, includeFreshmanConnection };
@@ -663,17 +674,18 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
       {takenEditor && <div className="mt-2">{takenEditor}</div>}
       <div className={`${creditsLabel ? "mt-2" : "mt-6"} space-y-2`}>{courses.map((course) => <article key={course.courseId} className="flex items-center justify-between gap-4 rounded-xl border border-[#e3e0d8] bg-white px-4 py-3"><div><p className="font-semibold">{course.courseId}</p><p className="mt-0.5 text-xs text-[#646c68]">{course.courseTitle}</p><SeasonNote season={courseSeasons[course.courseId]} term={term} language={language} />{prereqNeeds[course.courseId]?.length ? <p className="mt-1 text-xs font-medium text-[#745424]">⚠ {t.prereqNeeds.replace("{needs}", prereqNeeds[course.courseId].join("; "))}</p> : null}{course.instructors?.length ? <p className="mt-1 text-xs text-[#536d64]">{t.onlyInstructors}: {course.instructors.join(", ")}</p> : null}{course.pinnedSectionId && <p className="mt-1 text-xs font-medium text-[#315c43]">{t.pinned}: {course.pinnedSectionId}</p>}{course.excludedSectionIds?.length ? <p className="mt-1 text-xs text-[#8f4538]">{t.excludedSections}: {course.excludedSectionIds.join(", ")}</p> : null}{(course.pinnedSectionId || course.excludedSectionIds?.length) && <button onClick={onBack} className="mt-1 text-xs font-medium text-[#536d64] underline underline-offset-2">{t.changeSections}</button>}</div><button onClick={() => onRemove(course.courseId)} className="rounded-lg border border-[#dedbd3] px-3 py-2 text-xs font-medium text-[#5d6561] hover:bg-[#f6f4ef]">{t.remove}</button></article>)}</div>
       <div className="mt-5 rounded-xl border border-[#e3e0d8] bg-white p-4 sm:p-5">
-        {/* On a phone the form is long enough to hide the options below it, so it folds to one line there. */}
-        <button type="button" onClick={() => setPrefsOpen(!prefsOpen)} aria-expanded={prefsOpen} className="flex w-full items-center justify-between gap-3 text-left sm:hidden"><span className="font-semibold">{t.preferences}{prefsSet ? <span className="ml-2 text-xs font-normal text-[#5d6561]">· {t.prefsSet.replace("{n}", String(prefsSet))}</span> : null}</span><span aria-hidden="true" className="text-xs text-[#5d6561]">{prefsOpen ? "▲" : "▼"}</span></button>
-        <div className="hidden items-center justify-between gap-3 sm:flex"><h3 className="font-semibold">{t.preferences}</h3>{formPrefsSet && <button type="button" onClick={clearPrefs} title={t.resetHint} className="rounded-lg border border-[#d9d6ce] px-3 py-1.5 text-xs font-semibold text-[#48534f] hover:bg-[#f7f5f0]">{t.resetPrefs}</button>}</div>
+        {/* The full form is long enough to push the schedules far down, so it folds; the quick settings stay out. */}
+        <div className="flex items-center justify-between gap-3">
+          <button type="button" onClick={() => togglePrefs(!prefsOpen)} aria-expanded={prefsOpen} aria-controls="schedule-preferences-form" className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-left"><span className="whitespace-nowrap font-semibold">{t.preferences}</span>{prefsSet ? <span className="whitespace-nowrap text-xs text-[#5d6561]">· {t.prefsSet.replace("{n}", String(prefsSet))}</span> : null}<span className="whitespace-nowrap rounded-md border border-[#d9d6ce] px-2 py-0.5 text-[11px] font-medium text-[#48534f]">{prefsOpen ? t.prefsHide : t.prefsShow} <span aria-hidden="true">{prefsOpen ? "▲" : "▼"}</span></span></button>
+          {formPrefsSet && <button type="button" onClick={clearPrefs} title={t.resetHint} className="shrink-0 rounded-lg border border-[#d9d6ce] px-3 py-1.5 text-xs font-semibold text-[#48534f] hover:bg-[#f7f5f0]">{t.resetPrefs}</button>}
+        </div>
         {clearedPrefs && !formPrefsSet && <p role="status" className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-[#edf3ef] px-3 py-2 text-xs text-[#315c43]">{t.resetDone}<button type="button" onClick={() => { setFormPrefs(clearedPrefs); setClearedPrefs(null); }} className="font-semibold underline underline-offset-2">{t.undo}</button></p>}
-        <div className={`${prefsOpen ? "" : "hidden"} sm:block`}>
-        {formPrefsSet && <button type="button" onClick={clearPrefs} className="mt-3 rounded-lg border border-[#d9d6ce] px-3 py-1.5 text-xs font-semibold text-[#48534f] hover:bg-[#f7f5f0] sm:hidden">{t.resetPrefs}</button>}
         <div className="mt-4">
           <p className="mb-2 text-xs font-medium text-[#5d6561]">{t.presetsTitle}</p>
           <div className="flex flex-wrap gap-2">{PRESET_KEYS.map((key) => { const on = presetActive(key, presetFields); return <button key={key} type="button" aria-pressed={on} onClick={() => applyPreset(key)} title={t.presetHint[key]} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${on ? "border-[#536d64] bg-[#edf3ef] text-[#273c38]" : "border-[#d9d6ce] bg-white text-[#48534f] hover:bg-[#f7f5f0]"}`}>{on ? "✓ " : ""}{t.preset[key]}</button>; })}</div>
           <p className="mt-2 text-[11px] leading-5 text-[#646c68]">{t.presetsNote}</p>
         </div>
+        <div id="schedule-preferences-form" hidden={!prefsOpen}>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <label className="grid gap-1.5 text-xs font-medium text-[#5d6561]">{t.earliest}<input type="time" value={earliestStart} onChange={(event) => setEarliestStart(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]" /></label>
           <label className="grid gap-1.5 text-xs font-medium text-[#5d6561]">{t.window} · {t.start}<input type="time" value={windowStart} onChange={(event) => setWindowStart(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]" /></label>
