@@ -14,7 +14,7 @@ const copy = {
   en: {
     home: "Back to planner", eyebrow: "Registration day", title: (term: string) => `Register for ${term}`,
     none: "Nothing saved yet. Build a schedule in TerpPlan, then open \"Registration-day view\" from the registration checklist under the timetable.",
-    noTime: "Add your registration date and time in the checklist to see a countdown here.",
+    noTime: "Add your registration date and time on the TerpPlan home page to see a countdown here.",
     testudo: "Open Testudo", copyAll: "Copy all", copied: "Copied", copyFailed: "Copy failed. Select the text and copy it manually.",
     registered: "Registered", full: "Full", backups: "If it is full, try:", noBackups: "No backup section in your other options.",
     progress: (done: number, total: number) => `${done} of ${total} registered`,
@@ -25,7 +25,7 @@ const copy = {
   zh: {
     home: "返回排课", eyebrow: "选课当天", title: (term: string) => `${term} 选课`,
     none: "还没有保存选课清单。先在 TerpPlan 排好课，再在课表下方的选课清单里点“打开‘选课当天’页面”。",
-    noTime: "在选课清单里填上你的注册日期和时间，这里就会显示倒计时。",
+    noTime: "在 TerpPlan 首页顶部填上你的注册日期和时间，这里就会显示倒计时。",
     testudo: "打开 Testudo", copyAll: "全部复制", copied: "已复制", copyFailed: "复制失败，请手动选中文字复制。",
     registered: "已注册", full: "已满", backups: "满了的话可以试：", noBackups: "其他方案里没有这门课的备选班次。",
     progress: (done: number, total: number) => `已注册 ${done} / ${total} 门`,
