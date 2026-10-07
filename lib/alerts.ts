@@ -3,6 +3,7 @@ import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { getDb } from "@/db";
 import { alertSubscriptions, watches } from "@/db/schema";
 import { SITE_URL } from "@/lib/site-config";
+import { openingPath } from "@/lib/seat-swap";
 
 type Db = ReturnType<typeof getDb>;
 
@@ -58,25 +59,29 @@ const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({ "&"
 
 type PendingRow = typeof watches.$inferSelect;
 
-function alertEmail(rows: PendingRow[], token: string) {
+export function alertEmail(rows: PendingRow[], token: string) {
   const link = unsubscribeUrl(token);
   const lines = rows.map((row) => `${row.sectionId} · ${row.courseTitle} · ${row.openSeats} open ${row.openSeats === 1 ? "seat" : "seats"} (read ${easternTime(row.lastSuccessAt)})`);
+  // Each section links to the planner, which checks it against the schedule saved on that device.
+  const checks = rows.map((row) => SITE_URL + openingPath(row.term, row.sectionId));
   const subject = rows.length === 1 ? `Seat open: ${rows[0]!.sectionId}` : `Seats open in ${rows.length} sections you watch`;
   const text = [
     "A seat opened in a section you are watching on TerpPlan:",
     "",
-    ...lines.map((line) => `- ${line}`),
+    ...lines.flatMap((line, index) => [`- ${line}`, `  Fits my schedule? / 适合我的课表吗？ ${checks[index]}`]),
     "",
     "Seat data can lag, so the seat may already be taken. Register in Testudo as soon as you can: https://app.testudo.umd.edu/",
+    "To compare it with your schedule first, open the link above on the device where you plan in TerpPlan.",
     "",
     "你在 TerpPlan 关注的班次出现了空位。数据可能有延迟，打开时位置可能已被占用，请尽快在 Testudo 注册。",
+    "想先看看是否和课表冲突，请在你用 TerpPlan 排课的设备上打开上面的链接。",
     "",
     `You get one email each time a full section opens. Stop these emails / 停止提醒: ${link}`,
   ].join("\n");
   const html = `<p>A seat opened in a section you are watching on TerpPlan:</p>
-<ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>
-<p>Seat data can lag, so the seat may already be taken. <a href="https://app.testudo.umd.edu/">Register in Testudo</a> as soon as you can.</p>
-<p>你在 TerpPlan 关注的班次出现了空位。数据可能有延迟，打开时位置可能已被占用，请尽快在 Testudo 注册。</p>
+<ul>${lines.map((line, index) => `<li>${escapeHtml(line)}<br><a href="${escapeHtml(checks[index]!)}">Fits my schedule? / 适合我的课表吗？</a></li>`).join("")}</ul>
+<p>Seat data can lag, so the seat may already be taken. <a href="https://app.testudo.umd.edu/"><strong>Register in Testudo</strong></a> as soon as you can. To compare it with your schedule first, open "Fits my schedule?" on the device where you plan in TerpPlan.</p>
+<p>你在 TerpPlan 关注的班次出现了空位。数据可能有延迟，打开时位置可能已被占用，请尽快<a href="https://app.testudo.umd.edu/"><strong>在 Testudo 注册</strong></a>。想先看看是否和课表冲突，请在你用 TerpPlan 排课的设备上点“适合我的课表吗？”。</p>
 <p style="color:#777;font-size:12px">You get one email each time a full section opens. <a href="${escapeHtml(link)}">Stop these emails / 停止提醒</a></p>`;
   return { subject, text, html, link, oneClickLink: oneClickUnsubscribeUrl(token) };
 }

@@ -25,6 +25,8 @@ import type { ProfessorSummary } from "@/lib/planetterp";
 import { roomLabel } from "@/lib/room";
 import { readSavedState, STORAGE_KEY, swapPlans, writeSavedState } from "@/lib/saved-state";
 import { enterDemo, isDemo, leaveDemo, startDemoFromUrl, storageKey } from "@/lib/demo";
+import { fittingSections, parseOpening, scheduleWithout, type Opening } from "@/lib/seat-swap";
+import { OpeningCheck } from "@/app/components/opening-check";
 import { formatSeatReadTime } from "@/lib/seat-time";
 import { courseSearchView, startCourseSearch, type CourseSearchState } from "@/lib/course-search";
 import { groupSections, ownMeetings } from "@/lib/section-groups";
@@ -246,6 +248,8 @@ export default function Home() {
   const t = copy[language];
   // Shown after the first render (like the saved plan), so the server and client HTML match.
   const [demo, setDemo] = useState(false);
+  // A section opened from a seat alert email, checked against this device's schedule.
+  const [opening, setOpening] = useState<Opening | null>(null);
   const [step, setStep] = useState<"find" | "schedule" | "watch">("find");
   const [term, setTerm] = useState("202701");
   const [terms, setTerms] = useState<string[]>([]);
@@ -392,6 +396,14 @@ export default function Home() {
         window.history.replaceState(null, "", window.location.pathname);
       }
       readTransferLink();
+      // A seat alert's "Fits my schedule?" link: check the opened section against this device's plan.
+      const seatOpening = parseOpening(window.location.search);
+      if (seatOpening) {
+        setOpening(seatOpening);
+        // The term list below then keeps this term instead of falling back to the default.
+        if (seatOpening.term !== saved.term) { switchTerm(seatOpening.term); saved.term = seatOpening.term; }
+        window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+      }
       const linked = (new URLSearchParams(window.location.search).get("course") ?? "").trim().toUpperCase();
       if (/^[A-Z]{4}\d{3}[A-Z0-9]*$/.test(linked)) {
         linkedCourseRef.current = linked;
@@ -726,6 +738,14 @@ export default function Home() {
     setMessage("added");
   };
 
+  // "Switch to this section" from a seat alert: the course keeps only that section, and the planner rebuilds.
+  const pinOpening = (courseId: string, courseTitle: string, id: string) => {
+    setPlanCourses((current) => current.some((item) => item.courseId === courseId)
+      ? current.map((item) => item.courseId === courseId ? { ...item, pinnedSectionId: id, excludedSectionIds: (item.excludedSectionIds ?? []).filter((other) => other !== id), instructors: undefined } : item)
+      : [...current, { courseId, courseTitle, pinnedSectionId: id }]);
+    setError("");
+  };
+
   const addWatch = async (course: Course, section: Section) => {
     setError("");
     try {
@@ -860,13 +880,14 @@ export default function Home() {
       <header className="border-b border-[#dedbd3] bg-[#fbfaf8]"><div className="mx-auto flex max-w-[1320px] flex-wrap items-center justify-between gap-y-3 px-5 py-4 sm:px-8">
         {/* Below lg the page links take their own row under the logo, so the header never runs off a phone. */}
         <a href="#top" className="flex items-center gap-3 font-semibold tracking-tight"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#bd302f] font-serif text-lg text-white">T</span><span>TerpPlan</span><span className="hidden rounded-full border border-[#e5c9bd] px-2 py-1 text-[10px] font-semibold uppercase tracking-[.12em] text-[#8d4333] lg:inline">Student pilot</span></a>
-          <nav aria-label={language === "en" ? "More tools" : "更多工具"} className="order-last -mx-1 flex w-full items-center gap-2 overflow-x-auto px-1 py-0.5 lg:order-none lg:ml-2 lg:mr-auto lg:w-auto"><Link href="/audit" aria-label={language === "en" ? "Check degree audit" : "查看学位审计"} className="ml-1 inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-[#e5c9bd] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#a34a39] shadow-sm hover:border-[#a34a39] hover:bg-[#fff5f1] sm:px-3"><span aria-hidden="true" className="hidden sm:inline">📋</span>{/* Short labels without icons on phones so the header stays on one line. */}<span className="sm:hidden">{language === "en" ? "Audit" : "审计"}</span><span className="hidden sm:inline">{language === "en" ? "Check degree audit" : "查看学位审计"}</span></Link><Link href="/minor" aria-label={language === "en" ? "Minor or double major" : "辅修 / 双专业"} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-[#cddbd1] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#315c43] shadow-sm hover:border-[#536d64] hover:bg-[#f4f8f5] sm:px-3"><span aria-hidden="true" className="hidden sm:inline">🎓</span><span className="sm:hidden">{language === "en" ? "Minor" : "辅修"}</span><span className="hidden sm:inline">{language === "en" ? "Minor or double major" : "辅修 / 双专业"}</span></Link><Link href="/hard-courses" aria-label={language === "en" ? "Hardest courses to get" : "最难抢的课"} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-[#ead8b5] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#8a5a17] shadow-sm hover:border-[#c99a4a] hover:bg-[#fffaf0] sm:px-3"><span aria-hidden="true" className="hidden sm:inline">🔥</span><span className="sm:hidden">{language === "en" ? "Hard to get" : "最难抢的课"}</span><span className="hidden sm:inline">{language === "en" ? "Hardest courses to get" : "最难抢的课"}</span></Link><button onClick={() => setAboutOpen(true)} className="whitespace-nowrap rounded-lg px-2 py-2 text-xs font-medium text-[#59635f] hover:bg-[#eeece6] sm:px-2.5">{language === "en" ? "About" : "关于"}</button>{restored && !demo && <button type="button" onClick={enterDemo} className="whitespace-nowrap rounded-lg px-2 py-2 text-xs font-medium text-[#a34a39] hover:bg-[#fff5f1] sm:px-2.5">{language === "en" ? "Try a sample" : "试用示例"}</button>}</nav>
+          <nav aria-label={language === "en" ? "More tools" : "更多工具"} className="order-last -mx-1 flex w-full items-center gap-1.5 overflow-x-auto sm:gap-2 px-1 py-0.5 lg:order-none lg:ml-2 lg:mr-auto lg:w-auto"><Link href="/audit" aria-label={language === "en" ? "Check degree audit" : "查看学位审计"} className="ml-1 inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-[#e5c9bd] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#a34a39] shadow-sm hover:border-[#a34a39] hover:bg-[#fff5f1] sm:px-3"><span aria-hidden="true" className="hidden sm:inline">📋</span>{/* Short labels without icons on phones so the header stays on one line. */}<span className="sm:hidden">{language === "en" ? "Audit" : "审计"}</span><span className="hidden sm:inline">{language === "en" ? "Check degree audit" : "查看学位审计"}</span></Link><Link href="/minor" aria-label={language === "en" ? "Minor or double major" : "辅修 / 双专业"} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-[#cddbd1] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#315c43] shadow-sm hover:border-[#536d64] hover:bg-[#f4f8f5] sm:px-3"><span aria-hidden="true" className="hidden sm:inline">🎓</span><span className="sm:hidden">{language === "en" ? "Minor" : "辅修"}</span><span className="hidden sm:inline">{language === "en" ? "Minor or double major" : "辅修 / 双专业"}</span></Link><Link href="/hard-courses" aria-label={language === "en" ? "Hardest courses to get" : "最难抢的课"} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-[#ead8b5] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#8a5a17] shadow-sm hover:border-[#c99a4a] hover:bg-[#fffaf0] sm:px-3"><span aria-hidden="true" className="hidden sm:inline">🔥</span><span className="sm:hidden">{language === "en" ? "Hardest" : "最难抢的课"}</span><span className="hidden sm:inline">{language === "en" ? "Hardest courses to get" : "最难抢的课"}</span></Link><button onClick={() => setAboutOpen(true)} className="whitespace-nowrap rounded-lg px-2 py-2 text-xs font-medium text-[#59635f] hover:bg-[#eeece6] sm:px-2.5">{language === "en" ? "About" : "关于"}</button>{restored && !demo && <button type="button" onClick={enterDemo} className="whitespace-nowrap rounded-lg px-2 py-2 text-xs font-medium text-[#a34a39] hover:bg-[#fff5f1] sm:px-2.5"><span className="sm:hidden">{language === "en" ? "Sample" : "示例"}</span><span className="hidden sm:inline">{language === "en" ? "Try a sample" : "试用示例"}</span></button>}</nav>
         <div className="flex items-center gap-3"><button onClick={() => setLanguage(language === "en" ? "zh" : "en")} className="whitespace-nowrap rounded-lg border border-[#dcd9d0] px-2.5 py-2 text-xs font-medium hover:bg-white sm:px-3">{language === "en" ? "中文" : "English"}</button></div>
       </div></header>
       {aboutOpen && <AboutDialog language={language} onClose={closeAbout} />}
       {demo && <DemoBanner language={language} onSchedule={() => { setStep("schedule"); window.scrollTo({ top: 0, behavior: "smooth" }); }} />}
 
       <div id="top" className="mx-auto max-w-[1320px] px-5 pb-16 pt-5 sm:px-8 sm:pt-12">
+        {opening && <OpeningCheck opening={opening} planCourseIds={opening.term === term ? planCourses.map((course) => course.courseId) : []} planFull={planCourses.length >= 10} reference={opening.term === term ? fitReference : null} language={language} onPin={pinOpening} onClose={() => setOpening(null)} />}
         <div className="mb-5 grid gap-4 sm:mb-8 sm:gap-6 lg:grid-cols-[1fr_auto] lg:items-end"><div><p className="mb-2 text-[11px] font-semibold uppercase tracking-[.17em] text-[#a34a39] sm:mb-3">{t.eyebrow}</p><h1 className="font-serif text-3xl leading-tight tracking-[-.03em] sm:text-5xl">{t.title}</h1>{/* The step buttons below say the same thing; on a phone the room goes to the search box. */}<p className="mt-3 hidden max-w-xl text-sm leading-6 text-[#5d6561] sm:block">{t.subtitle}</p>{restored && !demo && !planCourses.length && <button type="button" onClick={enterDemo} className="mt-2 block text-left text-xs font-semibold text-[#a34a39] hover:underline">{language === "en" ? "First time here? Try a sample schedule →" : "第一次来？先试试示例课表 →"}</button>}</div>
           <nav aria-label="Planning steps" className="grid grid-cols-3 gap-1 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-1.5 sm:flex sm:flex-wrap sm:gap-2 sm:p-2">{(["find", "schedule", "watch"] as const).map((item, index) => <button key={item} onClick={() => setStep(item)} aria-current={step === item ? "step" : undefined} className={`flex items-center justify-center gap-2 rounded-xl px-1.5 py-2 text-xs transition sm:justify-start sm:px-3 sm:text-sm ${step === item ? "bg-[#273c38] text-white" : "text-[#5d6561] hover:bg-[#eeece6]"}`}><span className="hidden h-5 w-5 place-items-center rounded-full bg-white/15 text-[10px] sm:grid">0{index + 1}</span>{t[item]}</button>)}</nav>
         </div>
@@ -937,7 +958,16 @@ export default function Home() {
                 const ids = visibleSections.map((section) => sectionId(section, selected.course_id));
                 const all = ids.every((id) => watches.some((item) => item.term === term && item.sectionId === id));
                 const tooMany = ids.length > 20;
-                return <div className="mt-2"><button type="button" onClick={() => void addWatchAll(selected, visibleSections)} disabled={all || tooMany} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef] disabled:cursor-default disabled:opacity-60">{(all ? t.watchingAll : t.watchAll).replace("{n}", String(ids.length))}</button><p className="mt-1.5 text-[11px] leading-5 text-[#646c68]">{tooMany ? t.watchAllTooMany.replace("{n}", String(ids.length)) : t.watchAllHint}</p></div>;
+                // With a schedule from step 02, offer to watch only the sections that would fit it (this course's
+                // current section is set aside, since an opening would replace it).
+                const current = fitReference ? visibleSections.find((section) => fitReference.sectionIds.includes(sectionId(section, selected.course_id))) : undefined;
+                const fitting = fitReference ? fittingSections(visibleSections, scheduleWithout(fitReference.meetings, current?.meetings ?? [])).filter((section) => section !== current) : null;
+                const fittingWatched = Boolean(fitting?.length) && fitting!.every((section) => watches.some((item) => item.term === term && item.sectionId === sectionId(section, selected.course_id)));
+                return <div className="mt-2"><div className="flex flex-wrap gap-2"><button type="button" onClick={() => void addWatchAll(selected, visibleSections)} disabled={all || tooMany} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef] disabled:cursor-default disabled:opacity-60">{(all ? t.watchingAll : t.watchAll).replace("{n}", String(ids.length))}</button>
+                  {fitting && fitting.length > 0 && fitting.length < ids.length && <button type="button" onClick={() => void addWatchAll(selected, fitting)} disabled={fittingWatched || fitting.length > 20}className="rounded-lg border border-[#536d64] bg-[#edf3ef] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#e2ece6] disabled:cursor-default disabled:opacity-60">{(fittingWatched ? (language === "en" ? "Watching the {n} that fit" : "已关注不冲突的 {n} 个班") : (language === "en" ? "Only the {n} that fit my schedule" : "只关注不冲突的 {n} 个班")).replace("{n}", String(fitting.length))}</button>}</div>
+                  <p className="mt-1.5 text-[11px] leading-5 text-[#646c68]">{tooMany ? t.watchAllTooMany.replace("{n}", String(ids.length)) : t.watchAllHint}{fitting ? " " + (fitting.length === 0 ? (language === "en" ? "None of these sections fits your current schedule." : "这些班次都和你现在的课表冲突。")
+                    : fitting.length > 20 ? (language === "en" ? `${fitting.length} of them fit your schedule, still more than 20.` : `其中不冲突的有 ${fitting.length} 个，仍然超过 20 个。`)
+                    : fitting.length < ids.length ? (language === "en" ? "The second option leaves out sections that clash with your schedule or have no listed time." : "第二个选项会跳过和你课表冲突、或时间待定的班次。") : "") : ""}</p></div>;
               })()}
               {selected && courseInstructors.length > 1 && <div className="mt-4"><p className="text-xs font-medium text-[#5d6561]">{t.instructorPick} <span className="font-normal text-[#646c68]">· {excludedInstructors.length ? `${keptInstructors.length}/${courseInstructors.length}` : t.allInstructors}</span></p><div className="mt-2 flex flex-wrap gap-2">{courseInstructors.map((name) => { const kept = !excludedInstructors.includes(name); return <button key={name} type="button" onClick={() => toggleInstructor(name)} disabled={Boolean(selectedPlan?.pinnedSectionId)} aria-pressed={kept} className={`rounded-full border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${kept ? "border-[#536d64] bg-[#edf3ef] font-medium text-[#24312d]" : "border-[#e0ddd5] bg-white text-[#9aa19d] line-through"}`}>{kept ? "✓ " : ""}{name}</button>; })}</div><p className="mt-2 text-[11px] text-[#646c68]">{selectedPlan?.pinnedSectionId ? t.pinnedInstructorHint : t.instructorHint}</p></div>}
               {selected && visibleSections.length > 0 && <CourseTrends courseId={selected.course_id} term={term} sectionIds={visibleSections.slice(0, 10).map((section) => sectionId(section, selected.course_id))} lang={language} />}
