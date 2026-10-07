@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { buildReminderIcs } from "@/lib/ics";
 import { storageKey } from "@/lib/demo";
+import { markLocalChange } from "@/lib/sync-meta";
 import { readRegistrationDay, REGISTRATION_DAY_EVENT, registrationCourses, REMINDER_KEY, savedReminder, writeRegistrationDay } from "@/lib/registration-day";
 import { RegistrationCountdown } from "@/app/components/registration-countdown";
 
@@ -80,6 +81,7 @@ export default function RegistrationChecklist({ option, others, missingCourseIds
       const all = JSON.parse(window.localStorage.getItem(storageKey(REMINDER_KEY)) ?? "{}") as Record<string, unknown>;
       window.localStorage.setItem(storageKey(REMINDER_KEY), JSON.stringify({ ...all, [termName]: next }));
     } catch { /* not remembered; the download still works */ }
+    markLocalChange();
     window.dispatchEvent(new Event(REGISTRATION_DAY_EVENT));
   };
   const [copied, setCopied] = useState("");

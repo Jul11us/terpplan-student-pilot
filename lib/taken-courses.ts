@@ -3,6 +3,7 @@
 
 import type { AuditResult } from "@/lib/degree-audit";
 import { storageKey } from "@/lib/demo";
+import { markLocalChange } from "@/lib/sync-meta";
 
 export const TAKEN_KEY = "terpplan:taken";
 // Same-tab updates; other tabs hear the "storage" event.
@@ -53,6 +54,7 @@ export function writeTaken(value: Omit<TakenCourses, "updatedAt"> | null) {
   } catch {
     // Storage blocked: the check simply stays off.
   }
+  markLocalChange();
   window.dispatchEvent(new Event(TAKEN_EVENT));
 }
 

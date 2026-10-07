@@ -132,3 +132,12 @@ export const siteVisits = sqliteTable("site_visits", {
   visitors: integer("visitors").notNull().default(0),
   newVisitors: integer("new_visitors").notNull().default(0),
 });
+
+// A signed-in student's planner data, so the same plan opens on every device they sign in on: the saved
+// plans and preferences, the courses they have taken and their registration times, as one JSON document.
+// updated_at is when the student last changed it (the newer copy wins).
+export const planSync = sqliteTable("plan_sync", {
+  userId: text("user_id").primaryKey(),
+  state: text("state").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});

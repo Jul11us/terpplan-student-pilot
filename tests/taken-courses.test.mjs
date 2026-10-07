@@ -22,7 +22,8 @@ test("audit import persists only passing and in-progress course codes and can be
     assert.deepEqual(Object.keys(stored).sort(), ["completed", "credits", "inProgress", "source", "updatedAt"]);
     assert.equal(stored.credits, 12);
     assert.equal(values.get(TAKEN_KEY).includes("Doe"), false);
-    assert.deepEqual(events, [TAKEN_EVENT]);
+    // Saving also tells account sync that something changed.
+    assert.deepEqual(events, ["terpplan:local-change", TAKEN_EVENT]);
     writeTaken(null);
     assert.equal(readTaken(), null);
     assert.equal(values.has(TAKEN_KEY), false);

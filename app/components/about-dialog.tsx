@@ -19,7 +19,7 @@ const copy = {
     ],
     privacyTitle: "Your privacy",
     privacy: [
-      "Your plan and schedule preferences are saved only in this browser.",
+      "Your plan and schedule preferences are saved in this browser. If you sign in with your email, they are also kept in your account (with your personal commitments, courses taken and registration times) so they open on any device you sign in on. The account is stored under a hashed ID, not your address; signed in, you can delete that copy.",
       "If you choose to share course counts, selected course codes and a hash of a random browser ID are saved for the public totals. You can withdraw them at any time. A hashed network identifier is briefly kept to limit abusive requests.",
       "Your degree audit PDF is read only in your browser; the PDF and extracted audit text are not uploaded or saved.",
       "The minor and double-major explorer compares your courses with the catalog inside your browser; your course list is not sent to TerpPlan.",
@@ -44,7 +44,7 @@ const copy = {
     ],
     privacyTitle: "隐私",
     privacy: [
-      "你的排课计划和偏好只保存在当前浏览器里。",
+      "你的排课计划和偏好保存在当前浏览器里。用邮箱登录后，它们（连同个人日程、已修课程和注册时间）也会保存到你的账号，换设备登录就能看到。账号用哈希编号存储，不是你的邮箱地址；登录状态下可以删除这份副本。",
       "如果你自愿分享课程人数，所选课程代码和随机浏览器标识的哈希会用于公开统计，可以随时撤回。系统也会短暂保存网络标识的哈希，用于限制滥用请求。",
       "学位审计 PDF 只在你的浏览器里读取；PDF 和解析出的审计文字不会上传或保存。",
       "辅修 / 双专业评估在你的浏览器里把你的课程和 catalog 对比，你的课程列表不会发送给 TerpPlan。",

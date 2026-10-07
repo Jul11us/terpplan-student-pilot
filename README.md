@@ -32,7 +32,7 @@ Apply a replacement to update that course while preserving the other selected se
 
 Add weekly commitments such as work, a club meeting, or lunch; edit their days and times and see them beside classes in the timetable. Choose a minimum buffer between class meetings. Schedule generation and section changes both check these constraints, including lecture, discussion, and lab meetings.
 
-Commitments and the buffer are remembered in this browser. Event names stay local; scheduling uses their unnamed time intervals. Personal commitments are excluded from shared schedules and calendar exports. The buffer reserves the amount of time you choose; it does not estimate walking time between buildings.
+Commitments and the buffer are remembered in this browser (and in the account of a signed-in student, see below). Scheduling uses their unnamed time intervals. Personal commitments are excluded from shared schedules and calendar exports. The buffer reserves the amount of time you choose; it does not estimate walking time between buildings.
 
 ### See how courses fit your degree
 
@@ -53,8 +53,8 @@ Create a read-only link to a schedule. It includes the term, section numbers, la
 - Degree-audit PDFs are read in your browser. The PDF and extracted audit text are not uploaded or saved by TerpPlan.
 - Course lookups send selected course codes or Gen Ed categories, not your PDF, extracted audit text, or complete course history.
 - Minor and double-major progress is calculated in your browser from the catalog snapshot; your completed, in-progress, and planned course lists are not uploaded.
-- Your plan and preferences are saved in this browser rather than synced to an account.
-- Scheduling requests send selected course codes, section/instructor filters, preferences, and commitment identifiers and time intervals to TerpPlan's server. Personal event names stay in this browser.
+- Your plan and preferences are saved in this browser. When you sign in with your email, they are also kept in your account (`plan_sync`, under a hashed account ID): plans, preferences including personal commitments and their names, courses taken and registration times, so they open on any device you sign in on. The newer copy wins; when this device and the account both changed, you choose which to keep. You can delete the account copy while signed in. The sample plan (`?demo=1`) never syncs.
+- Scheduling requests send selected course codes, section/instructor filters, preferences, and commitment identifiers and time intervals to TerpPlan's server. Personal event names are not sent with scheduling requests.
 - Personal commitments are excluded from shared schedules and calendar exports.
 - Email is used for sign-in codes. Your address is stored for seat alerts only if you turn that feature on.
 - Shared schedule links can be viewed by anyone who has the link.

@@ -6,6 +6,7 @@
 import { normalizeBusyBlocks, validBuffer, type BusyBlock } from "@/lib/personal-schedule";
 import { CAMPUS_AREA_KEYS } from "@/lib/campus-walk";
 import { storageKey } from "@/lib/demo";
+import { markLocalChange } from "@/lib/sync-meta";
 
 export const STORAGE_KEY = "terpplan:v1";
 
@@ -139,14 +140,26 @@ export function readSavedState(): SavedState {
   }
 }
 
+// JSON with object keys sorted and undefined fields left out, so equal content gives equal text.
+export function canonicalJson(value: unknown): string {
+  const canonical = (item: unknown): unknown => Array.isArray(item) ? item.map(canonical)
+    : item && typeof item === "object" ? Object.fromEntries(Object.entries(item as Record<string, unknown>).filter(([, entry]) => entry !== undefined).sort(([a], [b]) => a.localeCompare(b)).map(([key, entry]) => [key, canonical(entry)]))
+    : item;
+  return JSON.stringify(canonical(value));
+}
+
 // Merges the given fields into what is already stored.
 export function writeSavedState(patch: Partial<SavedState>) {
   try {
+    const before = window.localStorage.getItem(storageKey(STORAGE_KEY));
     const next = { ...readSavedState(), ...patch };
     // Drop empty per-term plans so old terms do not pile up.
     next.plans = Object.fromEntries(Object.entries(next.plans).filter(([, courses]) => courses.length));
     next.otherPlans = Object.fromEntries(Object.entries(next.otherPlans ?? {}).filter(([, courses]) => courses.length));
     window.localStorage.setItem(storageKey(STORAGE_KEY), JSON.stringify(next));
+    // The page saves after every render, not always with keys in the same order; only a change in content
+    // is one for account sync.
+    if (canonicalJson(parseSavedState(before ? JSON.parse(before) : null)) !== canonicalJson(parseSavedState(next))) markLocalChange();
   } catch {
     // Storage unavailable or full: the page keeps working, it just will not remember.
   }
