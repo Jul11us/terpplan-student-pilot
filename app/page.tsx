@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useDocumentLanguage } from "@/lib/document-language";
 import AboutDialog from "@/app/components/about-dialog";
 import CourseRequirements, { type CourseRequirement } from "@/app/components/course-requirements";
 import GenEdFinder, { type ReferenceSchedule } from "@/app/components/gened-finder";
@@ -81,9 +82,9 @@ const copy = {
     searchHint: "e.g. ", term: "Term", results: "Course matches", select: "View sections",
     quickAdd: "Add", inPlanShort: "In plan", searchMode: "Search courses", genEdMode: "Find by Gen Ed", noResults: "No matches yet. Search by a course code or title.", notOffered: "{course} is not offered in {term}. It may be offered in another term — try switching the term above.", sections: "Sections", addSchedule: "Add this course to plan", courseInPlan: "Course in plan", instructorPick: "Instructors to keep", instructorHint: "Tap a name to leave out that instructor's sections.", keepOne: "Keep at least one instructor.", allInstructors: "All",
     addWatch: "Watch this section", watchShort: "Watch", watchingShort: "Watching", scheduleTitle: "Your schedule", emptySchedule: "Add courses from search to generate schedule options.",
-    watchesTitle: "Seat watches", emptyWatches: "Watch a section to see it here.", refresh: "Check now", remove: "Remove",
+    watchesTitle: "Seat watches", watchCadence: "With email alerts on, TerpPlan checks your watched sections about every 10 minutes (sometimes later at busy times) and emails you when a full section opens. A seat can fill again before you read the email, so register in Testudo right away.", emptyWatches: "Watch a section to see it here.", refresh: "Check now", remove: "Remove",
     added: "Course added to plan", watched: "Seat watch saved", conflict: "Time conflict", noConflict: "No time conflicts found", planLimit: "A plan can include up to 10 courses.",
-    signIn: "Sign in to save and sync your seat watches.", email: "Email address", emailCode: "Six-digit code", sendCode: "Email me a code", verifyCode: "Verify and sign in", codeSent: "Code sent. Check your inbox.",
+    signIn: "Sign in to save and sync your seat watches.", email: "Email address", emailCode: "Six-digit code", sendCode: "Email me a code", verifyCode: "Verify and sign in", codeSent: "Code sent. Check your inbox.", resendIn: "Resend in {s}s", resendCode: "Resend code", codeSpam: "Not in your inbox? Look in Spam or Junk for an email from TerpPlan and mark it \"Not spam\", so seat alerts reach your inbox too.",
     watchLimit: "You can watch up to 10 courses (40 sections). Remove one to add another.", watchAll: "Watch all {n} sections", watchingAll: "Watching all {n} sections", watchAllHint: "One email when any of them opens. Untick instructors above to leave theirs out.", watchAllTooMany: "{n} sections is more than 20. Untick instructors above to watch fewer at once.", watchGroup: "Watching {n} sections", watchGroupOpen: "{k} open", removeAll: "Remove all", emailPrivacy: "Your address is used to sign you in. Codes expire after 10 minutes.", wrongCode: "That code could not be verified.", emailSignedIn: "Signed in with email", signOut: "Sign out",
     loading: "Loading…", error: "Something went wrong. Please try again.",
     resultFull: "Full", resultNoSections: "No sections", resultSeatsUnknown: "Seats unknown",
@@ -103,9 +104,9 @@ const copy = {
     find: "找课程", schedule: "排课", watch: "关注余位", search: "搜索课程编号或名称", searchHint: "例如 ",
     term: "学期", results: "匹配课程", select: "查看班次", quickAdd: "加入", inPlanShort: "已加入", searchMode: "搜索课程", genEdMode: "按 Gen Ed 查找", noResults: "暂无匹配结果。请按课程编号或名称搜索。", notOffered: "{term}没有开设 {course}。这门课可能在其他学期开设，可以在上方切换学期查看。",
     sections: "可选班次", addSchedule: "将整门课程加入排课", courseInPlan: "课程已加入", instructorPick: "保留哪些老师", instructorHint: "点老师名字即可排除他的班次。", keepOne: "至少保留一位老师。", allInstructors: "全部", addWatch: "关注这个班次", watchShort: "关注", watchingShort: "已关注", scheduleTitle: "我的课表",
-    emptySchedule: "请从找课中添加课程，再生成排课方案。", watchesTitle: "余位关注", emptyWatches: "关注一个班次后会显示在这里。",
+    emptySchedule: "请从找课中添加课程，再生成排课方案。", watchesTitle: "余位关注", watchCadence: "开通邮件提醒后，TerpPlan 大约每 10 分钟检查一次你关注的班次（高峰时可能更晚），满员的班次一有空位就发邮件。空位可能在你看到邮件前又被抢走，收到后请尽快去 Testudo 注册。", emptyWatches: "关注一个班次后会显示在这里。",
     refresh: "立即检查", remove: "移除", added: "已将课程加入排课", watched: "已保存余位关注", conflict: "时间冲突",
-    noConflict: "没有发现时间冲突", planLimit: "每个排课方案最多添加 10 门课程。", signIn: "登录后即可保存并同步余位关注。", email: "邮箱地址", emailCode: "六位验证码", sendCode: "发送验证码", verifyCode: "验证并登录", codeSent: "验证码已发送，请查收邮箱。",
+    noConflict: "没有发现时间冲突", planLimit: "每个排课方案最多添加 10 门课程。", signIn: "登录后即可保存并同步余位关注。", email: "邮箱地址", emailCode: "六位验证码", sendCode: "发送验证码", verifyCode: "验证并登录", codeSent: "验证码已发送，请查收邮箱。", resendIn: "{s} 秒后可重新发送", resendCode: "重新发送", codeSpam: "收件箱里没有？去垃圾邮件文件夹找 TerpPlan 发来的邮件，并标记为“不是垃圾邮件”，这样之后的余位提醒也能正常收到。",
     watchLimit: "最多可以关注 10 门课（共 40 个班次），请先移除一些再添加。", watchAll: "关注全部 {n} 个班次", watchingAll: "已关注全部 {n} 个班次", watchAllHint: "任意一个班次有空位就发一封邮件。取消勾选上方的老师，就不会关注那些老师的班次。", watchAllTooMany: "{n} 个班次超过了 20 个，请先取消勾选上方的一些老师。", watchGroup: "关注了 {n} 个班次", watchGroupOpen: "{k} 个有空位", removeAll: "全部移除", emailPrivacy: "邮箱仅用于登录。验证码将在 10 分钟后失效。", wrongCode: "验证码无法验证。", emailSignedIn: "已通过邮箱登录", signOut: "退出登录",
     loading: "加载中…",
     resultFull: "已满", resultNoSections: "本学期无班次", resultSeatsUnknown: "余位未知",
@@ -245,6 +246,7 @@ function DemoBanner({ language, onSchedule }: { language: "en" | "zh"; onSchedul
 
 export default function Home() {
   const [language, setLanguage] = useState<"en" | "zh">("en");
+  useDocumentLanguage(language);
   const t = copy[language];
   // Shown after the first render (like the saved plan), so the server and client HTML match.
   const [demo, setDemo] = useState(false);
@@ -808,13 +810,26 @@ export default function Home() {
     {otherPlanCount === 0 && <span className="basis-full text-[11px] leading-5 text-[#646c68] sm:basis-auto">{t.planHint}</span>}
   </div>;
 
+  // The server accepts one code a minute per address; the resend button counts that minute down.
+  const [codeSentAt, setCodeSentAt] = useState(0);
+  const [clock, setClock] = useState(0);
+  useEffect(() => {
+    if (!codeSentAt) return;
+    const tick = () => setClock(Date.now());
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    const stop = window.setTimeout(() => window.clearInterval(timer), 61_000);
+    return () => { window.clearInterval(timer); window.clearTimeout(stop); };
+  }, [codeSentAt]);
+  const resendWait = codeSentAt ? Math.max(0, Math.ceil((codeSentAt + 60_000 - clock) / 1000)) : 0;
+
   const requestEmailCode = async () => {
     setError(""); setMessage(""); setAuthBusy(true);
     try {
       const response = await fetch("/api/auth/request-code", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email }) });
       const payload = await response.json() as ApiError;
       if (!response.ok) throw new Error(payload.error || t.error);
-      setCodeSent(true); setMessage("codeSent");
+      setCodeSent(true); setMessage("codeSent"); setCodeSentAt(Date.now());
     } catch (cause) { setError(cause instanceof Error ? cause.message : t.error); }
     finally { setAuthBusy(false); }
   };
@@ -1058,8 +1073,8 @@ export default function Home() {
         {/* Mounted (hidden) outside step 02 too, so options regenerate while courses are added from search. */}
         {restored && <div hidden={step !== "schedule"}><SchedulePlanner onChosenChange={rememberSchedule} courses={planCourses} prereqNeeds={Object.fromEntries(planCourses.map((course) => [course.courseId, prereqNeeds(course.courseId) ?? []]))} takenEditor={<TakenCoursesEditor taken={taken} language={language} />} creditsLabel={planCreditLabel} creditWarning={planCreditWarning} creditMeter={planCreditMeter} planSwitch={planSwitch} term={term} termName={termLabel(term, "en")} language={language} onUpdateCourse={(courseId, patch) => setPlanCourses((current) => current.map((course) => course.courseId === courseId ? { ...course, ...patch } : course))} onRemove={(courseId) => setPlanCourses((current) => current.filter((course) => course.courseId !== courseId))} onBack={() => setStep("find")} /></div>}
 
-        {step === "watch" && <section className="mx-auto max-w-4xl rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-8"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">03 · {t.watch}</p><h2 className="mt-2 font-serif text-3xl">{t.watchesTitle}</h2></div><button onClick={() => void refreshWatches()} disabled={checking || !watches.length} className="rounded-lg bg-[#273c38] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{checking ? t.checking : t.refresh}</button></div>
-          {authenticated === false && <div className="mt-6 rounded-xl border border-[#e3dfd6] bg-white p-5"><p className="text-sm font-medium">{t.signIn}</p><label className="mt-4 grid gap-1.5 text-xs font-medium text-[#5d6561]">{t.email}<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm text-[#202728] outline-none focus:border-[#a34a39] focus:ring-2 focus:ring-[#a34a39]/30" /></label>{codeSent && <label className="mt-3 grid gap-1.5 text-xs font-medium text-[#5d6561]">{t.emailCode}<input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={emailCode} onChange={(event) => setEmailCode(event.target.value.replace(/\D/g, "").slice(0, 6))} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm tracking-[.2em] text-[#202728] outline-none focus:border-[#a34a39] focus:ring-2 focus:ring-[#a34a39]/30" /></label>}<p className="mt-2 text-xs leading-5 text-[#646c68]">{t.emailPrivacy}</p><div className="mt-4 flex flex-wrap gap-2">{!codeSent ? <button onClick={() => void requestEmailCode()} disabled={authBusy || !email.trim()} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.sendCode}</button> : <><button onClick={() => void verifyEmailCode()} disabled={authBusy || emailCode.length !== 6} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.verifyCode}</button><button onClick={() => void requestEmailCode()} disabled={authBusy} className="rounded-lg border border-[#dedbd3] px-4 py-2.5 text-sm font-medium text-[#5d6561] disabled:opacity-50">{t.sendCode}</button></>}</div></div>}
+        {step === "watch" && <section className="mx-auto max-w-4xl rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-8"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">03 · {t.watch}</p><h2 className="mt-2 font-serif text-3xl">{t.watchesTitle}</h2><p className="mt-2 max-w-xl text-xs leading-5 text-[#5d6561]">{t.watchCadence}</p></div><button onClick={() => void refreshWatches()} disabled={checking || !watches.length} className="rounded-lg bg-[#273c38] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{checking ? t.checking : t.refresh}</button></div>
+          {authenticated === false && <div className="mt-6 rounded-xl border border-[#e3dfd6] bg-white p-5"><p className="text-sm font-medium">{t.signIn}</p><label className="mt-4 grid gap-1.5 text-xs font-medium text-[#5d6561]">{t.email}<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm text-[#202728] outline-none focus:border-[#a34a39] focus:ring-2 focus:ring-[#a34a39]/30" /></label>{codeSent && <label className="mt-3 grid gap-1.5 text-xs font-medium text-[#5d6561]">{t.emailCode}<input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={emailCode} onChange={(event) => setEmailCode(event.target.value.replace(/\D/g, "").slice(0, 6))} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm tracking-[.2em] text-[#202728] outline-none focus:border-[#a34a39] focus:ring-2 focus:ring-[#a34a39]/30" /></label>}<p className="mt-2 text-xs leading-5 text-[#646c68]">{t.emailPrivacy}</p><div className="mt-4 flex flex-wrap gap-2">{!codeSent ? <button onClick={() => void requestEmailCode()} disabled={authBusy || !email.trim()} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.sendCode}</button> : <><button onClick={() => void verifyEmailCode()} disabled={authBusy || emailCode.length !== 6} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.verifyCode}</button><button onClick={() => void requestEmailCode()} disabled={authBusy || resendWait > 0} className="rounded-lg border border-[#dedbd3] px-4 py-2.5 text-sm font-medium text-[#5d6561] disabled:opacity-50">{resendWait > 0 ? t.resendIn.replace("{s}", String(resendWait)) : t.resendCode}</button></>}</div>{codeSent && <p className="mt-2 text-xs leading-5 text-[#745424]">{t.codeSpam}</p>}</div>}
           {authenticated === true && authProvider === "email" && <div className="mt-6 flex items-center justify-between rounded-xl border border-[#e3dfd6] bg-white px-4 py-3"><span className="text-xs text-[#5d6561]">{t.emailSignedIn}</span><button onClick={() => void signOutEmail()} className="text-xs font-medium text-[#8b5148] hover:underline">{t.signOut}</button></div>}
           {authenticated === true && authProvider === "email" && <SeatEmailToggle language={language} defaultEmail={email} />}
           {authenticated !== false && !watches.length && <p className="mt-6 rounded-xl bg-[#f2f0eb] p-5 text-sm text-[#646c68]">{t.emptyWatches}</p>}{alerts.length > 0 && <div role="status" className="mt-5 rounded-xl border border-[#bdd4c1] bg-[#edf6ef] p-4 text-sm font-semibold text-[#315c43]">{language === "en" ? "Seats opened: " : "发现空位："}{alerts.join(", ")}</div>}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useDocumentLanguage } from "@/lib/document-language";
 import Link from "next/link";
 import { buildingFor, mapsUrl } from "@/lib/campus-walk";
 import { applyWeekChanges, classesOn, compareWeek, dayOf, readMyWeek, weekFromSections, WEEK_DAYS, writeMyWeek, type MyWeek, type WeekChange, type WeekClass } from "@/lib/my-week";
@@ -57,6 +58,7 @@ function ClassRow({ item, language, highlight = false }: { item: WeekClass; lang
 
 export default function MyWeekPage() {
   const [language, setLanguage] = useState<Language>("en");
+  useDocumentLanguage(language);
   const [week, setWeek] = useState<MyWeek | null | undefined>(undefined);
   const [now, setNow] = useState(() => new Date());
   const [changes, setChanges] = useState<WeekChange[]>([]);

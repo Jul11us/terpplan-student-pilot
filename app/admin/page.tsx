@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useDocumentLanguage } from "@/lib/document-language";
 import Link from "next/link";
 import type { AdminStats } from "@/lib/admin";
 import { readSavedState } from "@/lib/saved-state";
@@ -68,6 +69,7 @@ const easternTime = (value: string, language: Language) => {
 
 export default function AdminPage() {
   const [language, setLanguage] = useState<Language>("zh");
+  useDocumentLanguage(language);
   const [state, setState] = useState<State>({ status: "loading" });
   const [reload, setReload] = useState(0);
   const t = copy[language];

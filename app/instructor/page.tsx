@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useDocumentLanguage } from "@/lib/document-language";
 import Link from "next/link";
 import { dayNames, displayClock, minutes } from "@/app/components/schedule-planner";
 import type { InstructorCourse } from "@/lib/instructor";
@@ -42,6 +43,7 @@ const copy = {
 
 export default function InstructorPage() {
   const [language, setLanguage] = useState<Language>("en");
+  useDocumentLanguage(language);
   const [query, setQuery] = useState<{ name: string; term: string; course: string } | null>(null);
   const [data, setData] = useState<Payload | null>(null);
   const [failed, setFailed] = useState(false);

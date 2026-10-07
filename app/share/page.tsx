@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useDocumentLanguage } from "@/lib/document-language";
 import Link from "next/link";
 import { CalendarExport, WeeklyCalendar, dayNames, displayClock, minutes, type ScheduledSection } from "@/app/components/schedule-planner";
 import { roomLabel } from "@/lib/room";
@@ -65,6 +66,7 @@ function seatLabel(value: string | number | null | undefined, language: "en" | "
 export default function SharedSchedulePage() {
   const [shared, setShared] = useState<SharedSchedule | null>(null);
   const [language, setLanguage] = useState<"en" | "zh">("en");
+  useDocumentLanguage(language);
   const [sections, setSections] = useState<ScheduledSection[]>([]);
   const [missing, setMissing] = useState<string[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "invalid" | "failed">("loading");

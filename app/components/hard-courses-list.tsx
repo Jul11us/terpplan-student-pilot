@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useDocumentLanguage } from "@/lib/document-language";
 import type { HardCourse } from "@/lib/hard-courses";
 import { formatTermName } from "@/lib/seat-trends";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
@@ -48,6 +49,7 @@ function levelMatches(level: Level, courseLevel: number) {
 
 export function HardCoursesList({ courses, terms, builtAt }: { courses: HardCourse[]; terms: string[]; builtAt: string }) {
   const [language, setLanguage] = useState<Language>("en");
+  useDocumentLanguage(language);
   const [query, setQuery] = useState("");
   const [department, setDepartment] = useState("");
   const [level, setLevel] = useState<Level>("undergrad");

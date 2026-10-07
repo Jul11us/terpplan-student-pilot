@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useDocumentLanguage } from "@/lib/document-language";
 import { parseCourseIds, parseDegreeAudit } from "@/lib/degree-audit";
 import { extractDegreeAuditText } from "@/lib/degree-audit-pdf";
 import { AUDIT_HANDOFF_KEY, defaultBlocks, evaluateProgram, MINOR_MAJOR_OVERLAP_COURSES, unmetPrerequisites, withBaseCourses, type CourseFact, type CourseStatus, type ItemProgress, type Program } from "@/lib/programs";
@@ -164,6 +165,7 @@ const statusStyle: Record<CourseStatus | "none" | "open", string> = {
 
 export default function ProgramExplorerPage() {
   const [language, setLanguage] = useState<Language>("en");
+  useDocumentLanguage(language);
   const t = copy[language];
   const [list, setList] = useState<ProgramList | null>(null);
   const [listError, setListError] = useState(false);

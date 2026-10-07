@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useDocumentLanguage } from "@/lib/document-language";
 import { parseCourseIds, parseDegreeAudit, type AuditRequirement, type AuditResult } from "@/lib/degree-audit";
 import { extractDegreeAuditText } from "@/lib/degree-audit-pdf";
 import { GEN_ED_CATEGORIES } from "@/lib/gened-categories";
@@ -70,6 +71,7 @@ function requirementKind(requirement: AuditRequirement): "credits" | "gpa" | "co
 export default function AuditPage() {
   const router = useRouter();
   const [language, setLanguage] = useState<Language>("en");
+  useDocumentLanguage(language);
   const t = copy[language];
   const [term, setTerm] = useState("202701");
   const [terms, setTerms] = useState<string[]>([]);
