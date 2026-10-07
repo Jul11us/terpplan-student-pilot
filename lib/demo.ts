@@ -11,7 +11,7 @@ const SUFFIX = ":demo";
 export const DEMO_TERM = "202701";
 
 // Keys whose data is the student's own; each gets a ":demo" twin while the sample is on.
-const DEMO_KEYS = ["terpplan:v1", "terpplan:taken", "terpplan:my-week", "terpplan:registration-time", "terpplan:popularity-sharing"];
+const DEMO_KEYS = ["terpplan:v1", "terpplan:taken", "terpplan:my-week", "terpplan:registration-time", "terpplan:registration-day", "terpplan:popularity-sharing"];
 
 export function isDemo() {
   try { return typeof window !== "undefined" && window.sessionStorage.getItem(FLAG) === "1"; } catch { return false; }

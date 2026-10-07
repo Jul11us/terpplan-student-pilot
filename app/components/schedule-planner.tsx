@@ -768,6 +768,8 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
           const weekKey = requestKey + "|" + chosen.selectedSections.map((section) => section.section_id).join(",");
           return <div className="mb-3 rounded-xl border border-[#e3e0d8] bg-white p-3 sm:p-4"><div className="flex flex-wrap items-center gap-2 sm:gap-3"><button type="button" onClick={() => { if (writeMyWeek(weekFromSections(chosen.selectedSections, term, termName))) setWeekSavedFor(weekKey); }} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]">{weekSavedFor === weekKey ? "✓ " : ""}{t.useWeek}</button>{weekSavedFor === weekKey ? <a href="/week" className="text-xs font-semibold text-[#a34a39] hover:underline">{t.weekSaved}</a> : <p className="w-full text-[11px] leading-5 text-[#646c68] sm:w-auto sm:min-w-0 sm:flex-1">{t.weekHint}</p>}</div></div>;
         })()}
+        {/* The registration checklist below keeps this schedule saved for /register. */}
+        <div className="mb-3 rounded-xl border border-[#e3e0d8] bg-white p-3 sm:p-4"><div className="flex flex-wrap items-center gap-2 sm:gap-3"><a href="/register" target="_blank" rel="noreferrer" className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]">{language === "zh" ? "选课当天页面 ↗" : "Registration-day view ↗"}</a><p className="w-full text-[11px] leading-5 text-[#646c68] sm:w-auto sm:min-w-0 sm:flex-1">{language === "zh" ? "课号、班号、每门课的备选班次和倒计时都在一页，注册时开在 Testudo 旁边。首页顶部也有入口。" : "Course and section numbers, each course's backups and a countdown on one page to keep next to Testudo. It is also linked at the top of the home page."}</p></div></div>
         </div>
         <div className="mt-4 space-y-2">{chosen.selectedSections.map((section) => <article key={section.section_id} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{section.course_id} · {section.course_title}</p><p className="mt-1 text-sm text-[#5d6561]">{section.section_id}</p>{/* One line per meeting (lecture, lab, discussion), so the times do not run together. */}<ul className="mt-1 space-y-0.5 text-sm text-[#5d6561]">{((section.meetings ?? []).length ? (section.meetings ?? []).map((meeting) => {
           const start = minutes(meeting.start_time), end = minutes(meeting.end_time);
@@ -789,7 +791,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
         <SectionSwap key={`${requestKey}:${prefsKey}:${chosen.selectedSections.map((item) => item.section_id).join("|")}`} section={section} language={language} request={{ ...scheduleRequest, selectedSectionIds: chosen.selectedSections.map((item) => item.section_id) }} disabled={loading || !upToDate || chosenMissing.length > 0} forceOpen={false} onApply={(option) => applySwap(option, section.course_id)} />
         </article>)}</div>
         <p className="mt-3 text-xs leading-5 text-[#646c68]">{t.seatReadHint}</p>
-        <RegistrationChecklist option={chosen} others={options.filter((option) => option !== chosen)} missingCourseIds={chosenMissing} language={language} termName={termName} />
+        <RegistrationChecklist option={chosen} others={options.filter((option) => option !== chosen)} missingCourseIds={chosenMissing} language={language} termName={termName} term={term} />
       </div>}
     </div>}
   </section>;

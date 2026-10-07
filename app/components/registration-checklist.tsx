@@ -1,23 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { buildReminderIcs } from "@/lib/ics";
 import { storageKey } from "@/lib/demo";
-
-// The registration date and time the student typed, by term name, so it is there next time.
-const REMINDER_KEY = "terpplan:registration-time";
-function savedReminder(termName: string): { date: string; time: string } {
-  try {
-    const value = (JSON.parse(window.localStorage.getItem(storageKey(REMINDER_KEY)) ?? "{}") as Record<string, { date?: unknown; time?: unknown }>)[termName];
-    return { date: typeof value?.date === "string" ? value.date : "", time: typeof value?.time === "string" ? value.time : "" };
-  } catch {
-    return { date: "", time: "" };
-  }
-}
+import { readRegistrationDay, REGISTRATION_DAY_EVENT, registrationCourses, REMINDER_KEY, savedReminder, writeRegistrationDay } from "@/lib/registration-day";
+import { RegistrationCountdown } from "@/app/components/registration-countdown";
 
 type Language = "en" | "zh";
 type ChecklistSection = { course_id: string; course_title: string; section_id: string; open_seats?: string | number | null };
 type ChecklistOption = { selectedSections: ChecklistSection[] };
+type ChecklistProps = { option: ChecklistOption; others: ChecklistOption[]; missingCourseIds?: string[]; language: Language; termName?: string; term?: string };
 
 const REGISTRAR = "https://registrar.umd.edu/registration/register-classes";
 // Official pages only: TerpPlan does not describe Testudo's screens, which can change.
@@ -48,6 +40,7 @@ const copy = {
     reminderDone: "Downloaded. Open the file to add it to your calendar.",
     reminderSummary: "Register for classes · {term}", reminderBody: "Your TerpPlan course and section numbers:", reminderBackups: "Backups:",
     reminderBlocks: "Clear any registration block before this time:",
+    dayButton: "Open registration-day view", dayHint: "One page with these numbers, each course's backups next to it, and boxes to tick as you register. It works offline, so keep it open next to Testudo.",
   },
   zh: {
     title: "选课清单",
@@ -69,13 +62,14 @@ const copy = {
     reminderDone: "已下载，打开文件即可加入日历。",
     reminderSummary: "选课注册 · {term}", reminderBody: "TerpPlan 选课清单（课号 班号）：", reminderBackups: "备选班次：",
     reminderBlocks: "注册前先处理选课限制（block）：",
+    dayButton: "打开“选课当天”页面", dayHint: "一个页面集中显示这些课号和班号、每门课的备选班次，注册好一门就勾掉一门。离线也能打开，选课时开在 Testudo 旁边就行。",
   },
 } as const;
 
 const sectionNumber = (section: ChecklistSection) => section.section_id.slice(section.course_id.length + 1) || section.section_id;
 const isFull = (section: ChecklistSection) => section.open_seats !== null && section.open_seats !== undefined && section.open_seats !== "" && Number(section.open_seats) === 0;
 
-export default function RegistrationChecklist({ option, others, missingCourseIds = [], language, termName = "" }: { option: ChecklistOption; others: ChecklistOption[]; missingCourseIds?: string[]; language: Language; termName?: string }) {
+export default function RegistrationChecklist({ option, others, missingCourseIds = [], language, termName = "", term = "" }: ChecklistProps) {
   const t = copy[language];
   const [reminder, setReminder] = useState(() => typeof window === "undefined" ? { date: "", time: "" } : savedReminder(termName));
   const [reminderDone, setReminderDone] = useState(false);
@@ -86,6 +80,7 @@ export default function RegistrationChecklist({ option, others, missingCourseIds
       const all = JSON.parse(window.localStorage.getItem(storageKey(REMINDER_KEY)) ?? "{}") as Record<string, unknown>;
       window.localStorage.setItem(storageKey(REMINDER_KEY), JSON.stringify({ ...all, [termName]: next }));
     } catch { /* not remembered; the download still works */ }
+    window.dispatchEvent(new Event(REGISTRATION_DAY_EVENT));
   };
   const [copied, setCopied] = useState("");
   const [failed, setFailed] = useState(false);
@@ -119,6 +114,20 @@ export default function RegistrationChecklist({ option, others, missingCourseIds
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     setReminderDone(true);
   };
+  // The chosen option is kept for /register whenever it changes (what was already ticked off stays), so the
+  // registration-day page and its link on the home page are always up to date.
+  const saveKey = JSON.stringify([term, option.selectedSections.map((section) => [section.section_id, section.open_seats]), others.map((other) => other.selectedSections.map((section) => section.section_id)), missingCourseIds]);
+  useEffect(() => {
+    if (!term) return;
+    const courses = registrationCourses(option.selectedSections, others.map((other) => other.selectedSections));
+    const previous = readRegistrationDay();
+    const done = previous?.term === term ? previous.done.filter((id) => courses.some((course) => course.courseId === id)) : [];
+    writeRegistrationDay({ term, termName, savedAt: new Date().toISOString(), courses, missing: missingCourseIds, done });
+    window.dispatchEvent(new Event(REGISTRATION_DAY_EVENT));
+    // saveKey stands for the option, the other options and the missing courses.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saveKey, termName]);
+  const openRegistrationDay = () => { window.open("/register", "_blank", "noopener"); };
   const chip = (key: string, text: string) => <button type="button" onClick={() => void write(key, text)} title={t.copy} className="rounded-md border border-[#dedbd3] bg-[#fbfaf8] px-2 py-1 font-mono text-xs font-semibold text-[#24312d] hover:bg-white">{copied === key ? `✓ ${t.copied}` : text}</button>;
 
   return <section className="mt-6 rounded-xl border border-[#cddbd1] bg-[#f4f8f5] p-4 sm:p-5">
@@ -147,6 +156,11 @@ export default function RegistrationChecklist({ option, others, missingCourseIds
         <button type="button" onClick={downloadReminder} disabled={!reminder.date || !reminder.time} className="rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:cursor-not-allowed disabled:opacity-50">{t.reminderButton}</button>
       </div>
       {reminderDone && <p role="status" className="mt-2 text-[11px] text-[#367047]">✓ {t.reminderDone}</p>}
+      <div className="mt-2"><RegistrationCountdown date={reminder.date} time={reminder.time} language={language} /></div>
+    </div>
+    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      <button type="button" onClick={openRegistrationDay} className="rounded-lg border border-[#536d64] bg-white px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]">{t.dayButton} ↗</button>
+      <p className="min-w-0 flex-1 basis-56 text-[11px] leading-5 text-[#646c68]">{t.dayHint}</p>
     </div>
     <p className="mt-3 text-[11px] leading-5 text-[#646c68]">{t.confirm}</p>
     {failed && <p role="alert" className="mt-2 text-xs text-[#8c352c]">{t.copyFailed}</p>}

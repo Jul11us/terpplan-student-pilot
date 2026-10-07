@@ -28,6 +28,7 @@ import { readSavedState, STORAGE_KEY, swapPlans, writeSavedState } from "@/lib/s
 import { enterDemo, isDemo, leaveDemo, startDemoFromUrl, storageKey } from "@/lib/demo";
 import { fittingSections, parseOpening, scheduleWithout, type Opening } from "@/lib/seat-swap";
 import { OpeningCheck } from "@/app/components/opening-check";
+import { RegistrationDayLink } from "@/app/components/registration-day-link";
 import { formatSeatReadTime } from "@/lib/seat-time";
 import { courseSearchView, startCourseSearch, type CourseSearchState } from "@/lib/course-search";
 import { groupSections, ownMeetings } from "@/lib/section-groups";
@@ -902,6 +903,7 @@ export default function Home() {
       {demo && <DemoBanner language={language} onSchedule={() => { setStep("schedule"); window.scrollTo({ top: 0, behavior: "smooth" }); }} />}
 
       <div id="top" className="mx-auto max-w-[1320px] px-5 pb-16 pt-5 sm:px-8 sm:pt-12">
+        {restored && <RegistrationDayLink term={term} language={language} />}
         {opening && <OpeningCheck opening={opening} planCourseIds={opening.term === term ? planCourses.map((course) => course.courseId) : []} planFull={planCourses.length >= 10} reference={opening.term === term ? fitReference : null} language={language} onPin={pinOpening} onClose={() => setOpening(null)} />}
         <div className="mb-5 grid gap-4 sm:mb-8 sm:gap-6 lg:grid-cols-[1fr_auto] lg:items-end"><div><p className="mb-2 text-[11px] font-semibold uppercase tracking-[.17em] text-[#a34a39] sm:mb-3">{t.eyebrow}</p><h1 className="font-serif text-3xl leading-tight tracking-[-.03em] sm:text-5xl">{t.title}</h1>{/* The step buttons below say the same thing; on a phone the room goes to the search box. */}<p className="mt-3 hidden max-w-xl text-sm leading-6 text-[#5d6561] sm:block">{t.subtitle}</p>{restored && !demo && !planCourses.length && <button type="button" onClick={enterDemo} className="mt-2 block text-left text-xs font-semibold text-[#a34a39] hover:underline">{language === "en" ? "First time here? Try a sample schedule →" : "第一次来？先试试示例课表 →"}</button>}</div>
           <nav aria-label="Planning steps" className="grid grid-cols-3 gap-1 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-1.5 sm:flex sm:flex-wrap sm:gap-2 sm:p-2">{(["find", "schedule", "watch"] as const).map((item, index) => <button key={item} onClick={() => setStep(item)} aria-current={step === item ? "step" : undefined} className={`flex items-center justify-center gap-2 rounded-xl px-1.5 py-2 text-xs transition sm:justify-start sm:px-3 sm:text-sm ${step === item ? "bg-[#273c38] text-white" : "text-[#5d6561] hover:bg-[#eeece6]"}`}><span className="hidden h-5 w-5 place-items-center rounded-full bg-white/15 text-[10px] sm:grid">0{index + 1}</span>{t[item]}</button>)}</nav>
