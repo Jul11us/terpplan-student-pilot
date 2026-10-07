@@ -73,28 +73,122 @@ const copy = {
   },
 } as const;
 
-// A small picture of what the planner makes: a week with classes and a work shift kept free.
+// A small picture of what the planner does: one week that keeps re-planning itself. Every couple of seconds
+// one thing changes (a course is swapped, a job or the gym moves, a preference such as "no Friday classes"
+// is turned on or off) and the sections are chosen again around it, keeping every class that still fits
+// where it is. Blocks slide to their new times. With reduced motion it stays on the first week.
+const TONES = [
+  "bg-[#f9d9d6] text-[#7c2f27]", "bg-[#d3ece4] text-[#24524a]", "bg-[#f3e3b3] text-[#5f4316]", "bg-[#dcd6f0] text-[#3e3470]",
+  "bg-[#d7e6f5] text-[#24496b]", "bg-[#f8dcc4] text-[#7a3f12]", "bg-[#e2edcf] text-[#3d5520]",
+];
+const OWN_TONE = "bg-[#e6e3dc] text-[#5d6561] outline-dashed outline-1 -outline-offset-1 outline-[#bdb8ad]";
+// Days 0–4 (Mon–Fri), hours on an 8am–6pm day.
+type Meeting = { day: number; start: number; end: number };
+type Section = Meeting[];
+const pattern = (days: number[], start: number, length: number): Section => days.map((day) => ({ day, start, end: start + length }));
+const MWF = [0, 2, 4], MW = [0, 2], TUTH = [1, 3];
+// Each course with the sections it could take (lecture patterns at different times).
+const POOL: Array<{ id: string; sections: Section[] }> = [
+  { id: "MATH141", sections: [pattern(MWF, 9, 0.83), pattern(MWF, 11, 0.83), pattern(MWF, 13, 0.83), pattern(TUTH, 14, 1.25)] },
+  { id: "CMSC132", sections: [pattern(TUTH, 9.5, 1.25), pattern(TUTH, 12.5, 1.25), pattern(MW, 14, 1.25)] },
+  { id: "COMM107", sections: [pattern(MW, 8, 0.83), pattern(MW, 11, 0.83), pattern(TUTH, 11, 1.25), pattern(MW, 15, 0.83), pattern(TUTH, 16, 1.25)] },
+  { id: "PSYC100", sections: [pattern(MWF, 10, 0.83), pattern(TUTH, 14, 1.25), pattern(MW, 16, 1.25)] },
+  { id: "ENGL101", sections: [pattern(TUTH, 8, 1.25), pattern(MW, 12, 1.25), pattern(TUTH, 12.5, 1.25), pattern(MW, 15.5, 1.25)] },
+  { id: "BMGT220", sections: [pattern(MW, 10, 1.25), pattern(TUTH, 9.5, 1.25), pattern(TUTH, 15.5, 1.25)] },
+  { id: "ECON200", sections: [pattern(TUTH, 11, 1.25), pattern(MWF, 12, 0.83), pattern(MW, 13.5, 1.25)] },
+  { id: "STAT400", sections: [pattern(MW, 14, 1.25), pattern(TUTH, 9.5, 1.25), pattern(MWF, 15, 0.83)] },
+  { id: "CHEM135", sections: [pattern(MWF, 9, 0.83), pattern(MWF, 12, 0.83), pattern(MWF, 14, 0.83)] },
+  { id: "BSCI170", sections: [pattern(TUTH, 11, 1.25), pattern(TUTH, 14, 1.25), pattern(MW, 9.5, 1.25)] },
+  { id: "INST126", sections: [pattern(MW, 10, 1.25), pattern(TUTH, 15.5, 1.25), pattern(MW, 16, 1.25)] },
+  { id: "HIST200", sections: [pattern(TUTH, 12.5, 1.25), pattern(MW, 11, 1.25), pattern(MWF, 13, 0.83)] },
+  { id: "PHYS161", sections: [pattern(MWF, 10, 0.83), pattern(MWF, 15, 0.83), pattern(TUTH, 8, 1.25)] },
+  { id: "ARTT100", sections: [pattern([4], 13, 2.75), pattern([1], 13, 2.75), pattern([3], 9, 2.75)] },
+];
+const OWN: Array<{ label: { en: string; zh: string }; text: { en: string; zh: string }; meetings: Section }> = [
+  { label: { en: "Job", zh: "打工" }, text: { en: "Job Tue & Thu 1–4pm", zh: "周二周四 1–4pm 打工" }, meetings: pattern(TUTH, 13, 3) },
+  { label: { en: "Job", zh: "打工" }, text: { en: "Job Mon & Wed 3–6pm", zh: "周一周三 3–6pm 打工" }, meetings: pattern(MW, 15, 3) },
+  { label: { en: "Job", zh: "打工" }, text: { en: "Job Fri mornings", zh: "周五上午打工" }, meetings: pattern([4], 8.5, 3.5) },
+  { label: { en: "Gym", zh: "健身" }, text: { en: "Gym Tue & Thu 8–9am", zh: "周二周四早上健身" }, meetings: pattern(TUTH, 8, 1) },
+  { label: { en: "Club", zh: "社团" }, text: { en: "Club Wed 4–6pm", zh: "周三下午社团" }, meetings: pattern([2], 16, 2) },
+];
+type Preference = "none" | "noFriday" | "lateStart" | "earlyEnd";
+const PREFERENCES: Record<Preference, { en: string; zh: string } | null> = {
+  none: null, noFriday: { en: "No Friday classes", zh: "周五不上课" }, lateStart: { en: "Nothing before 10", zh: "10 点前不上课" }, earlyEnd: { en: "Done by 3pm", zh: "下午 3 点前下课" },
+};
+type Week = { courses: string[]; picked: Record<string, number>; own: number; preference: Preference };
+
+const random = (count: number) => Math.floor(Math.random() * count);
+const overlaps = (a: Meeting, b: Meeting) => a.day === b.day && a.start < b.end && b.start < a.end;
+const allowed = (section: Section, preference: Preference) => section.every((meeting) =>
+  !(preference === "noFriday" && meeting.day === 4) && !(preference === "lateStart" && meeting.start < 10) && !(preference === "earlyEnd" && meeting.end > 15));
+
+const COURSE_COUNT = 5;
+
+// Chooses a section for each course in turn: the one it has if that still fits, otherwise the first that does.
+// A course with no section left that fits is replaced by another course that fits, so the week keeps five.
+function plan(week: Week): Week {
+  const taken: Meeting[] = [...OWN[week.own]!.meetings];
+  const picked: Record<string, number> = {};
+  const courses: string[] = [];
+  const place = (id: string) => {
+    const course = POOL.find((item) => item.id === id)!;
+    const fits = (index: number) => allowed(course.sections[index]!, week.preference) && course.sections[index]!.every((meeting) => !taken.some((other) => overlaps(meeting, other)));
+    const choice = [week.picked[id] ?? 0, ...course.sections.map((_, index) => index)].find(fits);
+    if (choice === undefined) return;
+    picked[id] = choice; courses.push(id); taken.push(...course.sections[choice]!);
+  };
+  week.courses.slice(0, COURSE_COUNT).forEach(place);
+  const start = random(POOL.length);
+  for (let step = 0; step < POOL.length && courses.length < COURSE_COUNT; step += 1) {
+    const id = POOL[(start + step) % POOL.length]!.id;
+    if (!courses.includes(id) && !week.courses.includes(id)) place(id);
+  }
+  return { ...week, courses, picked };
+}
+
+// One change at a time: swap a course, move the personal commitment, or change the preference.
+function nextWeek(week: Week): Week {
+  const roll = Math.random();
+  if (roll < 0.45) {
+    const outside = POOL.map((item) => item.id).filter((id) => !week.courses.includes(id));
+    const out = random(week.courses.length);
+    return plan({ ...week, courses: [...week.courses.filter((_, index) => index !== out), outside[random(outside.length)]!] });
+  }
+  if (roll < 0.75) return plan({ ...week, own: (week.own + 1 + random(OWN.length - 1)) % OWN.length });
+  const options = (Object.keys(PREFERENCES) as Preference[]).filter((item) => item !== week.preference);
+  return plan({ ...week, preference: options[random(options.length)]! });
+}
+
+const FIRST_WEEK = plan({ courses: ["MATH141", "CMSC132", "COMM107", "PSYC100", "ENGL101"], picked: {}, own: 0, preference: "none" });
+const toneOf = (id: string) => TONES[[...id].reduce((sum, char) => sum + char.charCodeAt(0), 0) % TONES.length]!;
+
 function TimetableSketch({ language }: { language: Language }) {
   const days = language === "zh" ? ["周一", "周二", "周三", "周四", "周五"] : ["Mon", "Tue", "Wed", "Thu", "Fri"];
-  const blocks: Array<{ day: number; top: number; height: number; label: string; tone: string }> = [
-    { day: 0, top: 6, height: 18, label: "MATH141", tone: "bg-[#f9d9d6] text-[#7c2f27]" },
-    { day: 2, top: 6, height: 18, label: "MATH141", tone: "bg-[#f9d9d6] text-[#7c2f27]" },
-    { day: 4, top: 6, height: 18, label: "MATH141", tone: "bg-[#f9d9d6] text-[#7c2f27]" },
-    { day: 1, top: 14, height: 22, label: "CMSC132", tone: "bg-[#d3ece4] text-[#24524a]" },
-    { day: 3, top: 14, height: 22, label: "CMSC132", tone: "bg-[#d3ece4] text-[#24524a]" },
-    { day: 0, top: 32, height: 16, label: "COMM107", tone: "bg-[#f3e3b3] text-[#5f4316]" },
-    { day: 2, top: 32, height: 16, label: "COMM107", tone: "bg-[#f3e3b3] text-[#5f4316]" },
-    { day: 1, top: 52, height: 30, label: language === "zh" ? "打工" : "Job", tone: "bg-[#e6e3dc] text-[#5d6561] border border-dashed border-[#bdb8ad]" },
-    { day: 3, top: 52, height: 30, label: language === "zh" ? "打工" : "Job", tone: "bg-[#e6e3dc] text-[#5d6561] border border-dashed border-[#bdb8ad]" },
-    { day: 4, top: 40, height: 18, label: "PSYC100", tone: "bg-[#dcd6f0] text-[#3e3470]" },
+  const [week, setWeek] = useState<Week>(FIRST_WEEK);
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = window.setInterval(() => setWeek((current) => nextWeek(current)), 2200);
+    return () => window.clearInterval(timer);
+  }, []);
+  const at = (hour: number) => ((hour - 8) / 10) * 100;
+  const own = OWN[week.own]!;
+  const preference = PREFERENCES[week.preference];
+  const blocks = [
+    ...week.courses.flatMap((id) => POOL.find((item) => item.id === id)!.sections[week.picked[id]!]!.map((meeting, index) => ({ key: `${id}-${index}`, label: id, tone: toneOf(id), meeting }))),
+    ...own.meetings.map((meeting, index) => ({ key: `own-${index}`, label: own.label[language], tone: OWN_TONE, meeting })),
   ];
-  return <div aria-hidden="true" className="rounded-2xl border border-[#e0ddd5] bg-white p-3 shadow-sm">
-    <div className="grid grid-cols-5 gap-1.5 text-center text-[10px] font-semibold text-[#646c68]">{days.map((day) => <span key={day}>{day}</span>)}</div>
-    <div className="relative mt-2 grid h-56 grid-cols-5 gap-1.5">
-      {days.map((day) => <div key={day} className="rounded-md bg-[#f7f5f0]" />)}
-      {blocks.map((block, index) => <div key={index} className={`absolute flex items-center justify-center rounded-md text-[10px] font-semibold ${block.tone}`} style={{ left: `calc(${block.day} * (100% + 6px) / 5)`, width: "calc((100% - 24px) / 5)", top: `${block.top}%`, height: `${block.height}%` }}>{block.label}</div>)}
+  return <figure aria-hidden="true" className="rounded-2xl border border-[#e0ddd5] bg-white p-3 shadow-sm">
+    <figcaption className="mb-3 flex min-h-7 flex-wrap items-center gap-1.5 px-1 text-[11px] font-semibold">
+      <span className="rounded-full bg-[#f1efe9] px-2.5 py-1 text-[#48534f] transition-all">{own.text[language]}</span>
+      {preference && <span className="rounded-full bg-[#edf3ef] px-2.5 py-1 text-[#273c38]">{preference[language]}</span>}
+    </figcaption>
+    <div className="grid grid-cols-5 gap-1.5 text-center text-[10px] font-semibold text-[#646c68]">{days.map((day, index) => <span key={day} className={`transition-opacity duration-500 ${week.preference === "noFriday" && index === 4 ? "opacity-40" : ""}`}>{day}</span>)}</div>
+    <div className="relative mt-2 grid h-60 grid-cols-5 gap-1.5">
+      {days.map((day, index) => <div key={day} className={`rounded-md transition-colors duration-500 ${week.preference === "noFriday" && index === 4 ? "bg-[#efece6]" : "bg-[#f7f5f0]"}`} />)}
+      {blocks.map(({ key, label, tone, meeting }) => <div key={key} className={`sketch-in absolute flex items-center justify-center overflow-hidden rounded-md text-[10px] font-semibold transition-all duration-700 ease-out ${tone}`}
+        style={{ left: `calc(${meeting.day} * (100% + 6px) / 5)`, width: "calc((100% - 24px) / 5)", top: `${at(meeting.start)}%`, height: `${at(meeting.end) - at(meeting.start)}%` }}>{label}</div>)}
     </div>
-  </div>;
+  </figure>;
 }
 
 export default function Home() {

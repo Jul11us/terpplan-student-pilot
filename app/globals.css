@@ -222,3 +222,8 @@ select:not([multiple]) {
   #print-sheet tr { break-inside: avoid; }
   #print-sheet a { text-decoration: none; color: inherit; }
 }
+
+/* A class appearing in the home page's moving timetable fades and grows in (no motion if reduced). */
+@keyframes sketch-in { from { opacity: 0; transform: scale(.85); } to { opacity: 1; transform: none; } }
+.sketch-in { animation: sketch-in .5s ease-out; }
+@media (prefers-reduced-motion: reduce) { .sketch-in { animation: none; transition: none; } }
