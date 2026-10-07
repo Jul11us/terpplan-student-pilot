@@ -44,7 +44,9 @@ export function sameSyncState(a: SyncState, b: SyncState) {
   return canonicalJson(content(a)) === canonicalJson(content(b));
 }
 
-export type SyncDecision = "upload" | "download" | "conflict" | "inSync";
+// "askUpload": the account is empty but this device has data it never synced with this account (someone
+// else's plan on a shared computer, say), so the student is asked before it goes into their account.
+export type SyncDecision = "upload" | "download" | "conflict" | "askUpload" | "inSync";
 
 // What to do when this device and the account are compared.
 //   lastSynced: when the two last matched (null when this device never synced with this account)
@@ -52,10 +54,19 @@ export type SyncDecision = "upload" | "download" | "conflict" | "inSync";
 export function decideSync(input: { local: SyncState; server: { state: SyncState; updatedAt: string } | null; lastSynced: string | null; localChanged: boolean }): SyncDecision {
   const { local, server, lastSynced, localChanged } = input;
   const localEmpty = syncStateEmpty(local);
-  if (!server) return localEmpty ? "inSync" : "upload";
+  if (!server) return localEmpty ? "inSync" : lastSynced ? "upload" : "askUpload";
   if (sameSyncState(local, server.state)) return "inSync";
   const serverChanged = !lastSynced || server.updatedAt > lastSynced;
   if (!serverChanged) return localChanged ? "upload" : "inSync";
   if (!localChanged || localEmpty) return "download";
   return "conflict";
 }
+
+// The courses of the plan on screen for a term, for the "which copy do you keep?" question.
+export function planSummary(state: SyncState) {
+  const term = state.saved.term ?? Object.keys(state.saved.plans)[0] ?? "";
+  return { term, courses: (state.saved.plans[term] ?? []).map((course) => course.courseId), commitments: state.saved.preferences?.busyBlocks?.length ?? 0 };
+}
+
+// Everything a student's planner keeps in this browser, for "sign out and clear this device".
+export const PERSONAL_KEYS = ["terpplan:v1", "terpplan:taken", "terpplan:registration-time", "terpplan:registration-day", "terpplan:my-week", "terpplan:sync-meta"];

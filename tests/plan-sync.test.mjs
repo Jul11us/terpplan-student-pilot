@@ -18,7 +18,8 @@ const state = (...ids) => parseSyncState(plan(...ids));
 test("which side wins: newer changes upload or download, both changed asks the student", () => {
   const local = state("MATH141"), other = state("CMSC132"), empty = parseSyncState({ saved: { plans: {} } });
   assert.ok(syncStateEmpty(empty));
-  assert.equal(decideSync({ local, server: null, lastSynced: null, localChanged: true }), "upload");
+  assert.equal(decideSync({ local, server: null, lastSynced: null, localChanged: true }), "askUpload", "a plan this account never had on this device: ask first");
+  assert.equal(decideSync({ local, server: null, lastSynced: "2026-10-01T10:00:00.000Z", localChanged: true }), "upload", "already this account's plan");
   assert.equal(decideSync({ local: empty, server: null, lastSynced: null, localChanged: false }), "inSync");
   assert.equal(decideSync({ local, server: { state: local, updatedAt: "2026-10-01T10:00:00.000Z" }, lastSynced: null, localChanged: true }), "inSync", "same content");
   const server = { state: other, updatedAt: "2026-10-08T12:00:00.000Z" };
@@ -70,4 +71,12 @@ test("deleting removes the account's copy", async () => {
   assert.equal((await DELETE(request("DELETE"))).status, 200);
   assert.equal((await (await GET(request("GET"))).json()).state, null);
   assert.equal(database.sqlite.prepare("SELECT COUNT(*) AS n FROM plan_sync").get().n, 0);
+});
+
+test("the question shows the term's courses and how many commitments each copy has", async () => {
+  const { planSummary, PERSONAL_KEYS } = await import("../lib/plan-sync.ts");
+  assert.deepEqual(planSummary(state("MATH141", "CMSC132")), { term: "202701", courses: ["MATH141", "CMSC132"], commitments: 1 });
+  assert.deepEqual(planSummary(parseSyncState({ saved: { plans: {} } })), { term: "", courses: [], commitments: 0 });
+  // "Sign out and clear" removes every key that holds the student's own planner data.
+  for (const key of ["terpplan:v1", "terpplan:taken", "terpplan:registration-time", "terpplan:registration-day", "terpplan:my-week", "terpplan:sync-meta"]) assert.ok(PERSONAL_KEYS.includes(key), key);
 });
