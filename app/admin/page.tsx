@@ -30,7 +30,7 @@ const copy = {
     visits: "Visitors", visitsNote: "Each browser counts once a day; \"new\" means it had never opened TerpPlan before. Counting started {d}.",
     visitsNoteEmpty: "Each browser counts once a day; \"new\" means it had never opened TerpPlan before. No visits counted yet.",
     vToday: "Today", vTodayNote: "{n} new", v7: "Last 7 days", v7Note: "visitor-days", v30: "Last 30 days", v30Note: "visitor-days", vPeople: "Different people so far", vPeopleNote: "first-time browsers since counting began",
-    vDaily: "Per day, last 30 days", vNew: "new", vReturning: "returning", alertsHeading: "Seat alert emails",
+    vDaily: "Per day, last 30 days", vNew: "New", vReturning: "Returning", vTotal: "Total", alertsHeading: "Seat alert emails",
   },
   zh: {
     eyebrow: "仅站长可见", title: "网站数据", back: "← 返回 TerpPlan", refresh: "刷新",
@@ -52,7 +52,7 @@ const copy = {
     visits: "访问人数", visitsNote: "同一浏览器每天只算一次；“新访客”是第一次打开 TerpPlan 的浏览器。从 {d} 开始统计。",
     visitsNoteEmpty: "同一浏览器每天只算一次；“新访客”是第一次打开 TerpPlan 的浏览器。还没有统计到访问。",
     vToday: "今天", vTodayNote: "其中 {n} 位新访客", v7: "最近 7 天", v7Note: "人次（每人每天算一次）", v30: "最近 30 天", v30Note: "人次（每人每天算一次）", vPeople: "累计来过的人", vPeopleNote: "开始统计以来第一次来的浏览器数",
-    vDaily: "最近 30 天每天", vNew: "新访客", vReturning: "老访客", alertsHeading: "余位邮件通知",
+    vDaily: "最近 30 天每天", vNew: "新访客", vReturning: "老访客", vTotal: "合计", alertsHeading: "余位邮件通知",
   },
 } as const;
 
@@ -133,19 +133,26 @@ export default function AdminPage() {
           </div>
           {stats.visitorsByDay.length > 0 && (() => {
             const max = Math.max(1, ...stats.visitorsByDay.map((row) => row.visitors));
+            const colon = language === "zh" ? "：" : ": ";
+            const unit = language === "zh" ? " 人" : "";
             return <>
               <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#5d6561]">
                 <span className="font-medium">{t.vDaily}</span>
                 <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#273c38]" />{t.vNew}</span>
                 <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#8fa79d]" />{t.vReturning}</span>
               </div>
-              <ul className="mt-2 space-y-1.5">{stats.visitorsByDay.map((row) => <li key={row.day} title={`${t.vNew} ${row.newVisitors} · ${t.vReturning} ${row.visitors - row.newVisitors}`} className="grid grid-cols-[5.5rem_minmax(0,1fr)_2.5rem] items-center gap-3 text-xs">
+              <ul className="mt-2 space-y-1.5">{stats.visitorsByDay.map((row) => <li key={row.day} className="group relative grid grid-cols-[5.5rem_minmax(0,1fr)_2.5rem] items-center gap-3 text-xs">
                 <span className="text-[#5d6561]">{row.day.slice(5)}</span>
                 <span className="h-2.5 rounded-full bg-[#ece9e2]"><span className="flex h-full overflow-hidden rounded-full" style={{ width: `${(row.visitors / max) * 100}%` }}>
                   <span className="h-full bg-[#273c38]" style={{ width: `${row.visitors ? (row.newVisitors / row.visitors) * 100 : 0}%` }} />
                   <span className="h-full flex-1 bg-[#8fa79d]" />
                 </span></span>
                 <span className="text-right font-semibold text-[#24312d]">{row.visitors}</span>
+                <span className="pointer-events-none absolute bottom-full left-[5.5rem] z-10 mb-1 hidden whitespace-nowrap rounded-lg bg-[#273c38] px-2.5 py-1.5 text-[11px] leading-5 text-white shadow-md group-hover:block">
+                  <span className="block">{t.vNew}{colon}<b className="font-semibold">{row.newVisitors}</b>{unit}</span>
+                  <span className="block">{t.vReturning}{colon}<b className="font-semibold">{row.visitors - row.newVisitors}</b>{unit}</span>
+                  <span className="block text-[#c9d8d1]">{t.vTotal}{colon}{row.visitors}{unit}</span>
+                </span>
               </li>)}</ul>
             </>;
           })()}
