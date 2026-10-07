@@ -75,7 +75,7 @@ export function HardCoursesList({ courses, terms, builtAt }: { courses: HardCour
   const control = "rounded-lg border border-[#d9d6ce] bg-white px-3 py-2 text-sm outline-none focus:border-[#a34a39] focus:ring-2 focus:ring-[#a34a39]/30";
 
   return <main className="min-h-screen bg-[#f5f3ef] text-[#202728]">
-    <header className="border-b border-[#dedbd3] bg-[#fbfaf8]"><div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-5 py-4 sm:px-8"><Link href="/" className="flex items-center gap-3 font-semibold"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#bd302f] font-serif text-lg text-white">T</span>TerpPlan</Link><div className="flex items-center gap-3"><Link href="/" className="inline-flex items-center gap-1.5 rounded-lg border border-[#d9d6ce] bg-white px-3 py-1.5 text-xs font-semibold text-[#273c38] shadow-sm hover:border-[#536d64] hover:bg-[#edf3ef]"><span aria-hidden="true">←</span>{t.home}</Link><button type="button" onClick={() => { const next = language === "en" ? "zh" : "en"; setLanguage(next); writeSavedState({ language: next }); }} className="rounded-lg border border-[#dcd9d0] px-3 py-2 text-xs">{language === "en" ? "中文" : "English"}</button></div></div></header>
+    <header className="border-b border-[#dedbd3] bg-[#fbfaf8]"><div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-5 py-4 sm:px-8"><Link href="/" className="flex items-center gap-3 font-semibold"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#bd302f] font-serif text-lg text-white">T</span>TerpPlan</Link><div className="flex items-center gap-3"><Link href="/plan" className="inline-flex items-center gap-1.5 rounded-lg border border-[#d9d6ce] bg-white px-3 py-1.5 text-xs font-semibold text-[#273c38] shadow-sm hover:border-[#536d64] hover:bg-[#edf3ef]"><span aria-hidden="true">←</span>{t.home}</Link><button type="button" onClick={() => { const next = language === "en" ? "zh" : "en"; setLanguage(next); writeSavedState({ language: next }); }} className="rounded-lg border border-[#dcd9d0] px-3 py-2 text-xs">{language === "en" ? "中文" : "English"}</button></div></div></header>
     <div className="mx-auto max-w-5xl px-5 pb-16 pt-10 sm:px-8">
       <p className="text-[11px] font-semibold uppercase tracking-[.17em] text-[#a34a39]">{t.eyebrow}</p>
       <h1 className="mt-3 max-w-3xl font-serif text-4xl leading-tight sm:text-5xl">{t.title}</h1>
@@ -114,7 +114,7 @@ export function HardCoursesList({ courses, terms, builtAt }: { courses: HardCour
               </li>;
             })}</ul>
           </div>
-          <Link href={`/?course=${course.id}`} className="ml-12 shrink-0 rounded-lg border border-[#536d64] px-3 py-1.5 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef] sm:ml-0">{t.open}</Link>
+          <Link href={`/plan?course=${course.id}`} className="ml-12 shrink-0 rounded-lg border border-[#536d64] px-3 py-1.5 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef] sm:ml-0">{t.open}</Link>
         </div>
       </li>)}</ol> : <p className="mt-4 rounded-xl border border-[#e0ddd5] bg-[#fbfaf8] px-4 py-3 text-sm text-[#5d6561]">{t.none}</p>}
       {filtered.length > visible.length && <button type="button" onClick={() => setShown((value) => value + PAGE)} className="mt-4 rounded-lg border border-[#d9d6ce] bg-white px-4 py-2 text-sm font-semibold text-[#273c38] hover:bg-[#edf3ef]">{t.more}</button>}
@@ -122,7 +122,7 @@ export function HardCoursesList({ courses, terms, builtAt }: { courses: HardCour
       <section className="mt-10 rounded-2xl border border-[#cddbd1] bg-[#edf3ef] p-5 sm:p-6">
         <h2 className="font-serif text-2xl text-[#273c38]">{t.cta}</h2>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-[#315c43]">{t.ctaBody}</p>
-        <Link href="/" className="mt-4 inline-block rounded-lg bg-[#273c38] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d302c]">{t.ctaButton}</Link>
+        <Link href="/plan" className="mt-4 inline-block rounded-lg bg-[#273c38] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d302c]">{t.ctaButton}</Link>
       </section>
     </div>
   </main>;

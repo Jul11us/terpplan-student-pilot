@@ -77,7 +77,7 @@ export default function InstructorPage() {
   return <main className="min-h-screen bg-[#f5f3ef] text-[#202728]">
     <header className="border-b border-[#dedbd3] bg-[#fbfaf8]"><div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3">
       <Link href="/" className="flex items-center gap-2 font-semibold"><span className="grid h-8 w-8 place-items-center rounded-lg bg-[#bd302f] font-serif text-white">T</span>TerpPlan</Link>
-      <div className="flex items-center gap-2"><Link href="/" className="rounded-lg border border-[#d9d6ce] bg-white px-3 py-1.5 text-xs font-semibold text-[#273c38]">{t.plan}</Link><button type="button" onClick={switchLanguage} className="rounded-lg border border-[#dcd9d0] px-3 py-1.5 text-xs">{language === "en" ? "中文" : "English"}</button></div>
+      <div className="flex items-center gap-2"><Link href="/plan" className="rounded-lg border border-[#d9d6ce] bg-white px-3 py-1.5 text-xs font-semibold text-[#273c38]">{t.plan}</Link><button type="button" onClick={switchLanguage} className="rounded-lg border border-[#dcd9d0] px-3 py-1.5 text-xs">{language === "en" ? "中文" : "English"}</button></div>
     </div></header>
     <div className="mx-auto max-w-3xl px-4 pb-12 pt-6">
       {query && !query.name && <p className="text-sm text-[#5d6561]">{t.missingName}</p>}
@@ -94,7 +94,7 @@ export default function InstructorPage() {
         <h2 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[#5d6561]">{t.teaching.replace("{term}", term)}</h2>
         {!data.courses?.length && <p className="mt-2 rounded-xl bg-[#f2f0eb] p-4 text-sm text-[#5d6561]">{t.none.replace("{term}", term)}</p>}
         <div className="mt-2 space-y-3">{data.courses?.map((course) => <article key={course.courseId} className="rounded-xl border border-[#e7e4dc] bg-white p-4">
-          <div className="flex flex-wrap items-baseline justify-between gap-2"><h3 className="font-semibold">{course.courseId}{course.title ? <span className="font-normal text-[#5d6561]"> · {course.title}</span> : null}</h3><Link href={`/?course=${course.courseId}`} className="text-xs font-semibold text-[#a34a39] hover:underline">{t.open}</Link></div>
+          <div className="flex flex-wrap items-baseline justify-between gap-2"><h3 className="font-semibold">{course.courseId}{course.title ? <span className="font-normal text-[#5d6561]"> · {course.title}</span> : null}</h3><Link href={`/plan?course=${course.courseId}`} className="text-xs font-semibold text-[#a34a39] hover:underline">{t.open}</Link></div>
           <ul className="mt-2 divide-y divide-[#ece9e2]">{course.sections.map((section) => {
             const open = section.openSeats;
             const badge = open === null ? t.seatsUnknown : open > 0 ? (section.seats !== null ? t.openOf.replace("{n}", String(open)).replace("{total}", String(section.seats)) : String(open)) : t.full;

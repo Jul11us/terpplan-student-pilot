@@ -1,4 +1,4 @@
-// "Try a sample": terpplan.com/?demo=1 opens a ready-made student (courses, a campus job, courses already
+// "Try a sample": terpplan.com/plan?demo=1 (or the old terpplan.com/?demo=1) opens a ready-made student (courses, a campus job, courses already
 // taken) to play with, without touching the visitor's own plan. While the sample is on, every place this
 // browser stores planner data uses a separate ":demo" copy, so leaving the sample brings the real plan back
 // exactly as it was. The sample lasts for the tab (sessionStorage); closing the tab or "Leave sample" ends it.
@@ -82,6 +82,6 @@ export function leaveDemo() {
     window.sessionStorage.removeItem(FLAG);
     for (const key of DEMO_KEYS) window.localStorage.removeItem(key + SUFFIX);
   } catch { /* nothing to clean up */ }
-  window.history.replaceState(null, "", "/");
+  window.history.replaceState(null, "", "/plan");
   window.location.reload();
 }

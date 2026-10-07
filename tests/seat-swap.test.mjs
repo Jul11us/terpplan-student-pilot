@@ -16,7 +16,7 @@ const comm0101 = [meet("MW", "8:00am", "8:50am")];
 const schedule = [meet("MWF", "9:00am", "9:50am"), ...comm0101, meet("TuTh", "13:00", "16:00")];
 
 test("the email link carries the section and term, and the page reads it back", () => {
-  assert.equal(openingPath("202701", "COMM107-0201"), "/?opening=COMM107-0201&term=202701");
+  assert.equal(openingPath("202701", "COMM107-0201"), "/plan?opening=COMM107-0201&term=202701");
   assert.deepEqual(parseOpening("?opening=comm107-0201&term=202701"), { courseId: "COMM107", sectionId: "COMM107-0201", term: "202701" });
   assert.deepEqual(parseOpening("?opening=BMGT289I-0101&term=202701")?.courseId, "BMGT289I");
   for (const bad of ["?opening=COMM107&term=202701", "?opening=COMM107-0201", "?opening=<x>-1&term=202701", "?term=202701"]) assert.equal(parseOpening(bad), null, bad);
@@ -46,8 +46,8 @@ test("only the sections that fit are offered for watching", () => {
 test("each section in a seat alert links to the schedule check, after the Testudo link", () => {
   const row = { sectionId: "COMM107-0201", term: "202701", courseTitle: "Oral Communication", openSeats: 2, lastSuccessAt: "2026-10-20T15:00:00Z" };
   const message = alertEmail([row], "token");
-  assert.match(message.text, /https:\/\/terpplan\.com\/\?opening=COMM107-0201&term=202701/);
-  assert.match(message.html, /href="https:\/\/terpplan\.com\/\?opening=COMM107-0201&amp;term=202701"/);
+  assert.match(message.text, /https:\/\/terpplan\.com\/plan\?opening=COMM107-0201&term=202701/);
+  assert.match(message.html, /href="https:\/\/terpplan\.com\/plan\?opening=COMM107-0201&amp;term=202701"/);
   assert.ok(message.html.indexOf("Register in Testudo") > 0);
   assert.match(message.html, /适合我的课表吗/);
 });

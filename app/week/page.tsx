@@ -114,12 +114,12 @@ export default function MyWeekPage() {
   return <main className="min-h-screen bg-[#f5f3ef] text-[#202728]">
     <header className="border-b border-[#dedbd3] bg-[#fbfaf8]"><div className="mx-auto flex max-w-2xl items-center justify-between gap-3 px-4 py-3">
       <Link href="/" className="flex items-center gap-2 font-semibold"><span className="grid h-8 w-8 place-items-center rounded-lg bg-[#bd302f] font-serif text-white">T</span>TerpPlan</Link>
-      <div className="flex items-center gap-2"><Link href="/" className="rounded-lg border border-[#d9d6ce] bg-white px-3 py-1.5 text-xs font-semibold text-[#273c38]">{t.plan}</Link><button type="button" onClick={switchLanguage} className="rounded-lg border border-[#dcd9d0] px-3 py-1.5 text-xs">{language === "en" ? "中文" : "English"}</button></div>
+      <div className="flex items-center gap-2"><Link href="/plan" className="rounded-lg border border-[#d9d6ce] bg-white px-3 py-1.5 text-xs font-semibold text-[#273c38]">{t.plan}</Link><button type="button" onClick={switchLanguage} className="rounded-lg border border-[#dcd9d0] px-3 py-1.5 text-xs">{language === "en" ? "中文" : "English"}</button></div>
     </div></header>
     <div className="mx-auto max-w-2xl px-4 pb-12 pt-6">
       <h1 className="font-serif text-3xl">{t.title}</h1>
       {week && <p className="mt-1 text-xs text-[#5d6561]">{t.saved.replace("{term}", week.termName).replace("{date}", savedDate)}</p>}
-      {week === null && <div className="mt-5 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5"><p className="text-sm leading-6 text-[#48534f]">{t.empty}</p><Link href="/" className="mt-3 inline-block rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white">{t.emptyButton}</Link></div>}
+      {week === null && <div className="mt-5 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5"><p className="text-sm leading-6 text-[#48534f]">{t.empty}</p><Link href="/plan" className="mt-3 inline-block rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white">{t.emptyButton}</Link></div>}
       {week && changes.length > 0 && <section role="status" className="mt-5 rounded-2xl border border-[#ead8b5] bg-[#fff8e8] p-4 text-[#745424]">
         <h2 className="text-sm font-semibold">⚠ {t.changesTitle}</h2>
         <ul className="mt-2 space-y-2 text-xs leading-5">{changes.map((change) => <li key={change.sectionId}>

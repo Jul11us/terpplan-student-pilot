@@ -12,7 +12,7 @@ const SECTION = /^([A-Z]{4}\d{3}[A-Z0-9]*)-([A-Z0-9]{1,6})$/;
 
 // The link in a seat alert email, relative to the site.
 export function openingPath(term: string, sectionId: string) {
-  return `/?opening=${encodeURIComponent(sectionId)}&term=${encodeURIComponent(term)}`;
+  return `/plan?opening=${encodeURIComponent(sectionId)}&term=${encodeURIComponent(term)}`;
 }
 
 export function parseOpening(search: string): Opening | null {

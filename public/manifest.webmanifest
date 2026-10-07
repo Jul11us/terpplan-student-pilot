@@ -14,6 +14,6 @@
   ],
   "shortcuts": [
     { "name": "My week", "url": "/week?source=home-screen", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
-    { "name": "Plan courses", "url": "/", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] }
+    { "name": "Plan courses", "url": "/plan", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] }
   ]
 }
