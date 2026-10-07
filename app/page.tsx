@@ -24,6 +24,7 @@ import SectionProfessors from "@/app/components/section-professors";
 import type { ProfessorSummary } from "@/lib/planetterp";
 import { roomLabel } from "@/lib/room";
 import { readSavedState, STORAGE_KEY, swapPlans, writeSavedState } from "@/lib/saved-state";
+import { enterDemo, isDemo, leaveDemo, startDemoFromUrl, storageKey } from "@/lib/demo";
 import { formatSeatReadTime } from "@/lib/seat-time";
 import { courseSearchView, startCourseSearch, type CourseSearchState } from "@/lib/course-search";
 import { groupSections, ownMeetings } from "@/lib/section-groups";
@@ -205,9 +206,46 @@ function ResultFacts({ credits, seats, gpa, fit, t }: { credits?: string; seats:
   return <span className="mt-1 block text-xs text-[#646c68]">{creditText}{creditText && seatText ? " · " : ""}{seatText && <span className={`font-medium ${tone}`}>{seatText}</span>}{typeof gpa === "number" ? <span className="text-[#315c43]"> · {t.sortGpaShort} {gpa.toFixed(2)}</span> : null}{fit ? <span className={`block font-medium ${fit.fit ? "text-[#367047]" : fit.tba ? "text-[#646c68]" : "text-[#8f4538]"}`}>{fit.fit ? t.fitSome.replace("{n}", String(fit.fit)) : fit.tba ? t.fitTba : t.fitNone}</span> : null}</span>;
 }
 
+// ?demo=1 sets up the sample student before anything reads this browser's saved plan.
+startDemoFromUrl();
+
+const DEMO_COPY = {
+  en: {
+    title: "You are trying a sample plan",
+    body: "A sophomore's spring plan: 5 courses, a campus job Tuesday and Thursday 1–4pm, MATH140 and CMSC131 already done. Change anything; your own plan is kept aside and comes back when you leave.",
+    steps: ["Open Schedule to see ranked options", "Change a preference (no Friday classes, a longer shift) and see what changes", "Click a class in the timetable to swap sections", "See why COMM107 is worth a seat alert"],
+    schedule: "Go to Schedule", leave: "Leave sample",
+  },
+  zh: {
+    title: "你正在试用示例课表",
+    body: "一位大二学生的春季计划：5 门课，周二、周四下午 1–4 点要打工，已修 MATH140 和 CMSC131。可以随便改，你自己的课表已经单独保存好，退出示例后就会回来。",
+    steps: ["打开“排课”看排好序的方案", "改一个偏好（比如周五不上课、打工时间更长），看看结果怎么变", "点课表里的一门课换班次", "看看为什么 COMM107 值得开余位提醒"],
+    schedule: "去排课", leave: "退出示例",
+  },
+} as const;
+
+function DemoBanner({ language, onSchedule }: { language: "en" | "zh"; onSchedule: () => void }) {
+  const t = DEMO_COPY[language];
+  return <div role="region" aria-label={t.title} className="border-b border-[#ead8b5] bg-[#fff8e8]"><div className="mx-auto max-w-[1320px] px-5 py-3 sm:px-8">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0 max-w-3xl">
+        <p className="text-sm font-semibold text-[#5f4316]">{t.title}</p>
+        <p className="mt-1 text-xs leading-5 text-[#745424]">{t.body}</p>
+        <ol className="mt-2 grid gap-x-5 gap-y-1 text-xs text-[#5f4316] sm:grid-cols-2">{t.steps.map((step, index) => <li key={step} className="flex gap-1.5"><span className="font-semibold">{index + 1}.</span><span>{step}</span></li>)}</ol>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <button type="button" onClick={onSchedule} className="rounded-lg bg-[#273c38] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1d302c]">{t.schedule}</button>
+        <button type="button" onClick={leaveDemo} className="rounded-lg border border-[#c99a4a] bg-white px-3 py-1.5 text-xs font-semibold text-[#5f4316] hover:bg-[#fffaf0]">{t.leave}</button>
+      </div>
+    </div>
+  </div></div>;
+}
+
 export default function Home() {
   const [language, setLanguage] = useState<"en" | "zh">("en");
   const t = copy[language];
+  // Shown after the first render (like the saved plan), so the server and client HTML match.
+  const [demo, setDemo] = useState(false);
   const [step, setStep] = useState<"find" | "schedule" | "watch">("find");
   const [term, setTerm] = useState("202701");
   const [terms, setTerms] = useState<string[]>([]);
@@ -341,6 +379,7 @@ export default function Home() {
     const restore = window.setTimeout(() => {
       const saved = readSavedState();
       savedPlansRef.current = saved.plans;
+      setDemo(isDemo());
       if (saved.language) setLanguage(saved.language);
       if (saved.term) switchTerm(saved.term);
       // Only Gen Ed category codes travel in this link; nothing from the audit itself does.
@@ -390,7 +429,7 @@ export default function Home() {
   useEffect(() => { termRef.current = term; }, [term]);
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
-      if (event.key !== null && event.key !== STORAGE_KEY) return;
+      if (event.key !== null && event.key !== storageKey(STORAGE_KEY)) return;
       const saved = readSavedState();
       savedPlansRef.current = saved.plans;
       applyingOtherTabRef.current = true;
@@ -529,7 +568,7 @@ export default function Home() {
   useEffect(() => {
     const load = () => setTaken(readTaken());
     load();
-    const onStorage = (event: StorageEvent) => { if (event.key === TAKEN_KEY) load(); };
+    const onStorage = (event: StorageEvent) => { if (event.key === storageKey(TAKEN_KEY)) load(); };
     window.addEventListener(TAKEN_EVENT, load);
     window.addEventListener("storage", onStorage);
     return () => { window.removeEventListener(TAKEN_EVENT, load); window.removeEventListener("storage", onStorage); };
@@ -825,9 +864,10 @@ export default function Home() {
         <div className="flex items-center gap-3"><button onClick={() => setLanguage(language === "en" ? "zh" : "en")} className="whitespace-nowrap rounded-lg border border-[#dcd9d0] px-2.5 py-2 text-xs font-medium hover:bg-white sm:px-3">{language === "en" ? "中文" : "English"}</button></div>
       </div></header>
       {aboutOpen && <AboutDialog language={language} onClose={closeAbout} />}
+      {demo && <DemoBanner language={language} onSchedule={() => { setStep("schedule"); window.scrollTo({ top: 0, behavior: "smooth" }); }} />}
 
       <div id="top" className="mx-auto max-w-[1320px] px-5 pb-16 pt-5 sm:px-8 sm:pt-12">
-        <div className="mb-5 grid gap-4 sm:mb-8 sm:gap-6 lg:grid-cols-[1fr_auto] lg:items-end"><div><p className="mb-2 text-[11px] font-semibold uppercase tracking-[.17em] text-[#a34a39] sm:mb-3">{t.eyebrow}</p><h1 className="font-serif text-3xl leading-tight tracking-[-.03em] sm:text-5xl">{t.title}</h1>{/* The step buttons below say the same thing; on a phone the room goes to the search box. */}<p className="mt-3 hidden max-w-xl text-sm leading-6 text-[#5d6561] sm:block">{t.subtitle}</p></div>
+        <div className="mb-5 grid gap-4 sm:mb-8 sm:gap-6 lg:grid-cols-[1fr_auto] lg:items-end"><div><p className="mb-2 text-[11px] font-semibold uppercase tracking-[.17em] text-[#a34a39] sm:mb-3">{t.eyebrow}</p><h1 className="font-serif text-3xl leading-tight tracking-[-.03em] sm:text-5xl">{t.title}</h1>{/* The step buttons below say the same thing; on a phone the room goes to the search box. */}<p className="mt-3 hidden max-w-xl text-sm leading-6 text-[#5d6561] sm:block">{t.subtitle}</p>{restored && !demo && !planCourses.length && <button type="button" onClick={enterDemo} className="mt-2 block text-left text-xs font-semibold text-[#a34a39] hover:underline">{language === "en" ? "First time here? Try a sample schedule →" : "第一次来？先试试示例课表 →"}</button>}</div>
           <nav aria-label="Planning steps" className="grid grid-cols-3 gap-1 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-1.5 sm:flex sm:flex-wrap sm:gap-2 sm:p-2">{(["find", "schedule", "watch"] as const).map((item, index) => <button key={item} onClick={() => setStep(item)} aria-current={step === item ? "step" : undefined} className={`flex items-center justify-center gap-2 rounded-xl px-1.5 py-2 text-xs transition sm:justify-start sm:px-3 sm:text-sm ${step === item ? "bg-[#273c38] text-white" : "text-[#5d6561] hover:bg-[#eeece6]"}`}><span className="hidden h-5 w-5 place-items-center rounded-full bg-white/15 text-[10px] sm:grid">0{index + 1}</span>{t[item]}</button>)}</nav>
         </div>
 

@@ -5,6 +5,7 @@
 
 import { normalizeBusyBlocks, validBuffer, type BusyBlock } from "@/lib/personal-schedule";
 import { CAMPUS_AREA_KEYS } from "@/lib/campus-walk";
+import { storageKey } from "@/lib/demo";
 
 export const STORAGE_KEY = "terpplan:v1";
 
@@ -131,7 +132,7 @@ export function swapPlans(state: SavedState, term: string, current: SavedPlanCou
 
 export function readSavedState(): SavedState {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(storageKey(STORAGE_KEY));
     return raw ? parseSavedState(JSON.parse(raw)) : { plans: {} };
   } catch {
     return { plans: {} };
@@ -145,7 +146,7 @@ export function writeSavedState(patch: Partial<SavedState>) {
     // Drop empty per-term plans so old terms do not pile up.
     next.plans = Object.fromEntries(Object.entries(next.plans).filter(([, courses]) => courses.length));
     next.otherPlans = Object.fromEntries(Object.entries(next.otherPlans ?? {}).filter(([, courses]) => courses.length));
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    window.localStorage.setItem(storageKey(STORAGE_KEY), JSON.stringify(next));
   } catch {
     // Storage unavailable or full: the page keeps working, it just will not remember.
   }

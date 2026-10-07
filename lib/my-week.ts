@@ -2,6 +2,7 @@
 // network connection (from the home screen, between classes). Only meeting times and rooms are kept.
 
 import { isAsyncOnline, meetingDays, meetingMinutes, type MeetingTime } from "@/lib/meeting-time";
+import { storageKey } from "@/lib/demo";
 
 export const MY_WEEK_KEY = "terpplan:my-week";
 export const WEEK_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
@@ -68,7 +69,7 @@ export function parseMyWeek(value: unknown): MyWeek | null {
 
 export function readMyWeek(): MyWeek | null {
   try {
-    return parseMyWeek(JSON.parse(window.localStorage.getItem(MY_WEEK_KEY) ?? "null"));
+    return parseMyWeek(JSON.parse(window.localStorage.getItem(storageKey(MY_WEEK_KEY)) ?? "null"));
   } catch {
     return null;
   }
@@ -76,7 +77,7 @@ export function readMyWeek(): MyWeek | null {
 
 export function writeMyWeek(week: MyWeek) {
   try {
-    window.localStorage.setItem(MY_WEEK_KEY, JSON.stringify(week));
+    window.localStorage.setItem(storageKey(MY_WEEK_KEY), JSON.stringify(week));
     return true;
   } catch {
     return false;

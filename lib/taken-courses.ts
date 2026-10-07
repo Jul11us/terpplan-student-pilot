@@ -2,6 +2,7 @@
 // browser only (never sent to the server). Filled from the degree audit page or typed in by the student.
 
 import type { AuditResult } from "@/lib/degree-audit";
+import { storageKey } from "@/lib/demo";
 
 export const TAKEN_KEY = "terpplan:taken";
 // Same-tab updates; other tabs hear the "storage" event.
@@ -27,7 +28,7 @@ export function parseCourseCodes(text: string): string[] {
 
 export function readTaken(): TakenCourses | null {
   try {
-    return parseTaken(JSON.parse(window.localStorage.getItem(TAKEN_KEY) ?? "null"));
+    return parseTaken(JSON.parse(window.localStorage.getItem(storageKey(TAKEN_KEY)) ?? "null"));
   } catch {
     return null;
   }
@@ -47,8 +48,8 @@ export function parseTaken(raw: unknown): TakenCourses | null {
 
 export function writeTaken(value: Omit<TakenCourses, "updatedAt"> | null) {
   try {
-    if (!value || (!value.completed.length && !value.inProgress.length && value.credits === undefined)) window.localStorage.removeItem(TAKEN_KEY);
-    else window.localStorage.setItem(TAKEN_KEY, JSON.stringify({ ...value, updatedAt: new Date().toISOString() }));
+    if (!value || (!value.completed.length && !value.inProgress.length && value.credits === undefined)) window.localStorage.removeItem(storageKey(TAKEN_KEY));
+    else window.localStorage.setItem(storageKey(TAKEN_KEY),JSON.stringify({ ...value, updatedAt: new Date().toISOString() }));
   } catch {
     // Storage blocked: the check simply stays off.
   }

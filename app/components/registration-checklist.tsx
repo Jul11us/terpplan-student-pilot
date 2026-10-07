@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { buildReminderIcs } from "@/lib/ics";
+import { storageKey } from "@/lib/demo";
 
 // The registration date and time the student typed, by term name, so it is there next time.
 const REMINDER_KEY = "terpplan:registration-time";
 function savedReminder(termName: string): { date: string; time: string } {
   try {
-    const value = (JSON.parse(window.localStorage.getItem(REMINDER_KEY) ?? "{}") as Record<string, { date?: unknown; time?: unknown }>)[termName];
+    const value = (JSON.parse(window.localStorage.getItem(storageKey(REMINDER_KEY)) ?? "{}") as Record<string, { date?: unknown; time?: unknown }>)[termName];
     return { date: typeof value?.date === "string" ? value.date : "", time: typeof value?.time === "string" ? value.time : "" };
   } catch {
     return { date: "", time: "" };
@@ -82,8 +83,8 @@ export default function RegistrationChecklist({ option, others, missingCourseIds
     const next = { ...reminder, ...patch };
     setReminder(next); setReminderDone(false);
     try {
-      const all = JSON.parse(window.localStorage.getItem(REMINDER_KEY) ?? "{}") as Record<string, unknown>;
-      window.localStorage.setItem(REMINDER_KEY, JSON.stringify({ ...all, [termName]: next }));
+      const all = JSON.parse(window.localStorage.getItem(storageKey(REMINDER_KEY)) ?? "{}") as Record<string, unknown>;
+      window.localStorage.setItem(storageKey(REMINDER_KEY), JSON.stringify({ ...all, [termName]: next }));
     } catch { /* not remembered; the download still works */ }
   };
   const [copied, setCopied] = useState("");
