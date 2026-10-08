@@ -42,7 +42,7 @@ The audit reader distinguishes completed courses, transfer-pass credits, and cou
 
 ### Keep an eye on open seats
 
-Save section watches and check for openings while the page is open. Students can also opt in to email alerts; background checks are scheduled every 10 minutes and may run later. Seat counts may lag behind UMD, and an opening may fill before you see an alert.
+Save section watches and check for openings while the page is open. Students can also opt in to email alerts; background checks are scheduled every 10 minutes by a separate Cloudflare Cron Worker. Each run checks up to 40 course groups, so larger backlogs take additional runs. Seat counts may lag behind UMD, and an opening may fill before you see an alert. Scheduler deployment and verification are documented in [workers/seat-cron/README.md](workers/seat-cron/README.md).
 
 ### Share a schedule or export your calendar
 
