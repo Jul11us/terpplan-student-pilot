@@ -11,6 +11,7 @@ const TONES = [
 const toneOf = (id: string) => TONES[[...id].reduce((sum, char) => sum + char.charCodeAt(0), 0) % TONES.length]!;
 const OWN_TONE = "bg-[#e6e3dc] text-[#5d6561] outline-dashed outline-1 -outline-offset-1 outline-[#bdb8ad]";
 const at = (hour: number) => ((hour - 8) / 10) * 100;
+const TIME_MARKS = [8, 12, 16];
 const position = (meeting: Meeting) => ({ left: `calc(${meeting.day} * (100% + 6px) / 5)`, width: "calc((100% - 24px) / 5)", top: `${at(meeting.start)}%`, height: `${at(meeting.end) - at(meeting.start)}%` });
 const EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
 
@@ -96,11 +97,18 @@ export function TimetableSketch({ language }: { language: Language }) {
       <span key={`own-${week.own}`} className="sketch-copy rounded-full bg-[#f1efe9] px-2.5 py-1 text-[#48534f]">{own.text[language]}</span>
       {preference && <span key={week.preference} className="sketch-copy rounded-full bg-[#edf3ef] px-2.5 py-1 text-[#273c38]">{preference[language]}</span>}
     </div>
-    <div aria-hidden="true" className="grid grid-cols-5 gap-1.5 text-center text-[10px] font-semibold text-[#646c68]">{days.map((day, index) => <span key={day} className={`transition-opacity duration-500 motion-reduce:transition-none ${week.preference === "noFriday" && index === 4 ? "opacity-40" : ""}`}>{day}</span>)}</div>
-    <div ref={grid} aria-hidden="true" className="relative mt-2 grid h-60 grid-cols-5 gap-1.5 overflow-hidden rounded-md">
-      {days.map((day, index) => <div key={day} className={`rounded-md transition-colors duration-500 motion-reduce:transition-none ${week.preference === "noFriday" && index === 4 ? "bg-[#efece6]" : "bg-[#f7f5f0]"}`} />)}
-      {exiting.map(({ key, label, personal, meeting }) => <div key={`exit-${preview.step}-${key}`} className={`sketch-out pointer-events-none absolute flex items-center justify-center overflow-hidden rounded-md text-[10px] font-semibold ${personal ? OWN_TONE : toneOf(label)}`} style={position(meeting)}>{label}</div>)}
-      {blocks.map(({ key, label, personal, meeting }) => <div key={key} data-sketch-block={key} className={`absolute flex origin-top-left items-center justify-center overflow-hidden rounded-md text-[10px] font-semibold ${personal ? OWN_TONE : toneOf(label)}`} style={position(meeting)}>{label}</div>)}
+    <div aria-hidden="true" className="grid grid-cols-[28px_minmax(0,1fr)] gap-x-2 gap-y-2">
+      <span />
+      <div className="grid grid-cols-5 gap-1.5 text-center text-[10px] font-semibold text-[#646c68]">{days.map((day, index) => <span key={day} className={`transition-opacity duration-500 motion-reduce:transition-none ${week.preference === "noFriday" && index === 4 ? "opacity-40" : ""}`}>{day}</span>)}</div>
+      <div className="relative h-60 text-[9px] tabular-nums text-[#858d87] sm:text-[10px]">
+        {TIME_MARKS.map((hour) => <span key={hour} data-sketch-time={hour} className="absolute right-0 -translate-y-1/2" style={{ top: `${at(hour)}%` }}>{hour}:00</span>)}
+      </div>
+      <div ref={grid} className="relative grid h-60 grid-cols-5 gap-1.5 overflow-hidden rounded-md">
+        {days.map((day, index) => <div key={day} className={`rounded-md transition-colors duration-500 motion-reduce:transition-none ${week.preference === "noFriday" && index === 4 ? "bg-[#efece6]" : "bg-[#f7f5f0]"}`} />)}
+        {TIME_MARKS.map((hour) => <span key={hour} className="pointer-events-none absolute inset-x-0 border-t border-[#e9e6df]/70" style={{ top: `${at(hour)}%` }} />)}
+        {exiting.map(({ key, label, personal, meeting }) => <div key={`exit-${preview.step}-${key}`} className={`sketch-out pointer-events-none absolute flex items-center justify-center overflow-hidden rounded-md text-[10px] font-semibold ${personal ? OWN_TONE : toneOf(label)}`} style={position(meeting)}>{label}</div>)}
+        {blocks.map(({ key, label, personal, meeting }) => <div key={key} data-sketch-block={key} className={`absolute flex origin-top-left items-center justify-center overflow-hidden rounded-md text-[10px] font-semibold ${personal ? OWN_TONE : toneOf(label)}`} style={position(meeting)}>{label}</div>)}
+      </div>
     </div>
     <figcaption className="mt-3 flex min-h-20 items-start gap-2 border-t border-[#eeece6] px-1 pt-3 text-xs leading-5 text-[#48534f]">
       <span aria-hidden="true" className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#edf3ef] text-[10px] font-bold text-[#315c43]">✓</span>
