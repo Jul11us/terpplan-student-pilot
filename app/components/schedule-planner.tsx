@@ -26,6 +26,7 @@ import { PrintSchedule } from "@/app/components/print-sheet";
 import { WorkloadCard } from "@/app/components/workload-card";
 import { CreditMeter, WeekLoadChart } from "@/app/components/plan-insights";
 import type { CreditMeter as CreditMeterData } from "@/lib/plan-credits";
+import { countUse } from "@/lib/usage";
 export type { ScheduledSection } from "@/lib/planner";
 
 type Language = "en" | "zh";
@@ -459,7 +460,7 @@ export function CalendarExport({ sections, term, termName, language, incomplete,
     const link = document.createElement("a");
     link.href = url;
     link.download = `terpplan-${termName.toLowerCase().replace(/\s+/g, "-")}.ics`;
-    link.click();
+    link.click(); countUse("calendar");
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
@@ -587,6 +588,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
       if (seq !== generationSeq.current) return;
       if (!response.ok) throw new Error(payload.error || t.loadError);
       setGenerated({ requestKey, prefsKey, options: payload.options ?? [], warnings: payload.warnings ?? [], diagnostics: payload.diagnostics ?? [], repairs: payload.repairs ?? [] });
+      if (payload.options?.length) countUse("schedule");
       setSelectedKey("");
       setShareUrl("");
       setShareCopied(false);
@@ -653,7 +655,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
   const shareSchedule = async () => {
     if (!chosen) return;
     const url = window.location.origin + sharePath(term, chosen.selectedSections.map((section) => section.section_id), language, chosenMissing);
-    setShareUrl(url);
+    setShareUrl(url); countUse("share");
     try {
       await navigator.clipboard.writeText(url);
       setShareCopied(true);

@@ -1,20 +1,13 @@
 import { env } from "cloudflare:workers";
 import { easternDay, validRef } from "@/lib/referral";
 import { readJsonObject, sameOriginMutation } from "@/lib/request-security";
-import { allowRate, clientRateKey } from "@/lib/rate-limit";
+import { allowRate, clientRateKey, onceToday } from "@/lib/rate-limit";
 
 // Counts a visit: { visitor: "new" | "returning" } once per browser per day, and { ref: "<tag>" } once
 // per tag per day when the visit arrived with ?ref=<tag>. The page sends each at most once a day. The server
 // also counts each network address + browser kind at most once a day, so refreshing after clearing storage,
 // new private windows or a script cannot inflate the numbers. The keys are hashed and deleted after a day
 // by the background run; the counts themselves keep nothing about the visitor.
-const DAY_SECONDS = 86_400;
-
-async function onceToday(request: Request, scope: string) {
-  const agent = new TextEncoder().encode(request.headers.get("user-agent") ?? "");
-  const agentHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", agent)).slice(0, 8), (byte) => byte.toString(16).padStart(2, "0")).join("");
-  return allowRate(await clientRateKey(request, `${scope}:${agentHash}`), 1, DAY_SECONDS);
-}
 
 export async function POST(request: Request) {
   const denied = sameOriginMutation(request);

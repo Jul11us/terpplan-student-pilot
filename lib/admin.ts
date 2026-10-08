@@ -7,6 +7,9 @@
 import { env } from "cloudflare:workers";
 import { hashEmail, type CurrentUser } from "@/lib/auth";
 import { easternDay } from "@/lib/referral";
+import { DEFAULT_TERM } from "@/lib/umd";
+import { FEATURES, type Feature } from "@/lib/usage";
+import { hoursToFill, seatsTakenInWindow } from "@/lib/seat-race";
 
 export type AdminAccess = "ok" | "notConfigured" | "forbidden";
 
@@ -43,6 +46,20 @@ export type AdminStats = {
   // Everyone who opened the site: browsers per day, and how many of them were there for the first time.
   visitors: { today: number; newToday: number; last7Days: number; last30Days: number; newTotal: number; since: string | null };
   visitorsByDay: { day: string; visitors: number; newVisitors: number }[];
+  // People (browsers) per feature per day, summed; in FEATURES order.
+  usage: { feature: Feature; today: number; last7Days: number; last30Days: number }[];
+  usageSince: string | null;
+  // How fast courses fill in the term being registered for (lib/seat-race.ts).
+  seatRace: {
+    term: string;
+    courses: number;
+    readingsLast24h: number;
+    filled: number;
+    // Most seats taken in the last 24 hours.
+    movers: { courseId: string; taken: number; totalSeats: number; openSeats: number }[];
+    // Filled since TerpPlan started reading them, fastest first.
+    fastest: { courseId: string; totalSeats: number; startedAt: string; filledAt: string; hours: number }[];
+  };
   generatedAt: string;
 };
 
@@ -62,7 +79,8 @@ export async function adminStats(now = new Date()): Promise<AdminStats> {
   const monthAgo = new Date(now.getTime() - 30 * 86_400_000);
   // referral_visits days are Eastern-time dates.
   const today = easternDay(now), weekStart = easternDay(new Date(now.getTime() - 6 * 86_400_000)), monthStart = easternDay(monthAgo);
-  const [subs, watchTotals, alerts, signupsByDay, watchesByTerm, topCourses, recent, referrals, referralsByDay, visitorTotals, visitorsByDay] = await Promise.all([
+  const term = DEFAULT_TERM;
+  const [subs, watchTotals, alerts, signupsByDay, watchesByTerm, topCourses, recent, referrals, referralsByDay, visitorTotals, visitorsByDay, usageRows, usageSince, raceTotals, raceRecent, raceFilled] = await Promise.all([
     first<{ total: number; recent: number; watching: number }>(
       `SELECT COUNT(*) AS total,
         SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) AS recent,
@@ -95,6 +113,18 @@ export async function adminStats(now = new Date()): Promise<AdminStats> {
         SUM(new_visitors) AS newTotal, MIN(day) AS since FROM site_visits`, today, today, weekStart, monthStart),
     all<{ day: string; visitors: number; newVisitors: number }>(
       "SELECT day, visitors, new_visitors AS newVisitors FROM site_visits WHERE day >= ? ORDER BY day", monthStart),
+    all<{ feature: string; today: number; last7Days: number; last30Days: number }>(
+      `SELECT feature, SUM(CASE WHEN day = ? THEN people ELSE 0 END) AS today, SUM(CASE WHEN day >= ? THEN people ELSE 0 END) AS last7Days,
+        SUM(people) AS last30Days FROM feature_usage WHERE day >= ? GROUP BY feature`, today, weekStart, monthStart),
+    first<{ since: string | null }>("SELECT MIN(day) AS since FROM feature_usage"),
+    first<{ courses: number; filled: number }>(
+      "SELECT COUNT(*) AS courses, SUM(CASE WHEN filled_at IS NOT NULL THEN 1 ELSE 0 END) AS filled FROM course_fill WHERE term = ? AND total_seats > 0", term),
+    all<{ courseId: string; checkedAt: string; totalSeats: number; openSeats: number }>(
+      "SELECT course_id AS courseId, checked_at AS checkedAt, total_seats AS totalSeats, open_seats AS openSeats FROM course_seat_history WHERE term = ? AND checked_at >= ?",
+      term, new Date(now.getTime() - 86_400_000).toISOString()),
+    all<{ courseId: string; totalSeats: number; startedAt: string; filledAt: string }>(
+      `SELECT course_id AS courseId, total_seats AS totalSeats, started_at AS startedAt, filled_at AS filledAt FROM course_fill
+       WHERE term = ? AND started_at IS NOT NULL AND filled_at IS NOT NULL AND total_seats >= 30`, term),
   ]);
   return {
     subscribers: subs?.total ?? 0,
@@ -116,6 +146,20 @@ export async function adminStats(now = new Date()): Promise<AdminStats> {
       last30Days: visitorTotals?.last30Days ?? 0, newTotal: visitorTotals?.newTotal ?? 0, since: visitorTotals?.since ?? null,
     },
     visitorsByDay,
+    usage: FEATURES.map((feature) => {
+      const row = usageRows.find((item) => item.feature === feature);
+      return { feature, today: row?.today ?? 0, last7Days: row?.last7Days ?? 0, last30Days: row?.last30Days ?? 0 };
+    }),
+    usageSince: usageSince?.since ?? null,
+    seatRace: {
+      term,
+      courses: raceTotals?.courses ?? 0,
+      readingsLast24h: raceRecent.length,
+      filled: raceTotals?.filled ?? 0,
+      movers: seatsTakenInWindow(raceRecent).slice(0, 10),
+      fastest: raceFilled.map((row) => ({ ...row, hours: hoursToFill(row) ?? 0 }))
+        .sort((a, b) => a.hours - b.hours || b.totalSeats - a.totalSeats || a.courseId.localeCompare(b.courseId)).slice(0, 15),
+    },
     generatedAt: now.toISOString(),
   };
 }

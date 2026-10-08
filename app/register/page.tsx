@@ -7,6 +7,7 @@ import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { readRegistrationDay, savedReminder, writeRegistrationDay, type RegistrationDay } from "@/lib/registration-day";
 import { RegistrationCountdown } from "@/app/components/registration-countdown";
 import { formatTermName } from "@/lib/seat-trends";
+import { countUse } from "@/lib/usage";
 
 type Language = "en" | "zh";
 
@@ -45,6 +46,7 @@ export default function RegisterPage() {
   const [failed, setFailed] = useState(false);
   const t = copy[language];
 
+  useEffect(() => { countUse("register"); }, []);
   useEffect(() => {
     // Read after the first render, so the server and client HTML match.
     const saved = readRegistrationDay();

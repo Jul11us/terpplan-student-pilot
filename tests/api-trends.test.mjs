@@ -12,6 +12,8 @@ const { GET: offerings } = await import("../app/api/trends/offerings/route.ts");
 const { GET: popular } = await import("../app/api/trends/popular/route.ts");
 const { POST: activity } = await import("../app/api/trends/activity/route.ts");
 const { recordCourseHistory, getPopularCourses, backfillCourseOfferings, trackCourseSeats, coursesToTrack, recordCourseSeatReading } = await import("../lib/history-db.ts");
+const { rankHardCourses } = await import("../lib/hard-courses.ts");
+const { default: hardCourseData } = await import("../data/hard-courses.json", { with: { type: "json" } });
 let database;
 let originalFetch;
 const request = (path, params) => new Request("https://terpplan.test/api/trends/" + path + "?" + new URLSearchParams(params));
@@ -29,7 +31,7 @@ beforeEach(() => {
     const term = url.pathname.split("/")[2];
     // Testudo's multi-course sections page, used by the background seat tracking.
     if (url.pathname.endsWith("/sections")) {
-      return new Response(url.searchParams.get("courseIds").split(",").map((id) => `<div id="${id}" class="course-sections"><div class="section"><input name="sectionId" value="0101"><span class="total-seats-count">40</span><span class="open-seats-count">${id === "MATH140" ? 0 : 10}</span></div></div>`).join(""));
+      return new Response(url.searchParams.get("courseIds").split(",").filter((id) => id !== "NOPE100").map((id) => `<div id="${id}" class="course-sections"><div class="section"><input name="sectionId" value="0101"><span class="total-seats-count">40</span><span class="open-seats-count">${id === "MATH140" ? 0 : 10}</span></div></div>`).join(""));
     }
     if (term !== "202701") {
       if (term === "202508") return new Response("busy", { status: 503 });
@@ -84,21 +86,45 @@ test("offering history reads earlier fall and spring terms once, keeping 'not of
   assert.equal(calls, 1, "only the failed Fall 2025 is asked again");
 });
 
-test("background tracking reads courses students look at, at most every two hours each", async () => {
+test("background tracking reads the hardest, most planned and watched courses every half hour, the rest every two hours", async () => {
   database.sqlite.prepare("INSERT INTO course_offerings (course_id, term, section_count, total_seats) VALUES ('CMSC131', '202701', 1, 40), ('ENGL101', '202608', 1, 40)").run();
-  database.sqlite.prepare("INSERT INTO plan_activity VALUES ('MATH140', '202701', 'browser', ?, NULL)").run(new Date().toISOString());
+  const plan = database.sqlite.prepare("INSERT INTO plan_activity VALUES (?, '202701', 'browser', ?, NULL)");
+  plan.run("MATH140", new Date().toISOString()); plan.run("NOPE100", new Date().toISOString());
+  const hardest = rankHardCourses(hardCourseData).slice(0, 60).map((course) => course.id);
   const now = new Date("2026-11-01T12:00:00Z");
-  assert.deepEqual(await coursesToTrack("202701", 50, now), ["CMSC131", "MATH140"], "other terms are not tracked");
-  assert.deepEqual(await trackCourseSeats("202701", now), { tracked: 2 });
-  const rows = () => database.sqlite.prepare("SELECT course_id, open_seats, full_sections FROM course_seat_history ORDER BY course_id, checked_at").all().map((row) => [row.course_id, row.open_seats, row.full_sections]);
-  assert.deepEqual(rows(), [["CMSC131", 10, 0], ["MATH140", 0, 1]]);
+  const ids = await coursesToTrack("202701", 200, now);
+  assert.deepEqual(new Set(ids), new Set([...hardest, "MATH140", "NOPE100", "CMSC131"]), "other terms are not tracked");
+  assert.equal(ids.at(-1), "CMSC131", "the half-hourly courses come first");
+  assert.deepEqual(await trackCourseSeats("202701", now), { tracked: 62 }, "NOPE100 has no sections this term");
+  const rows = (id) => database.sqlite.prepare("SELECT open_seats, full_sections FROM course_seat_history WHERE course_id = ? ORDER BY checked_at").all(id).map((row) => [row.open_seats, row.full_sections]);
+  assert.deepEqual(rows("CMSC131"), [[10, 0]]);
+  assert.deepEqual(rows("MATH140"), [[0, 1]]);
+  assert.equal(rows("NOPE100").length, 0);
   assert.equal(database.sqlite.prepare("SELECT open_seats FROM course_offerings WHERE course_id = 'MATH140' AND term = '202701'").get().open_seats, 0, "the live term's offering row is kept current");
-  // An hour later nothing is due; three hours later both are read again.
-  assert.deepEqual(await trackCourseSeats("202701", new Date("2026-11-01T13:00:00Z")), { tracked: 0 });
-  await recordCourseSeatReading("202701", "CMSC131", { sectionCount: 1, totalSeats: 40, openSeats: 2, fullSections: 0 }, new Date("2026-11-01T13:30:00Z"));
-  assert.equal(rows().length, 2, "a page view inside the two hours adds nothing");
-  assert.deepEqual(await trackCourseSeats("202701", new Date("2026-11-01T15:00:00Z")), { tracked: 2 });
-  assert.equal(rows().length, 4);
+  // 40 minutes later the half-hourly courses are due again (NOPE100 too, it was noted as read), CMSC131 is not.
+  const later = await coursesToTrack("202701", 200, new Date("2026-11-01T12:40:00Z"));
+  assert.equal(later.length, 62);
+  assert.ok(!later.includes("CMSC131"));
+  // A page view within half an hour of a reading adds nothing; two hours on, CMSC131 is due.
+  await recordCourseSeatReading("202701", "CMSC131", { sectionCount: 1, totalSeats: 40, openSeats: 2, fullSections: 0 }, new Date("2026-11-01T12:10:00Z"));
+  assert.equal(rows("CMSC131").length, 1);
+  assert.ok((await coursesToTrack("202701", 200, new Date("2026-11-01T14:05:00Z"))).includes("CMSC131"));
+});
+
+test("each course keeps when its seats started going and when it filled", async () => {
+  const fill = (id) => database.sqlite.prepare("SELECT base_taken, total_seats, started_at, filled_at FROM course_fill WHERE term = '202701' AND course_id = ?").get(id);
+  const reading = (open, at) => recordCourseSeatReading("202701", "CMSC131", { sectionCount: 1, totalSeats: 40, openSeats: open, fullSections: open ? 0 : 1 }, new Date(at));
+  await reading(10, "2026-11-01T12:00:00Z");
+  assert.deepEqual({ ...fill("CMSC131") }, { base_taken: 30, total_seats: 40, started_at: null, filled_at: null });
+  await reading(10, "2026-11-01T12:30:00Z");
+  await reading(4, "2026-11-01T13:00:00Z");
+  await reading(1, "2026-11-01T15:00:00Z");
+  await reading(6, "2026-11-01T16:00:00Z");
+  assert.deepEqual({ ...fill("CMSC131") }, { base_taken: 30, total_seats: 40, started_at: "2026-11-01T13:00:00.000Z", filled_at: "2026-11-01T15:00:00.000Z" }, "the first fill is kept after seats free up");
+  // Already full when TerpPlan first read it: it filled earlier, so it has no start.
+  database.sqlite.prepare("INSERT INTO plan_activity VALUES ('MATH140', '202701', 'browser', ?, NULL)").run(new Date().toISOString());
+  await trackCourseSeats("202701", new Date("2026-11-01T17:00:00Z"));
+  assert.deepEqual({ ...fill("MATH140") }, { base_taken: 40, total_seats: 40, started_at: null, filled_at: "2026-11-01T17:00:00.000Z" });
 });
 
 test("earlier terms keep their final open seats and are read again until the term has ended", async () => {

@@ -39,6 +39,7 @@ import { applyTransfer, decodeTransfer, encodeTransfer, TRANSFER_PREFIX, transfe
 import { CourseTrends } from "@/app/components/course-trends";
 import { PopularCourses } from "@/app/components/popular-courses";
 import { useTypingPlaceholder } from "@/app/components/typing-placeholder";
+import { countUse } from "@/lib/usage";
 
 type Course = { course_id: string; name: string; department?: string; credits?: string };
 type Meeting = { days?: string | null; start_time?: string | null; end_time?: string | null; building?: string | null; room?: string | null };
@@ -321,6 +322,8 @@ export default function Home() {
   const [alerts, setAlerts] = useState<string[]>([]);
   // Store the message key, not the text, so it re-renders in the new language after a switch.
   const [message, setMessage] = useState<"" | "added" | "watched" | "codeSent">("");
+  // Counted once a day per browser, for the owner's usage numbers (lib/usage.ts).
+  useEffect(() => { countUse(isDemo() ? "demo" : "planner"); }, []);
   // Success notes clear themselves; errors stay until the next action.
   useEffect(() => {
     if (!message) return;
@@ -707,7 +710,7 @@ export default function Home() {
     if (planCourses.length >= 10) { setError(t.planLimit); return; }
     setError("");
     setPlanCourses((current) => [...current, { courseId: course.course_id, courseTitle: course.name, instructors: selected?.course_id === course.course_id ? instructorFilter : undefined }]);
-    setMessage("added");
+    setMessage("added"); countUse("course");
   };
 
   const addToSchedule = (course: Course) => {
@@ -721,7 +724,7 @@ export default function Home() {
       return;
     }
     setPlanCourses((current) => [...current, { courseId: course.course_id, courseTitle: course.name, instructors: instructorFilter }]);
-    setMessage("added"); setStep("schedule");
+    setMessage("added"); setStep("schedule"); countUse("course");
   };
 
   const chooseSection = (course: Course, id: string, action: "pin" | "exclude") => {
@@ -765,7 +768,7 @@ export default function Home() {
       const payload = await response.json() as ApiError;
       if (response.status === 401) { setAuthenticated(false); setAuthProvider(null); setStep("watch"); return; }
       if (!response.ok) throw new Error(payload.code === "watchLimit" ? t.watchLimit : payload.error || t.error);
-      setMessage("watched"); setStep("watch"); await loadWatches();
+      setMessage("watched"); setStep("watch"); countUse("alert"); await loadWatches();
     } catch (cause) { setError(cause instanceof Error ? cause.message : t.error); }
   };
 
@@ -777,14 +780,14 @@ export default function Home() {
       const payload = await response.json() as ApiError;
       if (response.status === 401) { setAuthenticated(false); setAuthProvider(null); setStep("watch"); return; }
       if (!response.ok) throw new Error(payload.code === "watchLimit" ? t.watchLimit : payload.error || t.error);
-      setMessage("watched"); setStep("watch"); await loadWatches();
+      setMessage("watched"); setStep("watch"); countUse("alert"); await loadWatches();
     } catch (cause) { setError(cause instanceof Error ? cause.message : t.error); }
   };
 
   const makeTransferLink = async () => {
     setTransferCopied(false);
     const link = window.location.origin + "/plan" + TRANSFER_PREFIX + await encodeTransfer(readSavedState(), readTaken());
-    setTransferLink(link);
+    setTransferLink(link); countUse("share");
     try { await navigator.clipboard.writeText(link); setTransferCopied(true); } catch { /* the link is shown to copy by hand */ }
   };
   const closeTransfer = () => { window.history.replaceState(null, "", window.location.pathname + window.location.search); setTransferOffer(null); };
@@ -850,7 +853,7 @@ export default function Home() {
       const response = await fetch("/api/auth/verify-code", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, code: emailCode }) });
       const payload = await response.json() as ApiError;
       if (!response.ok) throw new Error(payload.error || t.wrongCode);
-      setAuthenticated(true); setAuthProvider("email"); setEmailCode("");
+      setAuthenticated(true); setAuthProvider("email"); setEmailCode(""); countUse("signin");
       await loadWatches();
     } catch (cause) { setError(cause instanceof Error ? cause.message : t.wrongCode); }
     finally { setAuthBusy(false); }

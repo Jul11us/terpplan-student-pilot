@@ -26,3 +26,11 @@ export async function clientRateKey(request: Request, scope: string) {
     : await crypto.subtle.digest("SHA-256", bytes);
   return `${scope}:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
+
+// True the first time today (a rolling day) that this network address + browser kind asks for `scope`:
+// used to count a person once a day however often a page reports them.
+export async function onceToday(request: Request, scope: string) {
+  const agent = new TextEncoder().encode(request.headers.get("user-agent") ?? "");
+  const agentHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", agent)).slice(0, 8), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return allowRate(await clientRateKey(request, `${scope}:${agentHash}`), 1, 86_400);
+}

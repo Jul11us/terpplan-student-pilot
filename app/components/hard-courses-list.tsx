@@ -6,6 +6,7 @@ import { useDocumentLanguage } from "@/lib/document-language";
 import type { HardCourse } from "@/lib/hard-courses";
 import { formatTermName } from "@/lib/seat-trends";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
+import { countUse } from "@/lib/usage";
 
 type Language = "en" | "zh";
 type Level = "undergrad" | "100" | "300" | "grad" | "all";
@@ -56,6 +57,7 @@ export function HardCoursesList({ courses, terms, builtAt }: { courses: HardCour
   const [shown, setShown] = useState(PAGE);
   const t = copy[language];
 
+  useEffect(() => { countUse("hard"); }, []);
   useEffect(() => {
     const saved = readSavedState().language;
     // Restoring the saved language after the first render keeps the server and client HTML the same.

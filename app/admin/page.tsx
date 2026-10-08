@@ -31,6 +31,14 @@ const copy = {
     visitsNoteEmpty: "Each browser counts once a day; \"new\" means it had never opened TerpPlan before. No visits counted yet.",
     vToday: "Today", vTodayNote: "{n} new", v7: "Last 7 days", v7Note: "visitor-days", v30: "Last 30 days", v30Note: "visitor-days", vPeople: "Different people so far", vPeopleNote: "first-time browsers since counting began",
     vDaily: "Per day, last 30 days", vNew: "New", vReturning: "Returning", vTotal: "Total", alertsHeading: "Seat alert emails",
+    usage: "What people use", usageNote: "Each browser counts once a day per item; nothing done in the sample counts. Counting started {d}.", usageNoteEmpty: "Each browser counts once a day per item; nothing done in the sample counts. Nothing counted yet.",
+    uItem: "Did this", uToday: "Today", u7: "Last 7 days", u30: "Last 30 days", uShare: "Of visitors (7 days)",
+    features: { planner: "Opened the planner", course: "Added a course", schedule: "Saw schedule options", share: "Shared a schedule or plan link", calendar: "Exported to calendar", alert: "Turned on a seat alert", signin: "Signed in with email", register: "Opened the registration-day page", hard: "Looked at the hardest courses", demo: "Tried the sample" },
+    race: "How fast courses fill · {term}", raceNote: "The background run reads the 60 hardest courses to get, the 30 most planned and every watched course each half hour, and other courses students opened every two hours. \"Started\" is the first reading with more seats taken than when TerpPlan began reading the course; \"full\" is 2% of seats or fewer left (courses of 30+ seats).",
+    rCourses: "Courses being read", rReadings: "Readings, last 24 hours", rFilled: "Courses that have filled",
+    movers: "Most seats taken, last 24 hours", mTaken: "Taken", mLeft: "Left now", noMovers: "No seats have moved in the last 24 hours.",
+    fastest: "Fastest to fill", fStarted: "Started", fFull: "Full", fTook: "Took", noFastest: "No course has gone from open to full yet. This fills in once registration opens.",
+    minutes: "{n} min", hours: "{n} h", days: "{n} days",
   },
   zh: {
     eyebrow: "仅站长可见", title: "网站数据", back: "← 返回 TerpPlan", refresh: "刷新",
@@ -53,6 +61,14 @@ const copy = {
     visitsNoteEmpty: "同一浏览器每天只算一次；“新访客”是第一次打开 TerpPlan 的浏览器。还没有统计到访问。",
     vToday: "今天", vTodayNote: "其中 {n} 位新访客", v7: "最近 7 天", v7Note: "人次（每人每天算一次）", v30: "最近 30 天", v30Note: "人次（每人每天算一次）", vPeople: "累计来过的人", vPeopleNote: "开始统计以来第一次来的浏览器数",
     vDaily: "最近 30 天每天", vNew: "新访客", vReturning: "老访客", vTotal: "合计", alertsHeading: "余位邮件通知",
+    usage: "大家用了什么", usageNote: "同一浏览器每项每天只算一次；示例模式里的操作不算。从 {d} 开始统计。", usageNoteEmpty: "同一浏览器每项每天只算一次；示例模式里的操作不算。还没有统计到使用。",
+    uItem: "做了这件事", uToday: "今天", u7: "最近 7 天", u30: "最近 30 天", uShare: "占访问（7 天）",
+    features: { planner: "打开排课页", course: "加了课", schedule: "看到生成的课表", share: "分享课表或方案链接", calendar: "导出到日历", alert: "开了余位提醒", signin: "邮箱登录", register: "打开选课当天页", hard: "看了最难抢的课", demo: "试用示例" },
+    race: "抢课速度 · {term}", raceNote: "后台每半小时读一次最难抢的 60 门课、排课最多的 30 门课和所有被关注的课，其他有人打开过的课每两小时读一次。“开抢”是第一次比开始记录时多被选走座位的时间；“满员”是剩余不超过 2% 的座位（只算 30 座以上的课）。",
+    rCourses: "正在记录的课", rReadings: "最近 24 小时读数", rFilled: "已经满员的课",
+    movers: "最近 24 小时被抢最多", mTaken: "被选走", mLeft: "现在剩余", noMovers: "最近 24 小时没有座位变化。",
+    fastest: "满得最快的课", fStarted: "开抢", fFull: "满员", fTook: "用时", noFastest: "还没有课从有空位变成满员，选课开放后这里会出现数据。",
+    minutes: "{n} 分钟", hours: "{n} 小时", days: "{n} 天",
   },
 } as const;
 
@@ -66,6 +82,9 @@ const easternTime = (value: string, language: Language) => {
   const date = new Date(value.includes("T") ? value : value.replace(" ", "T") + "Z");
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString(language === "zh" ? "zh-CN" : "en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 };
+
+const duration = (hours: number, t: (typeof copy)[Language]) =>
+  hours < 1 ? t.minutes.replace("{n}", String(Math.round(hours * 60))) : hours < 48 ? t.hours.replace("{n}", String(Math.round(hours * 10) / 10)) : t.days.replace("{n}", String(Math.round((hours / 24) * 10) / 10));
 
 export default function AdminPage() {
   const [language, setLanguage] = useState<Language>("zh");
@@ -156,6 +175,42 @@ export default function AdminPage() {
               </li>)}</ul>
             </>;
           })()}
+        </section>
+
+        <section className="mt-4 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
+          <h2 className="text-sm font-semibold text-[#24312d]">{t.usage}</h2>
+          <p className="mt-1 text-[11px] leading-4 text-[#646c68]">{stats.usageSince ? t.usageNote.replace("{d}", stats.usageSince) : t.usageNoteEmpty}</p>
+          <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[30rem] text-xs"><thead><tr className="border-b border-[#ece9e2] text-left text-[#5d6561]"><th className="py-1.5 font-medium">{t.uItem}</th><th className="py-1.5 text-right font-medium">{t.uToday}</th><th className="py-1.5 text-right font-medium">{t.u7}</th><th className="py-1.5 text-right font-medium">{t.u30}</th><th className="py-1.5 pl-3 font-medium">{t.uShare}</th></tr></thead>
+            <tbody>{stats.usage.map((row) => {
+              const share = stats.visitors.last7Days ? Math.min(100, Math.round((row.last7Days / stats.visitors.last7Days) * 100)) : 0;
+              return <tr key={row.feature} className="border-b border-[#f0ede7]"><td className="py-1.5">{t.features[row.feature]}</td><td className="py-1.5 text-right">{row.today}</td><td className="py-1.5 text-right font-semibold">{row.last7Days}</td><td className="py-1.5 text-right">{row.last30Days}</td>
+                <td className="py-1.5 pl-3"><span className="flex items-center gap-2"><span className="h-2 w-24 rounded-full bg-[#ece9e2]"><span className="block h-full rounded-full bg-[#536d64]" style={{ width: `${share}%` }} /></span><span className="w-8 text-right text-[#5d6561]">{share}%</span></span></td></tr>;
+            })}</tbody></table></div>
+        </section>
+
+        <section className="mt-4 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
+          <h2 className="text-sm font-semibold text-[#24312d]">{t.race.replace("{term}", termLabel(stats.seatRace.term, language))}</h2>
+          <p className="mt-1 text-[11px] leading-4 text-[#646c68]">{t.raceNote}</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            {[[t.rCourses, stats.seatRace.courses], [t.rReadings, stats.seatRace.readingsLast24h], [t.rFilled, stats.seatRace.filled]].map(([label, value]) => <div key={String(label)} className="rounded-xl border border-[#ece9e2] bg-white p-3">
+              <p className="text-xs font-medium text-[#5d6561]">{label}</p>
+              <p className="mt-1 font-serif text-3xl text-[#24312d]">{value}</p>
+            </div>)}
+          </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div>
+              <h3 className="text-xs font-semibold text-[#24312d]">{t.movers}</h3>
+              {stats.seatRace.movers.length ? <table className="mt-2 w-full text-xs"><thead><tr className="border-b border-[#ece9e2] text-left text-[#5d6561]"><th className="py-1.5 font-medium">{t.course}</th><th className="py-1.5 text-right font-medium">{t.mTaken}</th><th className="py-1.5 text-right font-medium">{t.mLeft}</th></tr></thead>
+                <tbody>{stats.seatRace.movers.map((row) => <tr key={row.courseId} className="border-b border-[#f0ede7]"><td className="py-1.5 font-semibold">{row.courseId}</td><td className="py-1.5 text-right">{row.taken}</td><td className="py-1.5 text-right text-[#5d6561]">{row.openSeats} / {row.totalSeats}</td></tr>)}</tbody></table>
+                : <p className="mt-2 text-xs text-[#646c68]">{t.noMovers}</p>}
+            </div>
+            <div>
+              <h3 className="text-xs font-semibold text-[#24312d]">{t.fastest}</h3>
+              {stats.seatRace.fastest.length ? <div className="overflow-x-auto"><table className="mt-2 w-full min-w-[26rem] text-xs"><thead><tr className="border-b border-[#ece9e2] text-left text-[#5d6561]"><th className="py-1.5 font-medium">{t.course}</th><th className="py-1.5 font-medium">{t.fStarted}</th><th className="py-1.5 font-medium">{t.fFull}</th><th className="py-1.5 text-right font-medium">{t.fTook}</th></tr></thead>
+                <tbody>{stats.seatRace.fastest.map((row) => <tr key={row.courseId} className="border-b border-[#f0ede7]"><td className="py-1.5"><span className="font-semibold">{row.courseId}</span> <span className="text-[#646c68]">({row.totalSeats})</span></td><td className="py-1.5 text-[#5d6561]">{easternTime(row.startedAt, language)}</td><td className="py-1.5 text-[#5d6561]">{easternTime(row.filledAt, language)}</td><td className="py-1.5 text-right font-semibold">{duration(row.hours, t)}</td></tr>)}</tbody></table></div>
+                : <p className="mt-2 text-xs text-[#646c68]">{t.noFastest}</p>}
+            </div>
+          </div>
         </section>
 
         <h2 className="mt-6 text-sm font-semibold text-[#24312d]">{t.alertsHeading}</h2>

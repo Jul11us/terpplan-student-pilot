@@ -1,7 +1,7 @@
 // Database operations for historical trends and analytics
 
 import { getDb } from "@/db";
-import { seatHistory, planActivity, courseOfferings, courseSeatHistory } from "@/db/schema";
+import { seatHistory, planActivity, courseOfferings, courseSeatHistory, courseFill } from "@/db/schema";
 import { and, eq, gte, desc, inArray, sql } from "drizzle-orm";
 import { getTestudoSectionsBatch, parseCount, type UmdSection } from "@/lib/umd";
 import type { SeatSnapshot, SeatTrend, OfferingHistory, PopularCourse } from "@/lib/seat-trends";
@@ -14,6 +14,9 @@ import {
   calculateTrendDirection,
   calculateDemandIndex,
 } from "@/lib/seat-trends";
+import { nextFill, pickCoursesToTrack, type SeatReading } from "@/lib/seat-race";
+import { rankHardCourses, type HardCourseData } from "@/lib/hard-courses";
+import hardCourseData from "@/data/hard-courses.json";
 
 const HISTORY_WINDOW_DAYS = 14;
 const POPULAR_LIMIT = 20;
@@ -245,36 +248,61 @@ export async function backfillCourseOfferings(courseId: string, terms: string[],
   }
 }
 
-// ---- Seats over time during registration (course_seat_history)
+// ---- Seats over time during registration (course_seat_history, course_fill; see lib/seat-race.ts)
 
-const READING_HOURS = 2;
-const TRACK_PER_RUN = 50;
+const TRACK_PER_RUN = 75;
+// Read every half hour: the courses most often full in recent terms and the most planned on TerpPlan.
+const HARD_PRIORITY = 60, PLANNED_PRIORITY = 30;
 
-// One reading of a course's seats, at most every two hours per course (later calls in that time do nothing).
+// A course's row in course_fill, moved on by one reading.
+async function recordFill(term: string, courseId: string, reading: SeatReading) {
+  const db = getDb();
+  const [row] = await db.select().from(courseFill).where(and(eq(courseFill.term, term), eq(courseFill.courseId, courseId))).limit(1);
+  const next = nextFill(row ?? null, reading);
+  await db.insert(courseFill).values({ term, courseId, ...next })
+    .onConflictDoUpdate({ target: [courseFill.term, courseFill.courseId], set: next });
+}
+
+// One reading of a course's seats, at most every half hour per course (later calls in that time do nothing).
 export async function recordCourseSeatReading(term: string, courseId: string, summary: TermOffering, now = new Date()) {
   if (!summary.sectionCount || summary.openSeats === null || summary.fullSections === null) return;
   const checkedAt = now.toISOString();
-  const cutoff = new Date(now.getTime() - READING_HOURS * 3_600_000).toISOString();
-  await getDb().run(sql`INSERT INTO course_seat_history (term, course_id, checked_at, section_count, total_seats, open_seats, full_sections)
+  const cutoff = new Date(now.getTime() - 28 * 60_000).toISOString();
+  const inserted = await getDb().all(sql`INSERT INTO course_seat_history (term, course_id, checked_at, section_count, total_seats, open_seats, full_sections)
     SELECT ${term}, ${courseId}, ${checkedAt}, ${summary.sectionCount}, ${summary.totalSeats}, ${summary.openSeats}, ${summary.fullSections}
-    WHERE NOT EXISTS (SELECT 1 FROM course_seat_history WHERE term = ${term} AND course_id = ${courseId} AND checked_at >= ${cutoff})`);
+    WHERE NOT EXISTS (SELECT 1 FROM course_seat_history WHERE term = ${term} AND course_id = ${courseId} AND checked_at >= ${cutoff})
+    RETURNING checked_at`);
+  if (inserted.length) await recordFill(term, courseId, { totalSeats: summary.totalSeats, openSeats: summary.openSeats, at: checkedAt });
 }
 
-// Courses worth following in a term: ones opened on TerpPlan, watched, or in shared plans; those read
-// longest ago (or never) first, skipping any read in the last two hours.
+let hardPriority: string[] | null = null;
+function hardestCourses() {
+  hardPriority ??= rankHardCourses(hardCourseData as HardCourseData).slice(0, HARD_PRIORITY).map((course) => course.id);
+  return hardPriority;
+}
+
+// Courses worth following in a term: ones opened on TerpPlan or in shared plans, plus the hardest to get
+// and the watched ones; the hardest, the most planned and the watched every half hour, the rest every two hours.
 export async function coursesToTrack(term: string, limit = TRACK_PER_RUN, now = new Date()) {
-  const cutoff = new Date(now.getTime() - READING_HOURS * 3_600_000).toISOString();
-  const rows = await getDb().all<{ course_id: string }>(sql`SELECT c.course_id FROM (
-      SELECT course_id FROM course_offerings WHERE term = ${term} AND section_count > 0
-      UNION SELECT course_id FROM watches WHERE term = ${term}
-      UNION SELECT course_id FROM plan_activity WHERE term = ${term} AND removed_at IS NULL
-    ) c LEFT JOIN (SELECT course_id, MAX(checked_at) AS last FROM course_seat_history WHERE term = ${term} GROUP BY course_id) h ON h.course_id = c.course_id
-    WHERE h.last IS NULL OR h.last < ${cutoff}
-    ORDER BY h.last IS NOT NULL, h.last, c.course_id LIMIT ${limit}`);
-  return rows.map((row) => row.course_id);
+  const db = getDb();
+  const [candidates, planned, watched, last] = await Promise.all([
+    db.all<{ course_id: string }>(sql`SELECT course_id FROM course_offerings WHERE term = ${term} AND section_count > 0
+      UNION SELECT course_id FROM plan_activity WHERE term = ${term} AND removed_at IS NULL`),
+    db.all<{ course_id: string }>(sql`SELECT course_id FROM plan_activity WHERE term = ${term} AND removed_at IS NULL
+      GROUP BY course_id ORDER BY COUNT(DISTINCT user_hash) DESC, course_id LIMIT ${PLANNED_PRIORITY}`),
+    db.all<{ course_id: string }>(sql`SELECT DISTINCT course_id FROM watches WHERE term = ${term}`),
+    db.all<{ course_id: string; last_at: string }>(sql`SELECT course_id, last_at FROM course_fill WHERE term = ${term}`),
+  ]);
+  return pickCoursesToTrack({
+    candidates: candidates.map((row) => row.course_id),
+    priority: [...hardestCourses(), ...planned.map((row) => row.course_id), ...watched.map((row) => row.course_id)],
+    lastRead: new Map(last.map((row) => [row.course_id, row.last_at])),
+    now, limit,
+  });
 }
 
-// The background run's share: read up to 50 due courses from Testudo (25 per request) and record them.
+// The background run's share: read up to 75 due courses from Testudo (25 per request) and record them.
+// A course with no sections this term is noted as read, so it waits its turn like the others.
 export async function trackCourseSeats(term: string, now = new Date()) {
   const ids = await coursesToTrack(term, TRACK_PER_RUN, now);
   if (!ids.length) return { tracked: 0 };
@@ -282,8 +310,11 @@ export async function trackCourseSeats(term: string, now = new Date()) {
   let tracked = 0;
   for (const id of ids) {
     const list = sections.get(id) ?? [];
-    if (!list.length) continue;
-    const summary = summarizeSections(list);
+    const summary = list.length ? summarizeSections(list) : null;
+    if (!summary || summary.openSeats === null) {
+      await recordFill(term, id, { totalSeats: 0, openSeats: 0, at: now.toISOString() });
+      continue;
+    }
     await recordCourseOffering(id, term, summary.sectionCount, summary.totalSeats, summary.openSeats, summary.fullSections);
     await recordCourseSeatReading(term, id, summary, now);
     tracked += 1;

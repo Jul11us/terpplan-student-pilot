@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const watches = sqliteTable(
   "watches",
@@ -110,7 +110,23 @@ export const courseSeatHistory = sqliteTable(
     openSeats: integer("open_seats").notNull(),
     fullSections: integer("full_sections").notNull(),
   },
-  (table) => [primaryKey({ columns: [table.term, table.courseId, table.checkedAt] })],
+  (table) => [primaryKey({ columns: [table.term, table.courseId, table.checkedAt] }), index("course_seat_history_term_checked").on(table.term, table.checkedAt)],
+);
+
+// One row per course per term while registration runs (see lib/seat-race.ts): seats taken at TerpPlan's
+// first reading, when more were first taken (its registration started) and when it first became full.
+export const courseFill = sqliteTable(
+  "course_fill",
+  {
+    term: text("term").notNull(),
+    courseId: text("course_id").notNull(),
+    baseTaken: integer("base_taken").notNull(),
+    totalSeats: integer("total_seats").notNull(),
+    startedAt: text("started_at"),
+    filledAt: text("filled_at"),
+    lastAt: text("last_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.term, table.courseId] })],
 );
 
 // Visits that arrived with a ?ref= tag (a QR code or a shared link), counted per tag per day (Eastern
@@ -141,3 +157,15 @@ export const planSync = sqliteTable("plan_sync", {
   state: text("state").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
+
+// How many people used each part of TerpPlan per day (Eastern time): each browser counts once per feature
+// per day ("opened the planner", "added a course", "turned on a seat alert"...). Only the counts are kept.
+export const featureUsage = sqliteTable(
+  "feature_usage",
+  {
+    day: text("day").notNull(),
+    feature: text("feature").notNull(),
+    people: integer("people").notNull().default(0),
+  },
+  (table) => [primaryKey({ columns: [table.day, table.feature] })],
+);
