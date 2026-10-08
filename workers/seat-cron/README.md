@@ -70,7 +70,7 @@ node node_modules/wrangler/bin/wrangler.js deploy --dry-run --config workers/sea
 
 Apply migrations `0014_background_budget.sql` and `0015_mail_safety.sql` with the Site release before enabling
 the new endpoint. Without its budget table, the endpoint fails closed (503).
-Deploy the scheduler separately to apply its Wrangler CPU/subrequest limits.
+Deploy the scheduler separately to apply its schedule and application limits.
 
 - All authenticated background callers share one D1 allowance: at most 720 starts
   per UTC day, including failures. Runs start at least 90 seconds apart (allowing
@@ -86,7 +86,9 @@ Deploy the scheduler separately to apply its Wrangler CPU/subrequest limits.
   starts after the 60-second work budget. In-flight units can finish afterward;
   network calls have timeouts. The scheduler request times out after 90 seconds.
 - The scheduler makes one outbound request, has no public trigger and no Durable
-  Object alarm. Wrangler limits it to 1,000 ms CPU / one subrequest per invocation.
+  Object alarm. The Free plan's native CPU limits apply. Custom CPU limits require
+  Paid, so this configuration omits them and keeps the Free plan. The code makes
+  only one request per invocation and never retries it immediately.
 
 All three email paths (sign-in, seat alerts, feedback) share a persisted attempt
 budget: 90 per UTC day / 2,600 per calendar month. Alerts and feedback stop at 70
