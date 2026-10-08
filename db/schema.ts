@@ -169,3 +169,14 @@ export const featureUsage = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.day, table.feature] })],
 );
+
+// Each background run (/api/watches/run): when it started, how long it took and what it did, so /admin can
+// show whether the scheduler really calls it every 10 minutes. Kept for 7 days.
+export const backgroundRuns = sqliteTable("background_runs", {
+  startedAt: text("started_at").primaryKey(),
+  durationMs: integer("duration_ms").notNull(),
+  ok: integer("ok").notNull(),
+  checkedCourses: integer("checked_courses").notNull().default(0),
+  trackedCourses: integer("tracked_courses").notNull().default(0),
+  emailsSent: integer("emails_sent").notNull().default(0),
+});

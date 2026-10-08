@@ -39,6 +39,11 @@ const copy = {
     movers: "Most seats taken, last 24 hours", mTaken: "Taken", mLeft: "Left now", noMovers: "No seats have moved in the last 24 hours.",
     fastest: "Fastest to fill", fStarted: "Started", fFull: "Full", fTook: "Took", noFastest: "No course has gone from open to full yet. This fills in once registration opens.",
     minutes: "{n} min", hours: "{n} h", days: "{n} days",
+    runs: "Background check", runsNote: "Checks watched sections, sends seat emails and reads seats for \"how fast courses fill\". It should run about every 10 minutes.",
+    runLast: "Last run {t} ago", runJustNow: "Last run just now", runAt: "at {t} ET", runNever: "No run recorded yet. Runs are recorded from this version on.",
+    runHealthy: "On time", runLate: "Running late", runStopped: "Not running regularly",
+    run24: "{n} runs in the last 24 hours", runGap: "longest gap {t}",
+    runTime: "Started", runDuration: "Took", runChecked: "Courses checked", runTracked: "Seats recorded", runEmails: "Emails", runFailed: "failed",
   },
   zh: {
     eyebrow: "仅站长可见", title: "网站数据", back: "← 返回 TerpPlan", refresh: "刷新",
@@ -69,6 +74,11 @@ const copy = {
     movers: "最近 24 小时被抢最多", mTaken: "被选走", mLeft: "现在剩余", noMovers: "最近 24 小时没有座位变化。",
     fastest: "满得最快的课", fStarted: "开抢", fFull: "满员", fTook: "用时", noFastest: "还没有课从有空位变成满员，选课开放后这里会出现数据。",
     minutes: "{n} 分钟", hours: "{n} 小时", days: "{n} 天",
+    runs: "后台检查", runsNote: "检查被关注的班次、发余位邮件、记录抢课速度。正常应该每 10 分钟左右运行一次。",
+    runLast: "上次运行：{t}前", runJustNow: "上次运行：刚刚", runAt: "（美东 {t}）", runNever: "还没有运行记录，从这个版本开始记录。",
+    runHealthy: "运行正常", runLate: "有些延迟", runStopped: "没有按时运行",
+    run24: "最近 24 小时运行 {n} 次", runGap: "最长间隔 {t}",
+    runTime: "开始时间", runDuration: "耗时", runChecked: "检查课程", runTracked: "记录余位", runEmails: "邮件", runFailed: "失败",
   },
 } as const;
 
@@ -135,7 +145,28 @@ export default function AdminPage() {
       {state.status !== "ok" && <p role={state.status === "loading" ? "status" : "alert"} className={`mt-6 rounded-xl border px-4 py-3 text-sm ${state.status === "loading" ? "border-[#e0ddd5] bg-[#fbfaf8] text-[#5d6561]" : "border-[#ead8b5] bg-[#fff8e8] text-[#745424]"}`}>{t[state.status]}</p>}
 
       {stats && <>
-        <section className="mt-6 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
+        {(() => {
+          const runs = stats.backgroundRuns;
+          const last = runs.recent[0];
+          const minutesAgo = last ? Math.max(0, (Date.parse(stats.generatedAt) - Date.parse(last.startedAt)) / 60_000) : null;
+          const health = minutesAgo === null ? null : minutesAgo <= 20 ? "healthy" : minutesAgo <= 60 ? "late" : "stopped";
+          const badge = { healthy: ["bg-[#e3f0e8] text-[#24523a]", t.runHealthy], late: ["bg-[#fff1d6] text-[#7a5212]", t.runLate], stopped: ["bg-[#fbe1dc] text-[#8a2f22]", t.runStopped] } as const;
+          return <section className="mt-6 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-sm font-semibold text-[#24312d]">{t.runs}</h2>
+              {health && <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${badge[health][0]}`}>{badge[health][1]}</span>}
+            </div>
+            <p className="mt-1 text-[11px] leading-4 text-[#646c68]">{t.runsNote}</p>
+            {last && minutesAgo !== null ? <>
+              <p className="mt-3 text-sm text-[#24312d]"><span className="font-semibold">{minutesAgo < 1 ? t.runJustNow : t.runLast.replace("{t}", duration(minutesAgo / 60, t))}</span> <span className="text-xs text-[#646c68]">{t.runAt.replace("{t}", easternTime(last.startedAt, language))}</span></p>
+              <p className="mt-1 text-xs text-[#5d6561]">{t.run24.replace("{n}", String(runs.last24h))}{runs.longestGapMinutes24h !== null && <> · {t.runGap.replace("{t}", duration(runs.longestGapMinutes24h / 60, t))}</>}</p>
+              <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[28rem] text-xs"><thead><tr className="border-b border-[#ece9e2] text-left text-[#5d6561]"><th className="py-1.5 font-medium">{t.runTime}</th><th className="py-1.5 text-right font-medium">{t.runDuration}</th><th className="py-1.5 text-right font-medium">{t.runChecked}</th><th className="py-1.5 text-right font-medium">{t.runTracked}</th><th className="py-1.5 text-right font-medium">{t.runEmails}</th></tr></thead>
+                <tbody>{runs.recent.map((run) => <tr key={run.startedAt} className="border-b border-[#f0ede7]"><td className="py-1.5 text-[#5d6561]">{easternTime(run.startedAt, language)}{!run.ok && <span className="ml-2 font-semibold text-[#a34a39]">{t.runFailed}</span>}</td><td className="py-1.5 text-right">{(run.durationMs / 1000).toFixed(1)}s</td><td className="py-1.5 text-right">{run.checkedCourses}</td><td className="py-1.5 text-right">{run.trackedCourses}</td><td className="py-1.5 text-right">{run.emailsSent}</td></tr>)}</tbody></table></div>
+            </> : <p className="mt-2 text-xs text-[#646c68]">{t.runNever}</p>}
+          </section>;
+        })()}
+
+        <section className="mt-4 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
           <h2 className="text-sm font-semibold text-[#24312d]">{t.visits}</h2>
           <p className="mt-1 text-[11px] leading-4 text-[#646c68]">{stats.visitors.since ? t.visitsNote.replace("{d}", stats.visitors.since) : t.visitsNoteEmpty}</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

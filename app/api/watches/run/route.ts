@@ -15,6 +15,17 @@ const RECHECK_AFTER_MS = 4 * 60_000;
 // Cap one run so it finishes well inside the Worker time limit; the rest wait for the next run.
 const MAX_COURSES_PER_RUN = 40;
 
+// Notes the run for /admin ("last run x minutes ago"), keeping a week of runs. A failure here never fails the run.
+async function recordRun(startedAt: number, ok: boolean, counts: { checkedCourses?: number; trackedCourses?: number; emailsSent?: number } = {}) {
+  try {
+    await env.DB!.batch([
+      env.DB!.prepare("INSERT OR REPLACE INTO background_runs (started_at, duration_ms, ok, checked_courses, tracked_courses, emails_sent) VALUES (?, ?, ?, ?, ?, ?)")
+        .bind(new Date(startedAt).toISOString(), Date.now() - startedAt, ok ? 1 : 0, counts.checkedCourses ?? 0, counts.trackedCourses ?? 0, counts.emailsSent ?? 0),
+      env.DB!.prepare("DELETE FROM background_runs WHERE started_at < ?").bind(new Date(startedAt - 7 * 86_400_000).toISOString()),
+    ]);
+  } catch { /* the run's own work is done */ }
+}
+
 async function authorized(request: Request) {
   const secret = env.WATCH_RUNNER_SECRET;
   const header = request.headers.get("authorization") ?? "";
@@ -61,6 +72,7 @@ export async function POST(request: Request) {
       try { seatTracking = await trackCourseSeats(DEFAULT_TERM); } catch { seatTracking = { tracked: 0, failed: true }; }
     }
 
+    await recordRun(startedAt, true, { checkedCourses: batch.length, trackedCourses: seatTracking.tracked, emailsSent: email.emailsSent });
     // Counts only: no emails, user ids, or section details leave this endpoint.
     return Response.json({
       watches: rows.length,
@@ -77,6 +89,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("Background seat check failed", error instanceof Error ? error.name : "unknown");
+    await recordRun(startedAt, false);
     return Response.json({ error: "Background seat check failed." }, { status: 503 });
   }
 }

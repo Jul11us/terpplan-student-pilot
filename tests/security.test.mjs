@@ -309,3 +309,13 @@ test("scheduled cleanup deletes old abuse keys and codes while retaining recent 
   assert.equal(rowCount("email_login_codes"), 0);
   assert.equal(messages.length, 0);
 });
+
+test("each background run is noted for the owner page, and runs older than a week are dropped", async () => {
+  database.sqlite.prepare("INSERT INTO background_runs (started_at, duration_ms, ok) VALUES (?, 100, 1)").run(new Date(Date.now() - 8 * 86_400_000).toISOString());
+  const response = await runner(new Request("https://terpplan.test/api/watches/run", { method: "POST", headers: { authorization: `Bearer ${globalThis.__securityEnv.WATCH_RUNNER_SECRET}` } }));
+  assert.equal(response.status, 200);
+  const rows = database.sqlite.prepare("SELECT started_at, ok, checked_courses FROM background_runs").all();
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].ok, 1);
+  assert.ok(Date.now() - Date.parse(rows[0].started_at) < 60_000);
+});

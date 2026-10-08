@@ -60,6 +60,12 @@ export type AdminStats = {
     // Filled since TerpPlan started reading them, fastest first.
     fastest: { courseId: string; totalSeats: number; startedAt: string; filledAt: string; hours: number }[];
   };
+  // The scheduled background run: the latest runs (newest first) and how regular it was over the last day.
+  backgroundRuns: {
+    recent: { startedAt: string; durationMs: number; ok: boolean; checkedCourses: number; trackedCourses: number; emailsSent: number }[];
+    last24h: number;
+    longestGapMinutes24h: number | null;
+  };
   generatedAt: string;
 };
 
@@ -80,7 +86,7 @@ export async function adminStats(now = new Date()): Promise<AdminStats> {
   // referral_visits days are Eastern-time dates.
   const today = easternDay(now), weekStart = easternDay(new Date(now.getTime() - 6 * 86_400_000)), monthStart = easternDay(monthAgo);
   const term = DEFAULT_TERM;
-  const [subs, watchTotals, alerts, signupsByDay, watchesByTerm, topCourses, recent, referrals, referralsByDay, visitorTotals, visitorsByDay, usageRows, usageSince, raceTotals, raceRecent, raceFilled] = await Promise.all([
+  const [subs, watchTotals, alerts, signupsByDay, watchesByTerm, topCourses, recent, referrals, referralsByDay, visitorTotals, visitorsByDay, usageRows, usageSince, raceTotals, raceRecent, raceFilled, runs] = await Promise.all([
     first<{ total: number; recent: number; watching: number }>(
       `SELECT COUNT(*) AS total,
         SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) AS recent,
@@ -125,7 +131,14 @@ export async function adminStats(now = new Date()): Promise<AdminStats> {
     all<{ courseId: string; totalSeats: number; startedAt: string; filledAt: string }>(
       `SELECT course_id AS courseId, total_seats AS totalSeats, started_at AS startedAt, filled_at AS filledAt FROM course_fill
        WHERE term = ? AND started_at IS NOT NULL AND filled_at IS NOT NULL AND total_seats >= 30`, term),
+    all<{ startedAt: string; durationMs: number; ok: number; checkedCourses: number; trackedCourses: number; emailsSent: number }>(
+      `SELECT started_at AS startedAt, duration_ms AS durationMs, ok, checked_courses AS checkedCourses, tracked_courses AS trackedCourses, emails_sent AS emailsSent
+       FROM background_runs ORDER BY started_at DESC LIMIT 200`),
   ]);
+  const dayAgo = now.getTime() - 86_400_000;
+  const runTimes = runs.map((row) => Date.parse(row.startedAt)).filter((time) => time >= dayAgo);
+  // Gaps between runs in the last day, counting the time since the latest run.
+  const gaps = runTimes.map((time, index) => (index === 0 ? now.getTime() : runTimes[index - 1]!) - time);
   return {
     subscribers: subs?.total ?? 0,
     subscribersLast7Days: subs?.recent ?? 0,
@@ -159,6 +172,11 @@ export async function adminStats(now = new Date()): Promise<AdminStats> {
       movers: seatsTakenInWindow(raceRecent).slice(0, 10),
       fastest: raceFilled.map((row) => ({ ...row, hours: hoursToFill(row) ?? 0 }))
         .sort((a, b) => a.hours - b.hours || b.totalSeats - a.totalSeats || a.courseId.localeCompare(b.courseId)).slice(0, 15),
+    },
+    backgroundRuns: {
+      recent: runs.slice(0, 10).map((row) => ({ ...row, ok: row.ok === 1 })),
+      last24h: runTimes.length,
+      longestGapMinutes24h: gaps.length ? Math.round(Math.max(...gaps) / 60_000) : null,
     },
     generatedAt: now.toISOString(),
   };
