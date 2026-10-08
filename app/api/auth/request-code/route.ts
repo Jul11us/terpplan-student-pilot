@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { emailAuthConfigured, hashCode, hashEmail, newEmailCode } from "@/lib/auth";
 import { readJsonObject, sameOriginMutation } from "@/lib/request-security";
+import { countError } from "@/lib/error-counts";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -73,6 +74,7 @@ export async function POST(request: Request) {
     if (!sent.ok) {
       await env.DB.prepare("DELETE FROM email_login_codes WHERE email_hash = ? AND code_hash = ?").bind(emailHash, codeHash).run();
       console.error("Email provider rejected a sign-in message", sent.status);
+      await countError("email");
       return Response.json({ error: "The sign-in email could not be sent. Please try again shortly." }, { status: 502 });
     }
     return Response.json({ ok: true, expiresInSeconds: 600 });

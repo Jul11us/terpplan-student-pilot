@@ -3,6 +3,8 @@ import ServiceWorker from "@/app/components/service-worker";
 import { SITE_URL } from "@/lib/site-config";
 import Analytics from "@/app/components/analytics";
 import ReferralTracker from "@/app/components/referral-tracker";
+import ErrorReporter from "@/app/components/error-reporter";
+import FeedbackDialog from "@/app/components/feedback-dialog";
 import "./globals.css";
 
 const title = "TerpPlan · UMD course & schedule planner";
@@ -59,6 +61,8 @@ export default function RootLayout({
         <ServiceWorker />
         <Analytics />
         <ReferralTracker />
+        <ErrorReporter />
+        <FeedbackDialog />
       </body>
     </html>
   );

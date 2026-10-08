@@ -44,6 +44,11 @@ const copy = {
     runHealthy: "On time", runLate: "Running late", runStopped: "Not running regularly",
     run24: "{n} runs in the last 24 hours", runGap: "longest gap {t}",
     runTime: "Started", runDuration: "Took", runChecked: "Courses checked", runTracked: "Seats recorded", runEmails: "Emails", runFailed: "failed",
+    errors: "Errors", errorsNote: "Failed requests seen in visitors' browsers (each kind at most once a minute per page), and background seat reads and emails that failed. Counts only.",
+    errorsNone: "No errors in the last 24 hours.", errorsSome: "{n} in the last 24 hours", eKind: "What failed", e24: "Last 24 hours", e7: "Last 7 days",
+    errorKinds: { search: "Course search", course: "Course details and ratings", schedule: "Building schedules", seats: "Seat counts and trends", alerts: "Seat alerts (in the page)", sync: "Account sync", signin: "Email sign-in", api: "Other requests", page: "Page errors (scripts)", testudo: "Background: reading seats from Testudo", email: "Emails that failed to send", run: "Background run failed" },
+    feedback: "Feedback", feedbackNote: "Messages from the Feedback form. They are also emailed to the contact address.", feedbackNone: "No messages yet.",
+    fKinds: { problem: "Problem", idea: "Idea", other: "Other" } as Record<string, string>, fReply: "Reply to", fAnonymous: "anonymous", fFrom: "from",
   },
   zh: {
     eyebrow: "仅站长可见", title: "网站数据", back: "← 返回 TerpPlan", refresh: "刷新",
@@ -79,6 +84,11 @@ const copy = {
     runHealthy: "运行正常", runLate: "有些延迟", runStopped: "没有按时运行",
     run24: "最近 24 小时运行 {n} 次", runGap: "最长间隔 {t}",
     runTime: "开始时间", runDuration: "耗时", runChecked: "检查课程", runTracked: "记录余位", runEmails: "邮件", runFailed: "失败",
+    errors: "出错次数", errorsNote: "访客浏览器里失败的请求（同一页面每类每分钟最多算一次），以及后台读取余位、发邮件的失败。只记次数。",
+    errorsNone: "最近 24 小时没有出错。", errorsSome: "最近 24 小时出错 {n} 次", eKind: "哪里出错", e24: "最近 24 小时", e7: "最近 7 天",
+    errorKinds: { search: "搜索课程", course: "课程详情和评分", schedule: "生成课表", seats: "余位和趋势", alerts: "余位提醒（页面里）", sync: "账号同步", signin: "邮箱登录", api: "其他请求", page: "页面脚本出错", testudo: "后台：从 Testudo 读余位", email: "邮件没发出去", run: "后台检查整体失败" },
+    feedback: "用户反馈", feedbackNote: "来自“反馈”表单的留言，同时会发到联系邮箱。", feedbackNone: "还没有留言。",
+    fKinds: { problem: "有问题", idea: "提建议", other: "其他" } as Record<string, string>, fReply: "回复到", fAnonymous: "匿名", fFrom: "来自",
   },
 } as const;
 
@@ -165,6 +175,34 @@ export default function AdminPage() {
             </> : <p className="mt-2 text-xs text-[#646c68]">{t.runNever}</p>}
           </section>;
         })()}
+
+        {(() => {
+          const total = stats.errors.reduce((sum, row) => sum + row.last24h, 0);
+          const shown = stats.errors.filter((row) => row.last7Days > 0);
+          return <section className="mt-4 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-sm font-semibold text-[#24312d]">{t.errors}</h2>
+              <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${total ? "bg-[#fbe1dc] text-[#8a2f22]" : "bg-[#e3f0e8] text-[#24523a]"}`}>{total ? t.errorsSome.replace("{n}", String(total)) : t.errorsNone}</span>
+            </div>
+            <p className="mt-1 text-[11px] leading-4 text-[#646c68]">{t.errorsNote}</p>
+            {shown.length > 0 && <table className="mt-3 w-full text-xs"><thead><tr className="border-b border-[#ece9e2] text-left text-[#5d6561]"><th className="py-1.5 font-medium">{t.eKind}</th><th className="py-1.5 text-right font-medium">{t.e24}</th><th className="py-1.5 text-right font-medium">{t.e7}</th></tr></thead>
+              <tbody>{shown.map((row) => <tr key={row.kind} className="border-b border-[#f0ede7]"><td className="py-1.5">{t.errorKinds[row.kind]}</td><td className={`py-1.5 text-right ${row.last24h ? "font-semibold text-[#8a2f22]" : ""}`}>{row.last24h}</td><td className="py-1.5 text-right">{row.last7Days}</td></tr>)}</tbody></table>}
+          </section>;
+        })()}
+
+        <section className="mt-4 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
+          <h2 className="text-sm font-semibold text-[#24312d]">{t.feedback}</h2>
+          <p className="mt-1 text-[11px] leading-4 text-[#646c68]">{t.feedbackNote}</p>
+          {stats.feedback.length ? <ul className="mt-3 max-h-[28rem] space-y-2 overflow-y-auto">{stats.feedback.map((item) => <li key={item.id} className="rounded-xl border border-[#ece9e2] bg-white p-3">
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[#646c68]">
+              <span className={`rounded-full px-2 py-0.5 font-semibold ${item.kind === "problem" ? "bg-[#fbe1dc] text-[#8a2f22]" : "bg-[#edf3ef] text-[#273c38]"}`}>{t.fKinds[item.kind] ?? item.kind}</span>
+              <span>{easternTime(item.createdAt, language)}</span><span>· {t.fFrom} {item.page}</span>
+              <span>· {t.fReply} {item.contact ? <a href={`mailto:${item.contact}`} className="font-medium text-[#a34a39] hover:underline">{item.contact}</a> : t.fAnonymous}</span>
+            </p>
+            <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-[#24312d]">{item.message}</p>
+            {item.context && <p className="mt-1.5 text-[11px] text-[#646c68]">{item.context.split("\n").join(" · ")}</p>}
+          </li>)}</ul> : <p className="mt-2 text-xs text-[#646c68]">{t.feedbackNone}</p>}
+        </section>
 
         <section className="mt-4 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
           <h2 className="text-sm font-semibold text-[#24312d]">{t.visits}</h2>

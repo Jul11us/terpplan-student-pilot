@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useDocumentLanguage } from "@/lib/document-language";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { CONTACT_EMAIL } from "@/lib/site-config";
+import { openFeedback } from "@/lib/feedback";
 import homeReviews from "@/data/home-reviews.json";
 import { readRegistrationDay, savedReminder } from "@/lib/registration-day";
 import { RegistrationCountdown } from "@/app/components/registration-countdown";
@@ -47,7 +48,7 @@ const copy = {
     extrasTitle: "Also included",
     extras: ["Plan A and Plan B for each term", "Export to Apple or Google Calendar, or print", "\"My week\" on your phone, even offline", "Share a schedule with a link", "Your plan on every device once you sign in", "English and 中文"],
     footer: "TerpPlan is an independent student project, not affiliated with the University of Maryland. Always confirm sections and register in Testudo.",
-    contact: "Feedback or ideas:",
+    contact: "Feedback or ideas:", feedbackButton: "Send feedback", orEmail: "or email",
     closing: "Registration is coming. Have a backup plan ready.",
     registrationDay: "Registration day", registrationOpen: "Open your section numbers and backups",
     faqTitle: "Questions",
@@ -83,7 +84,7 @@ const copy = {
     extrasTitle: "还有这些",
     extras: ["每学期两个方案（A / B）", "导出到苹果或谷歌日历，或打印", "手机上的“我的一周”，离线也能看", "用链接分享课表", "登录后所有设备看到同一份方案", "中文和 English"],
     footer: "TerpPlan 是学生独立开发的项目，与马里兰大学没有隶属关系。班次以 Testudo 为准，并在 Testudo 完成注册。",
-    contact: "反馈和建议：",
+    contact: "反馈和建议：", feedbackButton: "写反馈", orEmail: "或发邮件到",
     closing: "下学期选课前，先排好一份备选方案。",
     registrationDay: "选课当天", registrationOpen: "打开课号、班号和备选清单",
     faqTitle: "常见问题",
@@ -350,7 +351,7 @@ export default function Home() {
 
     <footer className="border-t border-[#e0ddd5]"><div className="mx-auto max-w-6xl px-5 py-6 text-xs leading-5 text-[#646c68] sm:px-8">
       <p>{t.footer}</p>
-      <p className="mt-1">{t.contact} <a href={`mailto:${CONTACT_EMAIL}`} className="font-medium text-[#a34a39] hover:underline">{CONTACT_EMAIL}</a></p>
+      <p className="mt-1">{t.contact} <button type="button" onClick={() => openFeedback({ kind: "idea" })} className="font-medium text-[#a34a39] hover:underline">{t.feedbackButton}</button> {t.orEmail} <a href={`mailto:${CONTACT_EMAIL}`} className="font-medium text-[#a34a39] hover:underline">{CONTACT_EMAIL}</a></p>
     </div></footer>
   </main>;
 }

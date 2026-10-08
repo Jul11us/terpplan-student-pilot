@@ -12,14 +12,21 @@ export type ReportContext = {
   language: "en" | "zh";
 };
 
-export function reportMailto({ term, courseId, sectionIds = [], seatReadAt, language }: ReportContext) {
-  const about = courseId ?? (sectionIds.length ? sectionIds.join(", ") : "");
-  const subject = language === "zh" ? `TerpPlan 问题反馈：${about || term}（${term}）` : `TerpPlan problem: ${about || term} (${term})`;
-  const details = [
+// What the report is about, one fact per line; the in-page feedback form sends it along with the message.
+export function reportDetails({ term, courseId, sectionIds = [], seatReadAt }: Omit<ReportContext, "language">) {
+  return [
     courseId ? `Course: ${courseId}` : "",
     sectionIds.length ? `Sections: ${sectionIds.join(", ")}` : "",
     `Term: ${term}`,
     seatReadAt ? `Seat data read: ${seatReadAt}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+export function reportMailto({ term, courseId, sectionIds = [], seatReadAt, language }: ReportContext) {
+  const about = courseId ?? (sectionIds.length ? sectionIds.join(", ") : "");
+  const subject = language === "zh" ? `TerpPlan 问题反馈：${about || term}（${term}）` : `TerpPlan problem: ${about || term} (${term})`;
+  const details = [
+    reportDetails({ term, courseId, sectionIds, seatReadAt }),
     // The page only, never its #fragment, which can hold a whole plan.
     typeof window === "undefined" ? "" : `Page: ${window.location.origin}${window.location.pathname}`,
   ].filter(Boolean).join("\n");

@@ -2,9 +2,11 @@ import { env } from "cloudflare:workers";
 import { getDb } from "@/db";
 import { watches } from "@/db/schema";
 import { removeExpiredWatches, sendPendingAlerts } from "@/lib/alerts";
-import { checkWatchGroup, groupByCourse, latestCheck } from "@/lib/seat-check";
+import { checkWatchGroups, groupByCourse, latestCheck } from "@/lib/seat-check";
 import { trackCourseSeats } from "@/lib/history-db";
 import { DEFAULT_TERM } from "@/lib/umd";
+import { countError } from "@/lib/error-counts";
+import { errorHour } from "@/lib/error-kinds";
 
 // Background seat check for every student's watches, called by an external scheduler
 // (GitHub Actions) with `Authorization: Bearer <WATCH_RUNNER_SECRET>`.
@@ -12,8 +14,11 @@ import { DEFAULT_TERM } from "@/lib/umd";
 
 // Skip courses checked this recently (by a page or a previous run) to stay gentle on the source.
 const RECHECK_AFTER_MS = 4 * 60_000;
-// Cap one run so it finishes well inside the Worker time limit; the rest wait for the next run.
-const MAX_COURSES_PER_RUN = 40;
+// Cap one run so it finishes well inside the scheduler's time limit; the rest wait for the next run.
+// Courses are read 25 per Testudo request, so 300 courses is about 12 requests.
+const MAX_COURSES_PER_RUN = 300;
+// No new seat requests are started after this long, so emails still go out in the same run.
+const CHECK_BUDGET_MS = 40_000;
 
 // Notes the run for /admin ("last run x minutes ago"), keeping a week of runs. A failure here never fails the run.
 async function recordRun(startedAt: number, ok: boolean, counts: { checkedCourses?: number; trackedCourses?: number; emailsSent?: number } = {}) {
@@ -50,6 +55,7 @@ export async function POST(request: Request) {
     const cutoff = Math.floor(Date.now() / 1000) - 86400;
     await env.DB!.prepare("DELETE FROM email_login_rate_limits WHERE window_started_at < ?").bind(cutoff).run();
     await env.DB!.prepare("DELETE FROM email_login_codes WHERE expires_at < ?").bind(cutoff).run();
+    await env.DB!.prepare("DELETE FROM error_counts WHERE hour < ?").bind(errorHour(new Date(startedAt - 30 * 86_400_000))).run();
     const rows = await db.select().from(watches);
     const groups = groupByCourse(rows);
     const due = groups
@@ -59,8 +65,8 @@ export async function POST(request: Request) {
 
     let failedCourses = 0;
     let openedFromFull = 0;
-    for (const group of batch) {
-      const result = await checkWatchGroup(db, group);
+    const results = await checkWatchGroups(db, batch, startedAt + CHECK_BUDGET_MS);
+    for (const result of results) {
       if (!result.ok) failedCourses += 1;
       openedFromFull += result.openedFromFull.length;
     }
@@ -72,14 +78,16 @@ export async function POST(request: Request) {
       try { seatTracking = await trackCourseSeats(DEFAULT_TERM); } catch { seatTracking = { tracked: 0, failed: true }; }
     }
 
-    await recordRun(startedAt, true, { checkedCourses: batch.length, trackedCourses: seatTracking.tracked, emailsSent: email.emailsSent });
+    await countError("testudo", failedCourses);
+    await countError("email", email.emailsFailed);
+    await recordRun(startedAt, true, { checkedCourses: results.length, trackedCourses: seatTracking.tracked, emailsSent: email.emailsSent });
     // Counts only: no emails, user ids, or section details leave this endpoint.
     return Response.json({
       watches: rows.length,
       courses: groups.length,
-      checkedCourses: batch.length,
+      checkedCourses: results.length,
       skippedRecentlyChecked: groups.length - due.length,
-      deferredToNextRun: due.length - batch.length,
+      deferredToNextRun: due.length - results.length,
       failedCourses,
       openedFromFull,
       ...email,
@@ -89,6 +97,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("Background seat check failed", error instanceof Error ? error.name : "unknown");
+    await countError("run");
     await recordRun(startedAt, false);
     return Response.json({ error: "Background seat check failed." }, { status: 503 });
   }

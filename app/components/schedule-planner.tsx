@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReferenceSchedule } from "@/app/components/gened-finder";
 import RegistrationChecklist from "@/app/components/registration-checklist";
 import { buildIcs, type IcsMeeting } from "@/lib/ics";
-import { reportMailto } from "@/lib/report-link";
+import { reportDetails } from "@/lib/report-link";
+import { openFeedback } from "@/lib/feedback";
 import { roomLabel } from "@/lib/room";
 import { TERM_CALENDARS } from "@/lib/term-calendar";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
@@ -768,7 +769,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
         <WeekLoadChart sections={chosen.selectedSections} language={language} />
         <WorkloadCard courses={chosen.selectedSections.map((section) => ({ courseId: section.course_id, credits: section.credits }))} language={language} />
         <WeeklyCalendar sections={chosen.selectedSections} language={language} busyBlocks={busyBlocks} onSelectSection={(section) => { const control = document.getElementById(`section-swap-${section.section_id}`); control?.scrollIntoView({ block: "center", behavior: "smooth" }); control?.click(); }} />
-        <a href={reportMailto({ term: termName, sectionIds: chosen.selectedSections.map((section) => section.section_id), language })} className="mt-2 inline-block text-xs font-medium text-[#a34a39] hover:underline">{t.reportSchedule} ↗</a>
+        <button type="button" onClick={() => openFeedback({ kind: "problem", context: reportDetails({ term: termName, sectionIds: chosen.selectedSections.map((section) => section.section_id) }) })} className="mt-2 inline-block text-xs font-medium text-[#a34a39] hover:underline">{t.reportSchedule}</button>
         {/* Saving and sharing come after the timetable, once the student has looked the schedule over. */}
         <div className="mt-5"><h4 className="mb-2 font-semibold">{language === "zh" ? "保存和分享这份课表" : "Save or share this schedule"}</h4>
         <CalendarExport key={chosen.selectedSections.map((section) => section.section_id).join("|")} sections={chosen.selectedSections} term={term} termName={termName} language={language} incomplete={chosenMissing.length > 0}>

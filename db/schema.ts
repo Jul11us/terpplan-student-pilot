@@ -180,3 +180,29 @@ export const backgroundRuns = sqliteTable("background_runs", {
   trackedCourses: integer("tracked_courses").notNull().default(0),
   emailsSent: integer("emails_sent").notNull().default(0),
 });
+
+// How often things went wrong, per hour (UTC, "YYYY-MM-DDTHH") and kind: a request to TerpPlan's own API that
+// failed in a visitor's browser, a page error, or a background seat read or email that failed. Only the
+// counts are kept, never what was being done. Kept for 30 days.
+export const errorCounts = sqliteTable(
+  "error_counts",
+  {
+    hour: text("hour").notNull(),
+    kind: text("kind").notNull(),
+    count: integer("count").notNull().default(0),
+  },
+  (table) => [primaryKey({ columns: [table.hour, table.kind] })],
+);
+
+// Messages sent with the in-page feedback form: what kind, the text, a way to reply if the student gave one,
+// the page it was sent from and the course or sections it was about (no plan or other browser data).
+export const feedback = sqliteTable("feedback", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  createdAt: text("created_at").notNull(),
+  kind: text("kind").notNull(),
+  message: text("message").notNull(),
+  contact: text("contact"),
+  page: text("page").notNull(),
+  context: text("context"),
+  language: text("language").notNull(),
+});
