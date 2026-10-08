@@ -1,0 +1,110 @@
+"use client";
+
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { FIRST_DEMO_WEEK, nextDemoWeek, PERSONAL_COMMITMENTS, PREFERENCES, weekBlocks, weekExplanation, weekSignature, type DemoWeek, type Meeting } from "@/lib/home-timetable";
+
+type Language = "en" | "zh";
+const TONES = [
+  "bg-[#f9d9d6] text-[#7c2f27]", "bg-[#d3ece4] text-[#24524a]", "bg-[#f3e3b3] text-[#5f4316]", "bg-[#dcd6f0] text-[#3e3470]",
+  "bg-[#d7e6f5] text-[#24496b]", "bg-[#f8dcc4] text-[#7a3f12]", "bg-[#e2edcf] text-[#3d5520]",
+];
+const toneOf = (id: string) => TONES[[...id].reduce((sum, char) => sum + char.charCodeAt(0), 0) % TONES.length]!;
+const OWN_TONE = "bg-[#e6e3dc] text-[#5d6561] outline-dashed outline-1 -outline-offset-1 outline-[#bdb8ad]";
+const at = (hour: number) => ((hour - 8) / 10) * 100;
+const position = (meeting: Meeting) => ({ left: `calc(${meeting.day} * (100% + 6px) / 5)`, width: "calc((100% - 24px) / 5)", top: `${at(meeting.start)}%`, height: `${at(meeting.end) - at(meeting.start)}%` });
+const EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
+
+export function TimetableSketch({ language }: { language: Language }) {
+  const days = language === "zh" ? ["周一", "周二", "周三", "周四", "周五"] : ["Mon", "Tue", "Wed", "Thu", "Fri"];
+  const [preview, setPreview] = useState<{ before: DemoWeek | null; week: DemoWeek; step: number }>({ before: null, week: FIRST_DEMO_WEEK, step: 0 });
+  const [paused, setPaused] = useState(false);
+  const figure = useRef<HTMLElement>(null);
+  const grid = useRef<HTMLDivElement>(null);
+  const rectangles = useRef(new Map<string, DOMRect>());
+  const animations = useRef<Animation[]>([]);
+  const recent = useRef([weekSignature(FIRST_DEMO_WEEK)]);
+  const onScreen = useRef(true);
+  const { week } = preview;
+  const blocks = weekBlocks(week, language);
+  const currentKeys = new Set(blocks.map((block) => block.key));
+  const exiting = preview.before ? weekBlocks(preview.before, language).filter((block) => !currentKeys.has(block.key)) : [];
+  const explanation = weekExplanation(preview.before, week, language);
+  const own = PERSONAL_COMMITMENTS[week.own]!;
+  const preference = PREFERENCES[week.preference];
+
+  const advance = useCallback(() => {
+    // Capture the visible positions before React moves them, including an interrupted transition.
+    const previous = new Map<string, DOMRect>();
+    grid.current?.querySelectorAll<HTMLElement>("[data-sketch-block]").forEach((element) => previous.set(element.dataset.sketchBlock!, element.getBoundingClientRect()));
+    rectangles.current = previous;
+    setPreview((current) => ({ before: current.week, week: nextDemoWeek(current.week, current.step, recent.current), step: current.step + 1 }));
+  }, []);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(([entry]) => { onScreen.current = entry?.isIntersecting ?? false; }, { threshold: 0.15 });
+    if (figure.current) observer.observe(figure.current);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (paused) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)");
+    // Give the result and caption time to settle. Offscreen/background demos do no work.
+    const timer = window.setInterval(() => {
+      if (!reduced.matches && onScreen.current && !document.hidden) advance();
+    }, 4500);
+    return () => window.clearInterval(timer);
+  }, [advance, paused]);
+
+  useLayoutEffect(() => {
+    animations.current.forEach((animation) => animation.cancel());
+    animations.current = [];
+    const signature = weekSignature(week);
+    if (recent.current.at(-1) !== signature) recent.current = [...recent.current.slice(-11), signature];
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches || !preview.before) return;
+    grid.current?.querySelectorAll<HTMLElement>("[data-sketch-block]").forEach((element) => {
+      const next = element.getBoundingClientRect();
+      const before = rectangles.current.get(element.dataset.sketchBlock!);
+      if (before) {
+        const dx = before.left - next.left, dy = before.top - next.top;
+        const sx = before.width / next.width, sy = before.height / next.height;
+        if (dx || dy || sx !== 1 || sy !== 1) animations.current.push(element.animate([
+          { transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})` },
+          { transform: "none" },
+        ], { duration: 650, easing: EASING }));
+      } else animations.current.push(element.animate([
+        { opacity: 0, transform: "translateY(6px) scale(.96)" },
+        { opacity: 1, transform: "none" },
+      ], { duration: 400, delay: 100, easing: EASING, fill: "backwards" }));
+    });
+    return () => animations.current.forEach((animation) => animation.cancel());
+  }, [week, preview.before]);
+
+  return <figure ref={figure} className="timetable-sketch rounded-2xl border border-[#e0ddd5] bg-white p-3 shadow-sm">
+    <div className="mb-2 flex items-center justify-between gap-2 px-1">
+      <span className="text-[10px] font-semibold tracking-wide text-[#7a817d]">{language === "zh" ? "示例课表 · 5 门课" : "Sample schedule · 5 courses"}</span>
+      <div className="flex items-center gap-1">
+        <button type="button" aria-label={language === "zh" ? paused ? "继续课表动画" : "暂停课表动画" : paused ? "Resume schedule animation" : "Pause schedule animation"} aria-pressed={paused} onClick={() => setPaused((value) => !value)} className="sketch-control flex h-8 w-8 items-center justify-center rounded-full text-[#646c68] hover:bg-[#f1efe9] hover:text-[#273c38] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#536d64]">
+          <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="currentColor">{paused ? <path d="M4 2.5 13 8l-9 5.5z" /> : <><rect x="4" y="3" width="3" height="10" rx=".6" /><rect x="9" y="3" width="3" height="10" rx=".6" /></>}</svg>
+        </button>
+        <button type="button" onClick={advance} aria-label={language === "zh" ? "换一个课表组合" : "Show another schedule"} className="sketch-control flex h-8 w-8 items-center justify-center rounded-full text-[#646c68] hover:bg-[#f1efe9] hover:text-[#273c38] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#536d64]">
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h9M8 4l4 4-4 4" /></svg>
+        </button>
+      </div>
+    </div>
+    <div aria-hidden="true" className="mb-3 flex min-h-14 content-start flex-wrap items-start gap-1.5 px-1 text-[11px] font-semibold sm:min-h-7">
+      <span key={`own-${week.own}`} className="sketch-copy rounded-full bg-[#f1efe9] px-2.5 py-1 text-[#48534f]">{own.text[language]}</span>
+      {preference && <span key={week.preference} className="sketch-copy rounded-full bg-[#edf3ef] px-2.5 py-1 text-[#273c38]">{preference[language]}</span>}
+    </div>
+    <div aria-hidden="true" className="grid grid-cols-5 gap-1.5 text-center text-[10px] font-semibold text-[#646c68]">{days.map((day, index) => <span key={day} className={`transition-opacity duration-500 motion-reduce:transition-none ${week.preference === "noFriday" && index === 4 ? "opacity-40" : ""}`}>{day}</span>)}</div>
+    <div ref={grid} aria-hidden="true" className="relative mt-2 grid h-60 grid-cols-5 gap-1.5 overflow-hidden rounded-md">
+      {days.map((day, index) => <div key={day} className={`rounded-md transition-colors duration-500 motion-reduce:transition-none ${week.preference === "noFriday" && index === 4 ? "bg-[#efece6]" : "bg-[#f7f5f0]"}`} />)}
+      {exiting.map(({ key, label, personal, meeting }) => <div key={`exit-${preview.step}-${key}`} className={`sketch-out pointer-events-none absolute flex items-center justify-center overflow-hidden rounded-md text-[10px] font-semibold ${personal ? OWN_TONE : toneOf(label)}`} style={position(meeting)}>{label}</div>)}
+      {blocks.map(({ key, label, personal, meeting }) => <div key={key} data-sketch-block={key} className={`absolute flex origin-top-left items-center justify-center overflow-hidden rounded-md text-[10px] font-semibold ${personal ? OWN_TONE : toneOf(label)}`} style={position(meeting)}>{label}</div>)}
+    </div>
+    <figcaption className="mt-3 flex min-h-20 items-start gap-2 border-t border-[#eeece6] px-1 pt-3 text-xs leading-5 text-[#48534f]">
+      <span aria-hidden="true" className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#edf3ef] text-[10px] font-bold text-[#315c43]">✓</span>
+      <span key={`${preview.step}-${language}`} className="sketch-copy">{explanation}</span>
+    </figcaption>
+  </figure>;
+}

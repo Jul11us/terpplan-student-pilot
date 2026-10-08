@@ -223,10 +223,17 @@ select:not([multiple]) {
   #print-sheet a { text-decoration: none; color: inherit; }
 }
 
-/* A class appearing in the home page's moving timetable fades and grows in (no motion if reduced). */
-@keyframes sketch-in { from { opacity: 0; transform: scale(.85); } to { opacity: 1; transform: none; } }
-.sketch-in { animation: sketch-in .5s ease-out; }
-@media (prefers-reduced-motion: reduce) { .sketch-in { animation: none; transition: none; } }
+/* Timetable positions are animated with transforms; departing blocks remain briefly to fade out. */
+@keyframes sketch-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(.96); } }
+@keyframes sketch-copy { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.sketch-out { animation: sketch-out .22s cubic-bezier(.22, 1, .36, 1) forwards; }
+.sketch-copy { animation: sketch-copy .22s cubic-bezier(.22, 1, .36, 1); }
+.sketch-control { transition: background-color .18s ease, color .18s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .sketch-out { display: none; }
+  .sketch-copy { animation: none; }
+  .sketch-control { transition: none; }
+}
 
 /* The home page's scrolling review rows: two copies side by side, moved by half their width, loop seamlessly. */
 @keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
