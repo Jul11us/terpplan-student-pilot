@@ -2,6 +2,7 @@
 const RUN_URL = "https://terpplan.com/api/watches/run";
 
 export async function checkSeats(env, fetcher = fetch) {
+  if (env.WATCH_RUNNER_ENABLED === "false") return { skipped: "disabled" };
   if (!env.WATCH_RUNNER_SECRET) throw new Error("Seat-check secret is not configured.");
   let response;
   try {
@@ -26,9 +27,13 @@ export async function checkSeats(env, fetcher = fetch) {
     throw new Error("Seat-check endpoint returned an invalid summary.");
   }
   const summary = Object.fromEntries(names.map((name) => [name, result[name]]));
+  if (result.skipped === "disabled" || result.skipped === "budget-or-lock") {
+    console.log(JSON.stringify({ event: "seat-check-skipped", reason: result.skipped }));
+    return { ...summary, skipped: result.skipped };
+  }
   console.log(JSON.stringify({ event: "seat-check", ...summary }));
   if (summary.failedCourses || summary.emailsFailed) throw new Error("Some seat checks or emails failed; see count summary.");
-  if (summary.deferredToNextRun) console.warn("Seat-check backlog remains for the next scheduled run.");
+  if (summary.deferredToNextRun || result.moreWatches) console.warn("Seat-check backlog remains for the next scheduled run.");
   return summary;
 }
 

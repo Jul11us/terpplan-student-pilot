@@ -39,8 +39,10 @@ const copy = {
     movers: "Most seats taken, last 24 hours", mTaken: "Taken", mLeft: "Left now", noMovers: "No seats have moved in the last 24 hours.",
     fastest: "Fastest to fill", fStarted: "Started", fFull: "Full", fTook: "Took", noFastest: "No course has gone from open to full yet. This fills in once registration opens.",
     minutes: "{n} min", hours: "{n} h", days: "{n} days",
-    runs: "Background check", runsNote: "Checks watched sections, sends seat emails and reads seats for \"how fast courses fill\". It should run about every 10 minutes.",
-    runLast: "Last run {t} ago", runJustNow: "Last run just now", runAt: "at {t} ET", runNever: "No run recorded yet. Runs are recorded from this version on.",
+    mailQuota: "Email allowance", mailQuotaNote: "This site's sending attempts in UTC, including sign-in and feedback; other apps and incoming mail are excluded. Provider acceptance does not mean inbox delivery.",
+    mailDay: "Today", mailMonth: "This month", mailAccepted: "Accepted today", mailFailed: "Failed today", mailNear: "Allowance is running low", mailPaused: "Email sending is paused", mailReserve: "{n} daily slots reserved for sign-in", backlog: "Work is waiting for a later run", failures: "The latest check had failures",
+    runs: "Background check", runsNote: "Checks watched sections, sends seat emails and reads seats for \"how fast courses fill\". It should run about every 2 minutes.",
+    runLast: "Last successful run {t} ago", runJustNow: "Last successful run just now", runAt: "at {t} ET", runNever: "No successful run recorded yet.",
     runHealthy: "On time", runLate: "Running late", runStopped: "Not running regularly",
     run24: "{n} runs in the last 24 hours", runGap: "longest gap {t}",
     runTime: "Started", runDuration: "Took", runChecked: "Courses checked", runTracked: "Seats recorded", runEmails: "Emails", runFailed: "failed",
@@ -79,8 +81,10 @@ const copy = {
     movers: "最近 24 小时被抢最多", mTaken: "被选走", mLeft: "现在剩余", noMovers: "最近 24 小时没有座位变化。",
     fastest: "满得最快的课", fStarted: "开抢", fFull: "满员", fTook: "用时", noFastest: "还没有课从有空位变成满员，选课开放后这里会出现数据。",
     minutes: "{n} 分钟", hours: "{n} 小时", days: "{n} 天",
-    runs: "后台检查", runsNote: "检查被关注的班次、发余位邮件、记录抢课速度。正常应该每 10 分钟左右运行一次。",
-    runLast: "上次运行：{t}前", runJustNow: "上次运行：刚刚", runAt: "（美东 {t}）", runNever: "还没有运行记录，从这个版本开始记录。",
+    mailQuota: "邮件额度", mailQuotaNote: "按 UTC 统计本网站的发送尝试，包含验证码和反馈邮件，不含其他应用和收信。服务商接受邮件不代表已送达收件箱。",
+    mailDay: "今日", mailMonth: "本月", mailAccepted: "今日服务商已接受", mailFailed: "今日发送失败", mailNear: "邮件额度接近上限", mailPaused: "邮件发送已暂停", mailReserve: "每日为登录验证码预留 {n} 封额度", backlog: "有积压，等待后续检查处理", failures: "最近一轮检查有失败",
+    runs: "后台检查", runsNote: "检查被关注的班次、发余位邮件、记录抢课速度。正常应该每 2 分钟左右运行一次。",
+    runLast: "上次成功检查：{t}前", runJustNow: "上次成功检查：刚刚", runAt: "（美东 {t}）", runNever: "还没有成功检查记录。",
     runHealthy: "运行正常", runLate: "有些延迟", runStopped: "没有按时运行",
     run24: "最近 24 小时运行 {n} 次", runGap: "最长间隔 {t}",
     runTime: "开始时间", runDuration: "耗时", runChecked: "检查课程", runTracked: "记录余位", runEmails: "邮件", runFailed: "失败",
@@ -158,8 +162,8 @@ export default function AdminPage() {
         {(() => {
           const runs = stats.backgroundRuns;
           const last = runs.recent[0];
-          const minutesAgo = last ? Math.max(0, (Date.parse(stats.generatedAt) - Date.parse(last.startedAt)) / 60_000) : null;
-          const health = minutesAgo === null ? null : minutesAgo <= 20 ? "healthy" : minutesAgo <= 60 ? "late" : "stopped";
+          const minutesAgo = runs.lastSuccessAt ? Math.max(0, (Date.parse(stats.generatedAt) - Date.parse(runs.lastSuccessAt)) / 60_000) : null;
+          const health = minutesAgo === null || minutesAgo > 15 ? "stopped" : !last?.ok || minutesAgo > 5 ? "late" : "healthy";
           const badge = { healthy: ["bg-[#e3f0e8] text-[#24523a]", t.runHealthy], late: ["bg-[#fff1d6] text-[#7a5212]", t.runLate], stopped: ["bg-[#fbe1dc] text-[#8a2f22]", t.runStopped] } as const;
           return <section className="mt-6 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
             <div className="flex flex-wrap items-center gap-2">
@@ -168,13 +172,28 @@ export default function AdminPage() {
             </div>
             <p className="mt-1 text-[11px] leading-4 text-[#646c68]">{t.runsNote}</p>
             {last && minutesAgo !== null ? <>
-              <p className="mt-3 text-sm text-[#24312d]"><span className="font-semibold">{minutesAgo < 1 ? t.runJustNow : t.runLast.replace("{t}", duration(minutesAgo / 60, t))}</span> <span className="text-xs text-[#646c68]">{t.runAt.replace("{t}", easternTime(last.startedAt, language))}</span></p>
+              <p className="mt-3 text-sm text-[#24312d]"><span className="font-semibold">{minutesAgo < 1 ? t.runJustNow : t.runLast.replace("{t}", duration(minutesAgo / 60, t))}</span> <span className="text-xs text-[#646c68]">{t.runAt.replace("{t}", easternTime(runs.lastSuccessAt!, language))}</span></p>
               <p className="mt-1 text-xs text-[#5d6561]">{t.run24.replace("{n}", String(runs.last24h))}{runs.longestGapMinutes24h !== null && <> · {t.runGap.replace("{t}", duration(runs.longestGapMinutes24h / 60, t))}</>}</p>
               <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[28rem] text-xs"><thead><tr className="border-b border-[#ece9e2] text-left text-[#5d6561]"><th className="py-1.5 font-medium">{t.runTime}</th><th className="py-1.5 text-right font-medium">{t.runDuration}</th><th className="py-1.5 text-right font-medium">{t.runChecked}</th><th className="py-1.5 text-right font-medium">{t.runTracked}</th><th className="py-1.5 text-right font-medium">{t.runEmails}</th></tr></thead>
                 <tbody>{runs.recent.map((run) => <tr key={run.startedAt} className="border-b border-[#f0ede7]"><td className="py-1.5 text-[#5d6561]">{easternTime(run.startedAt, language)}{!run.ok && <span className="ml-2 font-semibold text-[#a34a39]">{t.runFailed}</span>}</td><td className="py-1.5 text-right">{(run.durationMs / 1000).toFixed(1)}s</td><td className="py-1.5 text-right">{run.checkedCourses}</td><td className="py-1.5 text-right">{run.trackedCourses}</td><td className="py-1.5 text-right">{run.emailsSent}</td></tr>)}</tbody></table></div>
             </> : <p className="mt-2 text-xs text-[#646c68]">{t.runNever}</p>}
+            {last && (last.deferred > 0 || last.emailsDeferred > 0) && <p role="status" className="mt-2 text-xs text-[#7a5212]">{t.backlog} · {last.deferred} / {last.emailsDeferred}</p>}
+            {last && !last.ok && <p role="alert" className="mt-2 text-xs text-[#8a2f22]">{t.failures} · {last.failedCourses} / {last.emailsFailed}</p>}
           </section>;
         })()}
+
+        <section className="mt-4 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
+          <h2 className="text-sm font-semibold text-[#24312d]">{t.mailQuota}</h2>
+          <p className="mt-1 text-[11px] leading-4 text-[#646c68]">{t.mailQuotaNote}</p>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 text-xs">
+            <p>{t.mailDay}<strong className="mt-1 block text-lg">{stats.mailBudget.today} / {stats.mailBudget.dayLimit}</strong></p>
+            <p>{t.mailMonth}<strong className="mt-1 block text-lg">{stats.mailBudget.month} / {stats.mailBudget.monthLimit}</strong></p>
+            <p>{t.mailAccepted}<strong className="mt-1 block text-lg">{stats.mailBudget.acceptedToday}</strong></p>
+            <p>{t.mailFailed}<strong className="mt-1 block text-lg">{stats.mailBudget.failedToday}</strong></p>
+          </div>
+          <p className="mt-2 text-xs text-[#646c68]">{t.mailReserve.replace("{n}", String(stats.mailBudget.loginReserve))}</p>
+          {(!stats.mailBudget.enabled || stats.mailBudget.nearLimit) && <p role="alert" className="mt-2 text-xs font-semibold text-[#8a2f22]">{stats.mailBudget.enabled ? t.mailNear : t.mailPaused}</p>}
+        </section>
 
         {(() => {
           const total = stats.errors.reduce((sum, row) => sum + row.last24h, 0);

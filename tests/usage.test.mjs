@@ -75,7 +75,7 @@ test("the owner page shows how fast courses filled and what moved in the last da
 });
 
 test("the owner page shows the latest background runs and the longest gap in the last day", async () => {
-  const insert = database.sqlite.prepare("INSERT INTO background_runs VALUES (?, ?, ?, ?, ?, ?)");
+  const insert = database.sqlite.prepare("INSERT INTO background_runs (started_at, duration_ms, ok, checked_courses, tracked_courses, emails_sent) VALUES (?, ?, ?, ?, ?, ?)");
   const start = Date.now();
   const at = (minutesAgo) => new Date(start - minutesAgo * 60_000).toISOString();
   insert.run(at(5), 1200, 1, 3, 40, 1);
@@ -84,7 +84,7 @@ test("the owner page shows the latest background runs and the longest gap in the
   insert.run(at(2000), 800, 1, 2, 75, 0);
   const { backgroundRuns } = await adminStats();
   assert.equal(backgroundRuns.recent.length, 4);
-  assert.deepEqual(backgroundRuns.recent[0], { startedAt: at(5), durationMs: 1200, ok: true, checkedCourses: 3, trackedCourses: 40, emailsSent: 1 });
+  assert.deepEqual(backgroundRuns.recent[0], { startedAt: at(5), durationMs: 1200, ok: true, checkedCourses: 3, trackedCourses: 40, emailsSent: 1, failedCourses: 0, emailsFailed: 0, deferred: 0, emailsDeferred: 0 });
   assert.equal(backgroundRuns.recent[1].ok, false);
   assert.equal(backgroundRuns.last24h, 3);
   assert.equal(backgroundRuns.longestGapMinutes24h, 200);

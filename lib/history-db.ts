@@ -303,12 +303,14 @@ export async function coursesToTrack(term: string, limit = TRACK_PER_RUN, now = 
 
 // The background run's share: read up to 75 due courses from Testudo (25 per request) and record them.
 // A course with no sections this term is noted as read, so it waits its turn like the others.
-export async function trackCourseSeats(term: string, now = new Date()) {
+export async function trackCourseSeats(term: string, now = new Date(), deadline = Infinity) {
+  if (Date.now() >= deadline) return { tracked: 0 };
   const ids = await coursesToTrack(term, TRACK_PER_RUN, now);
-  if (!ids.length) return { tracked: 0 };
+  if (!ids.length || Date.now() >= deadline) return { tracked: 0 };
   const sections = await getTestudoSectionsBatch(term, ids);
   let tracked = 0;
   for (const id of ids) {
+    if (Date.now() >= deadline) break;
     const list = sections.get(id) ?? [];
     const summary = list.length ? summarizeSections(list) : null;
     if (!summary || summary.openSeats === null) {

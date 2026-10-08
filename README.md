@@ -63,7 +63,7 @@ Review your credit total, daily class hours, and a rough semester workload estim
 
 Sign in to watch individual sections or a group of sections in a course. Seat changes appear while the planner is open; optional email alerts let you hear about openings when you are away. Opening links return to the planner, where available sections can be checked against your current saved schedule before you change it.
 
-Background checks are triggered **every 10 minutes by Cloudflare Cron**, independently of GitHub Actions and whether your browser is open. A run checks up to 40 watched course groups; larger backlogs take additional rounds. Source data and email delivery can lag, and a seat may fill before you act. See the [scheduler deployment guide](workers/seat-cron/README.md) for configuration and verification details.
+Background checks are triggered **every 2 minutes by Cloudflare Cron**, independently of GitHub Actions and whether your browser is open. With the background safety migration deployed, all callers share a maximum of 720 starts per UTC day, a 90-second minimum interval, and a persistent lease. Each run processes up to 200 watch rows / 100 course groups and sends up to 20 emails; larger backlogs take additional rounds. Source data and email delivery can lag, and a seat may fill before you act. See the [scheduler deployment guide](workers/seat-cron/README.md) for configuration and verification details.
 
 ### Be ready when registration opens
 
@@ -104,7 +104,7 @@ Course and seat information comes from UMD/Testudo and UMD.io; instructor rating
 - **Plan A／B**：每个学期保留两套课程计划，随时切换或复制，提前准备备选方案。
 - **学位、辅修与双专业**：在浏览器中读取 uAchieve 审计，区分已修、转学分和在修课程；按余位优先推荐课程，估算辅修／双专业的剩余要求、先修路径与可能重叠。未能自动判断的目录要求需自行核对。
 - **选课难度与学期负担**：参考近期仍接近满员的课程、开课历史、学分和每日上课时长；历史 GPA 只用于粗略负担提示，不代表你的成绩或学习时长。
-- **余位与邮件提醒**：登录后关注单个班次或一组班次，选择是否开启邮件。后台由 Cloudflare Cron 每 10 分钟触发一次，每轮最多检查 40 个关注课程组；积压、源数据和邮件延迟都可能使实际提醒更晚。收到开位链接后，可在排课器里核对是否适合当前课表。
+- **余位与邮件提醒**：登录后关注单个班次或一组班次，选择是否开启邮件。后台由 Cloudflare Cron 每 2 分钟触发一次，每轮最多检查 200 行关注 / 100 个课程组；积压、源数据和邮件延迟都可能使实际提醒更晚。收到开位链接后，可在排课器里核对是否适合当前课表。
 - **选课当天与离线查看**：保存课程号、班号、备选和勾选清单，设置选课倒计时与日历提醒。“My week”和已加载的选课清单可离线打开；新余位与在线地图仍需联网。
 - **分享、导出与同步**：分享只读课表，导出 `.ics` 或打印；邮箱登录后同步计划，也可用迁移链接继续在另一台设备上规划。
 

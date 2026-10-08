@@ -4,6 +4,7 @@ import { countError } from "@/lib/error-counts";
 import { allowRate, clientRateKey } from "@/lib/rate-limit";
 import { readJsonObject, sameOriginMutation } from "@/lib/request-security";
 import { CONTACT_EMAIL, SITE_URL } from "@/lib/site-config";
+import { sendBudgetedMail } from "@/lib/mail-budget";
 
 // The in-page feedback form. Each message is stored (shown on /admin) and emailed to CONTACT_EMAIL, with the
 // student's address as the reply-to when they gave one. Five messages an hour per network address.
@@ -42,13 +43,8 @@ export async function POST(request: Request) {
     // The message is kept even if the email cannot go out; /admin lists it either way.
     if (env.RESEND_API_KEY && env.EMAIL_FROM) {
       const message = feedbackEmail(item, createdAt);
-      const sent = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ from: env.EMAIL_FROM, to: [CONTACT_EMAIL], subject: message.subject, text: message.text, ...(item.contact ? { reply_to: item.contact } : {}) }),
-        signal: AbortSignal.timeout(10_000),
-      }).catch(() => null);
-      if (!sent?.ok) await countError("email");
+      const sent = await sendBudgetedMail("feedback", { from: env.EMAIL_FROM, to: [CONTACT_EMAIL], subject: message.subject, text: message.text, ...(item.contact ? { reply_to: item.contact } : {}) }, `feedback:${crypto.randomUUID()}`).catch(() => "failed");
+      if (sent === "failed" || sent === "exhausted") await countError("email");
     }
     return Response.json({ ok: true });
   } catch {

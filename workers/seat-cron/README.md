@@ -43,7 +43,7 @@ working after rotation. Never rotate before the scheduler is deployed and ready.
 
 ## Deployment on 2026-10-07 (America/New_York)
 
-The production scheduler is `terpplan-seat-cron`, with Cron `*/10 * * * *`.
+The production scheduler is `terpplan-seat-cron`, with Cron `*/2 * * * *`.
 Its shared credential was rotated in both Cloudflare and Sites during cutover;
 the temporary local secrets file was removed. The Site's existing version 113
 was redeployed to apply environment revision 11, without bundling unrelated
@@ -66,6 +66,60 @@ node --test tests/seat-cron.test.mjs
 node node_modules/wrangler/bin/wrangler.js deploy --dry-run --config workers/seat-cron/wrangler.jsonc
 ```
 
-The Site presently caps a run at 40 course groups and defers the rest. A ten-minute
-Cron triggers a batch every ten minutes; it does not guarantee every watched
-course is checked in every batch, source freshness, or mail delivery time.
+## Background safety limits (source changes; deploy both components to apply)
+
+Apply migrations `0014_background_budget.sql` and `0015_mail_safety.sql` with the Site release before enabling
+the new endpoint. Without its budget table, the endpoint fails closed (503).
+Deploy the scheduler separately to apply its Wrangler CPU/subrequest limits.
+
+- All authenticated background callers share one D1 allowance: at most 720 starts
+  per UTC day, including failures. Runs start at least 90 seconds apart (allowing
+  Cron delivery jitter), with a five-minute lease to recover after a crash. There
+  is no immediate retry loop; deferred work waits for a later Cron event.
+- Each run selects at most 200 due watch rows, processes at most 100 course groups,
+  and handles at most 200 pending alert rows / 20 recipients. Oldest work goes first.
+  Limited counts in the endpoint response describe the selected window;
+  `moreWatches` means additional watch rows remain outside that window.
+- Each cleanup query deletes at most 500 expired rows. Recurring watch and cleanup
+  queries have indexes, avoiding whole-table reads just to find the next batch.
+- No new seat batch starts after 40 seconds; no new email or trend-writing unit
+  starts after the 60-second work budget. In-flight units can finish afterward;
+  network calls have timeouts. The scheduler request times out after 90 seconds.
+- The scheduler makes one outbound request, has no public trigger and no Durable
+  Object alarm. Wrangler limits it to 1,000 ms CPU / one subrequest per invocation.
+
+All three email paths (sign-in, seat alerts, feedback) share a persisted attempt
+budget: 90 per UTC day / 2,600 per calendar month. Alerts and feedback stop at 70
+daily attempts, leaving 20 for sign-in. Failures also consume allowance. Seat
+emails retry at most three times in separate runs with the original payload and
+Resend idempotency key; accepted requests are not resent. Fresh openings wait at
+quota exhaustion and expire after an hour. Feedback remains available on /admin
+even when its email is blocked. Outbox payloads are deleted after 24 hours in
+batches of at most 500 rows; /admin shows counts only, never outbox contents.
+
+The admin page warns after five minutes without a successful check, on partial
+failures, queued work, or approaching the email quota (60 daily / 2,200 monthly).
+These counters start with this release and cover this site's attempts only. To
+keep the entire Resend team within Free limits, also account for other senders,
+incoming mail and usage before this release. Provider acceptance does not confirm
+inbox delivery. See [Resend usage](https://resend.com/docs/knowledge-base/account-quotas-and-limits).
+
+For an emergency pause, set `WATCH_RUNNER_ENABLED=false` on the Site runtime
+(checked before D1 work) or the scheduler. A persistent pause is also available
+in the Site database: `UPDATE background_budget SET enabled = 0 WHERE id = 1`.
+Set `enabled = 1` to resume; leave the allowance and timestamps intact. To remove
+scheduled invocations altogether, set scheduler `triggers.crons` to `[]` and redeploy.
+
+These are background-work limits, not a dollar ceiling on the Cloudflare account.
+Public traffic, other Workers and other products still have their own usage.
+Cloudflare's CPU/subrequest limits apply per invocation; D1 paid overages are billed
+separately ([Workers configuration](https://developers.cloudflare.com/workers/wrangler/configuration/#limits),
+[D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/)). A two-minute
+Cron does not guarantee every watched course is checked in every batch, source
+freshness, or mail delivery time.
+
+Verify the safety paths locally:
+
+```powershell
+node --import tsx --test tests/background-budget.test.mjs tests/background-budget-runtime.test.mjs tests/seat-cron.test.mjs tests/seat-cron-runtime.test.mjs
+```

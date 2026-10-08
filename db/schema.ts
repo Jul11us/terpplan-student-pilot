@@ -171,7 +171,7 @@ export const featureUsage = sqliteTable(
 );
 
 // Each background run (/api/watches/run): when it started, how long it took and what it did, so /admin can
-// show whether the scheduler really calls it every 10 minutes. Kept for 7 days.
+// show whether the scheduler really calls it every two minutes. Kept for 7 days.
 export const backgroundRuns = sqliteTable("background_runs", {
   startedAt: text("started_at").primaryKey(),
   durationMs: integer("duration_ms").notNull(),
@@ -179,7 +179,43 @@ export const backgroundRuns = sqliteTable("background_runs", {
   checkedCourses: integer("checked_courses").notNull().default(0),
   trackedCourses: integer("tracked_courses").notNull().default(0),
   emailsSent: integer("emails_sent").notNull().default(0),
+  failedCourses: integer("failed_courses").notNull().default(0),
+  emailsFailed: integer("emails_failed").notNull().default(0),
+  deferred: integer("deferred").notNull().default(0),
+  emailsDeferred: integer("emails_deferred").notNull().default(0),
 });
+
+// A singleton execution allowance and lease for all background callers.
+export const backgroundBudget = sqliteTable("background_budget", {
+  id: integer("id").primaryKey(),
+  enabled: integer("enabled").notNull().default(1),
+  day: text("day").notNull().default(""),
+  runs: integer("runs").notNull().default(0),
+  lastStartedAt: integer("last_started_at"),
+  leaseUntil: integer("lease_until").notNull().default(0),
+  leaseToken: text("lease_token"),
+});
+
+export const mailBudget = sqliteTable("mail_budget", {
+  id: integer("id").primaryKey(),
+  enabled: integer("enabled").notNull().default(1),
+  day: text("day").notNull().default(""),
+  month: text("month").notNull().default(""),
+  dayRequests: integer("day_requests").notNull().default(0),
+  monthRequests: integer("month_requests").notNull().default(0),
+  accepted: integer("accepted").notNull().default(0),
+  failed: integer("failed").notNull().default(0),
+  lastFailureAt: integer("last_failure_at"),
+});
+
+export const mailOutbox = sqliteTable("mail_outbox", {
+  id: text("id").primaryKey(),
+  payload: text("payload").notNull(),
+  createdAt: integer("created_at").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  lastAttemptAt: integer("last_attempt_at"),
+  accepted: integer("accepted").notNull().default(0),
+}, (table) => [index("mail_outbox_created").on(table.createdAt)]);
 
 // How often things went wrong, per hour (UTC, "YYYY-MM-DDTHH") and kind: a request to TerpPlan's own API that
 // failed in a visitor's browser, a page error, or a background seat read or email that failed. Only the

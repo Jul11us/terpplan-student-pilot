@@ -26,6 +26,15 @@ test("Cron rejects absent credentials without making a request", async () => {
   assert.equal(called, false);
 });
 
+test("Cron pause makes no requests, and a safety-budget skip does not retry", async () => {
+  let calls = 0;
+  const fetcher = async () => { calls++; return Response.json({ ...counts, checkedCourses: 0, emailsSent: 0, skipped: "budget-or-lock" }); };
+  assert.deepEqual(await checkSeats({ WATCH_RUNNER_ENABLED: "false" }, fetcher), { skipped: "disabled" });
+  assert.equal(calls, 0);
+  assert.equal((await checkSeats(env, fetcher)).skipped, "budget-or-lock");
+  assert.equal(calls, 1);
+});
+
 test("Cron reports upstream failures without logging the upstream body or credentials", async () => {
   await assert.rejects(checkSeats(env, async () => new Response("private body", { status: 503 })), /HTTP 503/);
   await assert.rejects(checkSeats(env, async () => new Response(null, {

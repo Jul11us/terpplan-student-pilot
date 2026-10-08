@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { emailAuthConfigured, hashCode, hashEmail, newEmailCode } from "@/lib/auth";
 import { readJsonObject, sameOriginMutation } from "@/lib/request-security";
 import { countError } from "@/lib/error-counts";
+import { sendBudgetedMail } from "@/lib/mail-budget";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -59,21 +60,17 @@ export async function POST(request: Request) {
     `).bind(emailHash, codeHash, now + 600, now, now - 60).first<{ email_hash: string }>();
     if (!reserved) return Response.json({ error: "Please wait a minute before requesting another code." }, { status: 429 });
 
-    const sent = await fetch("https://api.resend.com/emails", {
-      signal: AbortSignal.timeout(10_000),
-      method: "POST",
-      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from: env.EMAIL_FROM,
+    const sent = await sendBudgetedMail("login", {
+        from: env.EMAIL_FROM!,
         to: [email],
         subject: "Your TerpPlan sign-in code",
         text: `Your TerpPlan sign-in code is ${code}. It expires in 10 minutes. If you did not request it, you can ignore this email.`,
         html: `<p>Your TerpPlan sign-in code is:</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>It expires in 10 minutes. If you did not request it, you can ignore this email.</p>`,
-      }),
-    });
-    if (!sent.ok) {
+      }, `login:${crypto.randomUUID()}`);
+    if (sent !== "accepted") {
       await env.DB.prepare("DELETE FROM email_login_codes WHERE email_hash = ? AND code_hash = ?").bind(emailHash, codeHash).run();
-      console.error("Email provider rejected a sign-in message", sent.status);
+      if (sent === "quota") return Response.json({ error: "Today's email allowance is full. Please try again later.", code: "mailQuota" }, { status: 429 });
+      console.error("Email provider rejected a sign-in message");
       await countError("email");
       return Response.json({ error: "The sign-in email could not be sent. Please try again shortly." }, { status: 502 });
     }

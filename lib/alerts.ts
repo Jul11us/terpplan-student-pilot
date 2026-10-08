@@ -1,9 +1,11 @@
 import { env } from "cloudflare:workers";
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { getDb } from "@/db";
 import { alertSubscriptions, watches } from "@/db/schema";
 import { SITE_URL } from "@/lib/site-config";
 import { openingPath } from "@/lib/seat-swap";
+import { MAX_CLEANUP_ROWS_PER_RUN, MAX_EMAILS_PER_RUN, MAX_PENDING_ALERTS_PER_RUN } from "@/lib/background-budget";
+import { sendBudgetedMail } from "@/lib/mail-budget";
 
 type Db = ReturnType<typeof getDb>;
 
@@ -86,40 +88,39 @@ export function alertEmail(rows: PendingRow[], token: string) {
   return { subject, text, html, link, oneClickLink: oneClickUnsubscribeUrl(token) };
 }
 
-async function sendEmail(to: string, message: ReturnType<typeof alertEmail>) {
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      from: env.EMAIL_FROM,
+async function sendEmail(to: string, message: ReturnType<typeof alertEmail>, key: string) {
+  return sendBudgetedMail("alert", {
+      from: env.EMAIL_FROM!,
       to: [to],
       subject: message.subject,
       text: message.text,
       html: message.html,
       // One-click unsubscribe for mail clients; it is a POST, which link scanners do not send.
       headers: { "List-Unsubscribe": `<${message.oneClickLink}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
-    }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  return response.ok;
+    }, key);
 }
 
 // Sends one email per student covering every section that opened since the last run.
-export async function sendPendingAlerts(db: Db) {
-  const summary = { emailsSent: 0, emailsFailed: 0, alertsDropped: 0 };
-  const pending = await db.select().from(watches).where(isNotNull(watches.alertPendingAt));
+export async function sendPendingAlerts(db: Db, deadline = Infinity) {
+  const summary = { emailsSent: 0, emailsFailed: 0, emailsDeferred: 0, alertsDropped: 0 };
+  if (Date.now() >= deadline) return summary;
+  const pending = await db.select().from(watches).where(isNotNull(watches.alertPendingAt))
+    .orderBy(asc(watches.alertPendingAt)).limit(MAX_PENDING_ALERTS_PER_RUN);
   if (!pending.length) return summary;
   const now = Date.now();
   const clear = (rows: PendingRow[], sent: boolean) => Promise.all(rows.map((row) => db.update(watches)
     .set({ alertPendingAt: null, ...(sent ? { alertSentAt: new Date().toISOString() } : {}) })
-    .where(and(eq(watches.userId, row.userId), eq(watches.term, row.term), eq(watches.sectionId, row.sectionId)))));
+    .where(and(eq(watches.userId, row.userId), eq(watches.term, row.term), eq(watches.sectionId, row.sectionId), eq(watches.alertPendingAt, row.alertPendingAt!)))));
 
   const byUser = new Map<string, PendingRow[]>();
   for (const row of pending) byUser.set(row.userId, [...(byUser.get(row.userId) ?? []), row]);
-  const subscriptions = await db.select().from(alertSubscriptions).where(inArray(alertSubscriptions.userId, [...byUser.keys()]));
+  const users = [...byUser.keys()].slice(0, MAX_EMAILS_PER_RUN);
+  const subscriptions = await db.select().from(alertSubscriptions).where(inArray(alertSubscriptions.userId, users));
   const subscriptionFor = new Map(subscriptions.map((item) => [item.userId, item]));
 
-  for (const [userId, rows] of byUser) {
+  for (const userId of users) {
+    if (Date.now() >= deadline) break;
+    const rows = byUser.get(userId)!;
     const subscription = subscriptionFor.get(userId);
     const fresh = rows.filter((row) => now - Date.parse(row.alertPendingAt!) < PENDING_TTL_MS && (row.openSeats ?? 0) > 0);
     const today = easternDate();
@@ -131,8 +132,20 @@ export async function sendPendingAlerts(db: Db) {
       continue;
     }
     const message = alertEmail(fresh, await unsubscribeToken(userId));
-    if (!(await sendEmail(subscription.email, message))) {
-      // Leave it pending; the next run retries until the opening is an hour old.
+    const key = `seat:${await hashToken(JSON.stringify([userId, ...fresh.map((row) => [row.term, row.sectionId, row.alertPendingAt]).sort()]))}`;
+    const sent = await sendEmail(subscription.email, message, key);
+    if (sent === "quota" || sent === "deferred") {
+      summary.emailsDeferred += 1;
+      continue;
+    }
+    if (sent === "exhausted") {
+      await clear(rows, false);
+      summary.alertsDropped += rows.length;
+      summary.emailsFailed += 1;
+      continue;
+    }
+    if (sent !== "accepted") {
+      // At most three attempts, in separate runs, with a stable provider payload.
       summary.emailsFailed += 1;
       continue;
     }
@@ -148,7 +161,7 @@ export async function sendPendingAlerts(db: Db) {
 
 export async function removeExpiredWatches(db: Db) {
   const removed = await db.delete(watches)
-    .where(sql`${watches.createdAt} < datetime('now', ${`-${WATCH_LIFETIME_DAYS} days`})`)
+    .where(sql`rowid IN (SELECT rowid FROM watches WHERE created_at < datetime('now', ${`-${WATCH_LIFETIME_DAYS} days`}) ORDER BY created_at LIMIT ${MAX_CLEANUP_ROWS_PER_RUN})`)
     .returning({ sectionId: watches.sectionId });
   return removed.length;
 }

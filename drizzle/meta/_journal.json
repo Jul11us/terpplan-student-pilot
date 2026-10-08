@@ -99,6 +99,20 @@
       "when": 1791427959891,
       "tag": "0013_feedback",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1791489600000,
+      "tag": "0014_background_budget",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1791489601000,
+      "tag": "0015_mail_safety",
+      "breakpoints": true
     }
   ]
 }

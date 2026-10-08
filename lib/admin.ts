@@ -11,6 +11,7 @@ import { DEFAULT_TERM } from "@/lib/umd";
 import { FEATURES, type Feature } from "@/lib/usage";
 import { hoursToFill, seatsTakenInWindow } from "@/lib/seat-race";
 import { ERROR_KINDS, errorHour, type ErrorKind } from "@/lib/error-kinds";
+import { LOGIN_MAIL_RESERVE, MAX_MAIL_PER_DAY, MAX_MAIL_PER_MONTH } from "@/lib/mail-budget";
 
 export type AdminAccess = "ok" | "notConfigured" | "forbidden";
 
@@ -63,10 +64,12 @@ export type AdminStats = {
   };
   // The scheduled background run: the latest runs (newest first) and how regular it was over the last day.
   backgroundRuns: {
-    recent: { startedAt: string; durationMs: number; ok: boolean; checkedCourses: number; trackedCourses: number; emailsSent: number }[];
+    recent: { startedAt: string; durationMs: number; ok: boolean; checkedCourses: number; trackedCourses: number; emailsSent: number; failedCourses: number; emailsFailed: number; deferred: number; emailsDeferred: number }[];
     last24h: number;
     longestGapMinutes24h: number | null;
+    lastSuccessAt: string | null;
   };
+  mailBudget: { today: number; month: number; acceptedToday: number; failedToday: number; dayLimit: number; monthLimit: number; loginReserve: number; enabled: boolean; nearLimit: boolean };
   // Failures per kind (lib/error-kinds.ts), in ERROR_KINDS order.
   errors: { kind: ErrorKind; last24h: number; last7Days: number }[];
   // Messages from the feedback form, newest first.
@@ -91,7 +94,7 @@ export async function adminStats(now = new Date()): Promise<AdminStats> {
   // referral_visits days are Eastern-time dates.
   const today = easternDay(now), weekStart = easternDay(new Date(now.getTime() - 6 * 86_400_000)), monthStart = easternDay(monthAgo);
   const term = DEFAULT_TERM;
-  const [subs, watchTotals, alerts, signupsByDay, watchesByTerm, topCourses, recent, referrals, referralsByDay, visitorTotals, visitorsByDay, usageRows, usageSince, raceTotals, raceRecent, raceFilled, runs, errorRows, feedbackRows] = await Promise.all([
+  const [subs, watchTotals, alerts, signupsByDay, watchesByTerm, topCourses, recent, referrals, referralsByDay, visitorTotals, visitorsByDay, usageRows, usageSince, raceTotals, raceRecent, raceFilled, runs, errorRows, feedbackRows, mail] = await Promise.all([
     first<{ total: number; recent: number; watching: number }>(
       `SELECT COUNT(*) AS total,
         SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) AS recent,
@@ -136,19 +139,24 @@ export async function adminStats(now = new Date()): Promise<AdminStats> {
     all<{ courseId: string; totalSeats: number; startedAt: string; filledAt: string }>(
       `SELECT course_id AS courseId, total_seats AS totalSeats, started_at AS startedAt, filled_at AS filledAt FROM course_fill
        WHERE term = ? AND started_at IS NOT NULL AND filled_at IS NOT NULL AND total_seats >= 30`, term),
-    all<{ startedAt: string; durationMs: number; ok: number; checkedCourses: number; trackedCourses: number; emailsSent: number }>(
-      `SELECT started_at AS startedAt, duration_ms AS durationMs, ok, checked_courses AS checkedCourses, tracked_courses AS trackedCourses, emails_sent AS emailsSent
-       FROM background_runs ORDER BY started_at DESC LIMIT 200`),
+    all<Omit<AdminStats["backgroundRuns"]["recent"][number], "ok"> & { ok: number }>(
+      `SELECT started_at AS startedAt, duration_ms AS durationMs, ok, checked_courses AS checkedCourses, tracked_courses AS trackedCourses, emails_sent AS emailsSent,
+         failed_courses AS failedCourses, emails_failed AS emailsFailed, deferred, emails_deferred AS emailsDeferred
+       FROM background_runs ORDER BY started_at DESC LIMIT 1440`),
     all<{ kind: string; last24h: number; last7Days: number }>(
       `SELECT kind, SUM(CASE WHEN hour >= ? THEN count ELSE 0 END) AS last24h, SUM(count) AS last7Days FROM error_counts WHERE hour >= ? GROUP BY kind`,
       errorHour(new Date(now.getTime() - 23 * 3_600_000)), errorHour(new Date(now.getTime() - 7 * 86_400_000))),
     all<AdminStats["feedback"][number]>(
       "SELECT id, created_at AS createdAt, kind, message, contact, page, context, language FROM feedback ORDER BY id DESC LIMIT 30"),
+    first<{ day: string; month: string; day_requests: number; month_requests: number; accepted: number; failed: number; enabled: number }>("SELECT day, month, day_requests, month_requests, accepted, failed, enabled FROM mail_budget WHERE id = 1"),
   ]);
   const dayAgo = now.getTime() - 86_400_000;
   const runTimes = runs.map((row) => Date.parse(row.startedAt)).filter((time) => time >= dayAgo);
   // Gaps between runs in the last day, counting the time since the latest run.
   const gaps = runTimes.map((time, index) => (index === 0 ? now.getTime() : runTimes[index - 1]!) - time);
+  const utcDay = now.toISOString().slice(0, 10);
+  const mailToday = mail?.day === utcDay ? mail.day_requests : 0;
+  const mailMonth = mail?.month === utcDay.slice(0, 7) ? mail.month_requests : 0;
   return {
     subscribers: subs?.total ?? 0,
     subscribersLast7Days: subs?.recent ?? 0,
@@ -187,6 +195,13 @@ export async function adminStats(now = new Date()): Promise<AdminStats> {
       recent: runs.slice(0, 10).map((row) => ({ ...row, ok: row.ok === 1 })),
       last24h: runTimes.length,
       longestGapMinutes24h: gaps.length ? Math.round(Math.max(...gaps) / 60_000) : null,
+      lastSuccessAt: runs.find((row) => row.ok === 1)?.startedAt ?? null,
+    },
+    mailBudget: {
+      today: mailToday, month: mailMonth,
+      acceptedToday: mail?.day === utcDay ? mail.accepted : 0, failedToday: mail?.day === utcDay ? mail.failed : 0,
+      dayLimit: MAX_MAIL_PER_DAY, monthLimit: MAX_MAIL_PER_MONTH, loginReserve: LOGIN_MAIL_RESERVE,
+      enabled: mail?.enabled === 1, nearLimit: mailToday >= 60 || mailMonth >= 2200,
     },
     errors: ERROR_KINDS.map((kind) => {
       const row = errorRows.find((item) => item.kind === kind);
