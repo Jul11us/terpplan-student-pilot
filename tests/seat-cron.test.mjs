@@ -1,9 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 import worker, { checkSeats } from "../workers/seat-cron/worker.mjs";
 
 const env = { WATCH_RUNNER_SECRET: "test-only-cron-secret" };
 const counts = { checkedCourses: 2, failedCourses: 0, deferredToNextRun: 0, emailsSent: 1, emailsFailed: 0, durationMs: 100 };
+
+test("production scheduler runs every two minutes with native Free-plan limits", async () => {
+  const config = JSON.parse(await readFile(new URL("../workers/seat-cron/wrangler.jsonc", import.meta.url), "utf8"));
+  assert.deepEqual(config.triggers.crons, ["*/2 * * * *"]);
+  assert.equal(config.limits?.cpu_ms, undefined, "custom CPU limits are rejected on Free");
+  assert.equal(config.workers_dev, false);
+  assert.equal(config.preview_urls, false);
+  assert.equal(config.durable_objects, undefined);
+});
 
 test("Cron posts only to the production check endpoint and returns counts without private data", async () => {
   let request;
