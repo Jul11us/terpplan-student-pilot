@@ -1,0 +1,13 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /share
+Disallow: /register
+Disallow: /week
+Disallow: /unsubscribe
+Disallow: /instructor
+Disallow: /*?*demo=
+Disallow: /*?*opening=
+
+Sitemap: https://terpplan.com/sitemap.xml
