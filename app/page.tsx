@@ -26,7 +26,7 @@ const copy = {
     nav: { audit: "Degree audit", minor: "Minor / double major", hard: "Hardest courses" },
     eyebrow: "University of Maryland · Free, student-built",
     title: "Plan a semester you can actually get into.",
-    lead: "Search UMD courses, get conflict-free schedules built around your job and other commitments, check prerequisites against your degree audit, and get an email the moment a full section opens.",
+    lead: "Get conflict-free schedules built around your job, and an email the moment a full section opens.",
     start: "Start planning", continue: "Continue your plan", sample: "Try a sample schedule",
     startNote: "No account needed to plan. 中文界面可用。",
     stepsTitle: "How it works",
@@ -46,12 +46,13 @@ const copy = {
     extras: ["Plan A and Plan B for each term", "Export to Apple or Google Calendar, or print", "\"My week\" on your phone, even offline", "Share a schedule with a link", "Your plan on every device once you sign in", "English and 中文"],
     footer: "TerpPlan is an independent student project, not affiliated with the University of Maryland. Always confirm sections and register in Testudo.",
     contact: "Feedback or ideas:",
+    closing: "Registration is coming. Have a backup plan ready.",
   },
   zh: {
     nav: { audit: "学位审计", minor: "辅修 / 双专业", hard: "最难抢的课" },
     eyebrow: "马里兰大学 · 学生开发 · 免费",
     title: "排一份能上、也抢得到的课表",
-    lead: "搜索 UMD 课程，自动排出避开打工等时间、没有冲突的课表，对照学位审计检查先修课；满了的班一有空位，马上发邮件提醒你。",
+    lead: "自动避开打工时间排课，满了的班一有空位就发邮件提醒你。",
     start: "开始排课", continue: "继续排课", sample: "先试试示例课表",
     startNote: "不用注册就能排课。English available.",
     stepsTitle: "三步排好下学期",
@@ -71,6 +72,7 @@ const copy = {
     extras: ["每学期两个方案（A / B）", "导出到苹果或谷歌日历，或打印", "手机上的“我的一周”，离线也能看", "用链接分享课表", "登录后所有设备看到同一份方案", "中文和 English"],
     footer: "TerpPlan 是学生独立开发的项目，与马里兰大学没有隶属关系。班次以 Testudo 为准，并在 Testudo 完成注册。",
     contact: "反馈和建议：",
+    closing: "下学期选课前，先排好一份备选方案。",
   },
 } as const;
 
@@ -192,17 +194,19 @@ function TimetableSketch({ language }: { language: Language }) {
   </figure>;
 }
 
-// Real student reviews of popular intro courses (data/home-reviews.json, from PlanetTerp), drifting past in
-// two rows. Each visit shows a different mix; hovering pauses them; each card opens the course on PlanetTerp.
-type HomeReview = { course: string; professor: string | null; rating: number; excerpt: string };
+// Real student reviews of popular intro courses (data/home-reviews.json, from PlanetTerp), praise and criticism,
+// drifting past in one row: the kind of reviews the planner shows next to each instructor. Cards name the
+// course, not the instructor. Each visit shows a different mix; hovering pauses; a card opens the course on
+// PlanetTerp.
+type HomeReview = { course: string; rating: number; excerpt: string };
 const REVIEWS = (homeReviews as { reviews: HomeReview[] }).reviews;
 
 function ReviewCard({ review, copy = false }: { review: HomeReview; copy?: boolean }) {
   return <a href={`https://planetterp.com/course/${review.course}`} target="_blank" rel="noreferrer" tabIndex={copy ? -1 : undefined} className="flex w-80 shrink-0 flex-col justify-between rounded-2xl border border-[#e3e0d8] bg-white p-4 text-left hover:border-[#536d64]">
     <p className="text-sm leading-6 text-[#2c3533]">“{review.excerpt}”</p>
     <p className="mt-3 flex items-center justify-between gap-2 text-[11px] text-[#646c68]">
-      <span className="min-w-0 truncate"><span className="font-semibold text-[#273c38]">{review.course}</span>{review.professor ? ` · ${review.professor}` : ""}</span>
-      <span className="shrink-0 text-[#a3772b]" aria-label={`${review.rating} / 5`}>{"★".repeat(review.rating)}</span>
+      <span className="font-semibold text-[#273c38]">{review.course}</span>
+      <span className="shrink-0 tracking-wider" aria-label={`${review.rating} / 5`}><span className="text-[#a3772b]">{"★".repeat(review.rating)}</span><span className="text-[#d9d6ce]">{"★".repeat(5 - review.rating)}</span></span>
     </p>
   </a>;
 }
@@ -216,16 +220,16 @@ function ReviewStream({ language }: { language: Language }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setOrder(shuffled);
   }, []);
-  const rows = [order.slice(0, 14), order.slice(14, 28)];
+  const rows = [order.slice(0, 30)];
   return <section aria-labelledby="reviews-title" className="py-12">
     <div className="mx-auto max-w-6xl px-5 sm:px-8">
-      <h2 id="reviews-title" className="font-serif text-3xl">{language === "zh" ? "同学们怎么说这些课" : "What students say about these courses"}</h2>
-      <p className="mt-2 text-sm text-[#5d6561]">{language === "zh" ? "来自 PlanetTerp 的真实评论，随机选自热门入门课。点开可以看原文。" : "Real reviews from PlanetTerp, a random mix from popular intro courses. Open one to read it in full."}</p>
+      <h2 id="reviews-title" className="font-serif text-3xl">{language === "zh" ? "在 TerpPlan 里，每门课都能看到同学的真实评价" : "See what students really say about each class"}</h2>
+      <p className="mt-2 text-sm text-[#5d6561]">{language === "zh" ? "以下是 PlanetTerp 上热门入门课的评论，好评差评都有，每次随机。排课时点老师名字，就能看到他教这门课的评价。" : "Reviews of popular intro courses from PlanetTerp, good and bad, a different mix each visit. In the planner, click an instructor to see theirs."}</p>
     </div>
-    <div className="mt-6 space-y-4 [mask-image:linear-gradient(to_right,transparent,black_6%,black_94%,transparent)]">
+    <div className="mt-6 [mask-image:linear-gradient(to_right,transparent,black_6%,black_94%,transparent)]">
       {rows.map((row, index) => <div key={index} className="marquee overflow-hidden">
         {/* Two copies of the row: moving by half the width loops without a jump. The copy is hidden from screen readers. */}
-        <div className={`marquee-track flex w-max ${index ? "reverse" : ""}`} style={{ ["--marquee-duration" as string]: index ? "110s" : "95s" }}>
+        <div className={`marquee-track flex w-max ${index ? "reverse" : ""}`} style={{ ["--marquee-duration" as string]: index ? "220s" : "200s" }}>
           <div className="flex gap-4 pr-4">{row.map((review, item) => <ReviewCard key={item} review={review} />)}</div>
           <div aria-hidden="true" className="flex gap-4 pr-4">{row.map((review, item) => <ReviewCard key={item} review={review} copy />)}</div>
         </div>
@@ -303,7 +307,7 @@ export default function Home() {
       <h2 className="mt-12 text-sm font-semibold uppercase tracking-[.13em] text-[#5d6561]">{t.extrasTitle}</h2>
       <ul className="mt-3 flex flex-wrap gap-2">{t.extras.map((item) => <li key={item} className="rounded-full border border-[#e0ddd5] bg-white px-3 py-1.5 text-xs text-[#48534f]">{item}</li>)}</ul>
       <div className="mt-12 flex flex-col items-start gap-4 rounded-2xl bg-[#273c38] p-6 text-white sm:flex-row sm:items-center sm:justify-between sm:p-8">
-        <p className="font-serif text-2xl">{t.title}</p>
+        <p className="font-serif text-2xl">{t.closing}</p>
         <Link href="/plan" className="inline-flex shrink-0 items-center rounded-xl bg-white px-5 py-3 text-sm font-semibold text-[#273c38] hover:bg-[#edf3ef]">{hasPlan ? t.continue : t.start} →</Link>
       </div>
     </section>

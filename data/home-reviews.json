@@ -1,383 +1,467 @@
 {
- "builtAt": "2026-10-07",
+ "builtAt": "2026-10-08",
  "reviews": [
   {
    "course": "MATH140",
-   "professor": "Kendall Williams",
    "rating": 4,
    "created": "2026-03-29",
    "excerpt": "Great professor if you really want to understand the subject. Teaches a lot from the chalkboard, but he does record and post all his lectures, so there's a lot of flexibility there."
   },
   {
    "course": "MATH140",
-   "professor": "Shin Song",
    "rating": 5,
    "created": "2026-01-10",
    "excerpt": "She makes the subject matter really straight forward. Lectures are very clear, and she always posts class notes."
   },
   {
    "course": "MATH140",
-   "professor": "Dong Quan Nguyen",
    "rating": 5,
-   "created": "2025-12-26",
-   "excerpt": "TAKE HIM. Does not prepare you that well for the final but your grade in the class will be so good (Mine was 95) that it does not matter."
+   "created": "2025-12-02",
+   "excerpt": "This class is so chill! There are four midterms that you take in lecture and five quizzes that you take in discussion."
+  },
+  {
+   "course": "MATH140",
+   "rating": 3,
+   "created": "2024-12-12",
+   "excerpt": "Very nice and helpful professor. He will stay after class to answer questions, but his lectures are extremely boring."
+  },
+  {
+   "course": "MATH140",
+   "rating": 3,
+   "created": "2024-12-04",
+   "excerpt": "Decent professor. Uploads lecture notes to elms after lectures. His notes are pretty reflective of the textbook."
   },
   {
    "course": "MATH141",
-   "professor": "Shin Song",
-   "rating": 4,
-   "created": "2026-02-24",
-   "excerpt": "I took MATH141 with Shin Song. Overall, the class was manageable, but the grading was stricter than I expected."
-  },
-  {
-   "course": "MATH141",
-   "professor": "Weimin Jiang",
-   "rating": 5,
-   "created": "2026-02-05",
-   "excerpt": "Pros: -Lectures are very thorough, easy to follow, and contain numerous practice problems that very much prepare you for tests."
-  },
-  {
-   "course": "MATH141",
-   "professor": "Kendall Williams",
    "rating": 5,
    "created": "2026-01-28",
    "excerpt": "Super good lecturer who genuinely cares. Quizzes are much easier than the exams, although the homework does take a while."
   },
   {
-   "course": "CMSC131",
-   "professor": "Elias Gonzalez",
+   "course": "MATH141",
    "rating": 5,
-   "created": "2025-12-29",
-   "excerpt": "Overall great guy and a chill professor. The class has a ton of work, but he provides so many resources to study."
+   "created": "2025-12-20",
+   "excerpt": "She is a very considerate professor and wants you to succeed. Her worksheets and quizzes were very reasonable and not difficult at all."
+  },
+  {
+   "course": "MATH141",
+   "rating": 5,
+   "created": "2025-12-11",
+   "excerpt": "You can't really ask for much more out of a Calc 2 professor. He posts notes after every lecture and has weekly surveys so you can let him know what was going well and what wasn't."
   },
   {
    "course": "CMSC131",
-   "professor": "Pedram Sadeghian",
-   "rating": 4,
-   "created": "2025-12-26",
-   "excerpt": "Teaching & Materials: He is a good professor in terms of giving the content clearly and having a lot of recordings, slides, and practice to look at during the lectures and discussions."
-  },
-  {
-   "course": "CMSC131",
-   "professor": "Tiffany Lu",
    "rating": 5,
    "created": "2025-12-16",
    "excerpt": "The absolute best. Explains concepts very clearly and shows that she really cares about the students that she teaches during discussion."
   },
   {
-   "course": "CMSC132",
-   "professor": "Larry Herman",
+   "course": "CMSC131",
+   "rating": 4,
+   "created": "2025-12-05",
+   "excerpt": "Probably closer to 3.5 stars. Lectures are kind of boring and hard to pay attention to because he’s kind of monotone, but he’s super organized."
+  },
+  {
+   "course": "CMSC131",
    "rating": 5,
-   "created": "2026-02-15",
-   "excerpt": "wait i love herman his lectures are so listenable to me for some reason and the mandatory attendance was annoying at first but i found it super helpful in the end."
+   "created": "2024-12-14",
+   "excerpt": "Very good professor who records lectures and posts the slides on ELMS."
+  },
+  {
+   "course": "CMSC131",
+   "rating": 1,
+   "created": "2025-12-24",
+   "excerpt": "This course was significantly more difficult than other sections of the same course due to the instructor's exam design and grading policies."
+  },
+  {
+   "course": "CMSC131",
+   "rating": 1,
+   "created": "2025-09-08",
+   "excerpt": "This class was a genuine disaster. None of the study material ever matched the content on the tests or quizzes."
   },
   {
    "course": "CMSC132",
-   "professor": "Fawzi Emad",
-   "rating": 5,
-   "created": "2025-10-29",
-   "excerpt": "Fawzi made CMSC132 a very fair and easy class. Exams, projects, and quizzes were all fair in my opinion."
+   "rating": 4,
+   "created": "2026-01-12",
+   "excerpt": "His lectures and slides were very good. The projects are extremely detailed and very useful for understanding the content."
   },
   {
    "course": "CMSC132",
-   "professor": "Pedram Sadeghian",
    "rating": 4,
    "created": "2025-05-25",
    "excerpt": "I second that the exam averages for all the midterms were low (around 60s) but to me it didn't really affect me."
   },
   {
+   "course": "CMSC132",
+   "rating": 4,
+   "created": "2025-05-16",
+   "excerpt": "Her lectures aren't perfect like others have mentioned, but her slides and code examples are really good for learning the content."
+  },
+  {
+   "course": "CMSC132",
+   "rating": 2,
+   "created": "2025-05-22",
+   "excerpt": "Hard class with no curve. English 101 and this course will have the same grading breakdown."
+  },
+  {
+   "course": "CMSC132",
+   "rating": 3,
+   "created": "2024-12-17",
+   "excerpt": "Teaches well and is very clear on what is expected in the exams, projects, and worksheets."
+  },
+  {
    "course": "CMSC216",
-   "professor": "Christopher Kauffman",
    "rating": 5,
    "created": "2026-01-20",
    "excerpt": "Amazing professor! All lectures are recorded, exams are graded fairly, labs encourage group work and actual learning."
   },
   {
    "course": "CMSC216",
-   "professor": "Larry Herman",
    "rating": 5,
-   "created": "2025-10-20",
-   "excerpt": "He's quirky but a great lecturer (not a professor). Our exam Averages were lower than Kaufman who was teaching 216 at the same time, which is something to keep in mind."
+   "created": "2025-12-24",
+   "excerpt": "Amazing Professor! Lectures are very engaging and he explains things clearly."
   },
   {
    "course": "CMSC216",
-   "professor": "Ilchul Yoon",
-   "rating": 3,
-   "created": "2025-01-19",
-   "excerpt": "To whom it may concern, Yoon's exams can be challenging. To do well on them, make sure you really play around with edge cases on the compiler, modify the lecture example code."
+   "rating": 5,
+   "created": "2025-06-20",
+   "excerpt": "Really well ran course. The projects were pretty instructive, especially the Assembly project."
   },
   {
    "course": "COMM107",
-   "professor": "Andrew Donkor",
    "rating": 5,
    "created": "2026-04-30",
    "excerpt": "He is a really good professor with a joy for teaching. All you have to do is come to class and submit the assignments."
   },
   {
    "course": "COMM107",
-   "professor": "Cassondra Pope",
    "rating": 5,
    "created": "2026-04-28",
    "excerpt": "Took her last fall, she was genuinely amazing. Homework probably took a grand total of 20 seconds per week, and in class exercises were super fun and engaging."
   },
   {
    "course": "COMM107",
-   "professor": "L Gordon",
    "rating": 4,
    "created": "2026-01-29",
    "excerpt": "Very chill teacher, gave a lot of class time for the assignments."
   },
   {
    "course": "ENGL101",
-   "professor": "Nia Crawford",
    "rating": 5,
-   "created": "2026-04-11",
-   "excerpt": "I had Ms. Crawford for ENGL101. Grading She gives you a lot of points just for participating; however, she is a pretty harsh grader on your 5 major assignments."
+   "created": "2026-01-22",
+   "excerpt": "Super easy professor. He made the course super easy to follow along and graded assignments very easily."
   },
   {
    "course": "ENGL101",
-   "professor": "John Constantine Tobin",
    "rating": 5,
-   "created": "2026-02-05",
-   "excerpt": "Dr Tobin is one of the sweetest professors who actually cares about your well being and conscious about your workload and responsibilities to other classes."
+   "created": "2026-01-10",
+   "excerpt": "It was her first semester teaching native English speakers, so she was probably more lenient with grading."
   },
   {
    "course": "ENGL101",
-   "professor": "Peter Grybauskas",
-   "rating": 3,
-   "created": "2026-01-19",
-   "excerpt": "Very interesting guy. Very vocal and illuminated. He makes the class very interactive and engaging and there is barley any assignments."
+   "rating": 4,
+   "created": "2025-12-18",
+   "excerpt": "While the rubrics and instructions for the assignments can be confusing, and she isn’t great at answering questions, the class isn’t bad."
+  },
+  {
+   "course": "ENGL101",
+   "rating": 2,
+   "created": "2025-03-05",
+   "excerpt": "I had his class for FC at 4:30-5:45pm. Assignments are in order and neat."
+  },
+  {
+   "course": "ENGL101",
+   "rating": 2,
+   "created": "2025-01-24",
+   "excerpt": "Just a lot of busy work that isn’t relevant to the big writing assignments and takes forever to grade the big writing assignments."
   },
   {
    "course": "PSYC100",
-   "professor": "Joseph Barnet",
    "rating": 5,
    "created": "2026-04-29",
    "excerpt": "Honestly, you could pass this class without going to the lectures and just reading his slides."
   },
   {
    "course": "PSYC100",
-   "professor": "Benjamin Jones",
    "rating": 5,
-   "created": "2026-03-18",
-   "excerpt": "Super easy class. Would definitely recommend. Dr. Jones is very nice and structures the course so it is almost impossible to fail the class if you just review the lecture slides."
+   "created": "2026-01-13",
+   "excerpt": "Great Professor! Records lectures and is very approachable. Class doesn’t require too much time, but you do have to stay on top of your work."
   },
   {
    "course": "PSYC100",
-   "professor": "Yevgeny Botanov",
    "rating": 5,
    "created": "2026-01-05",
    "excerpt": "Overall great professor and great class. He teaches you how to study for exams and what specific content/sections will be covered."
   },
   {
+   "course": "PSYC100",
+   "rating": 3,
+   "created": "2025-05-15",
+   "excerpt": "He is a great storyteller, but an improvable professor. My points are the same as those of the other who rate him low, you cannot expect too much exam content from class."
+  },
+  {
    "course": "ECON200",
-   "professor": "Stefania Scandizzo",
    "rating": 4,
    "created": "2026-04-28",
    "excerpt": "I think she is a good professor and the exams were fair. There are 3 exams and then an optional final that could replace a low exam grade."
   },
   {
    "course": "ECON200",
-   "professor": "Erin Moody",
-   "rating": 5,
-   "created": "2025-12-19",
-   "excerpt": "Definitely take with Moody if you can. Her grading structure is much more forgiving compared to other professors."
+   "rating": 4,
+   "created": "2025-12-16",
+   "excerpt": "She was nice, classes are on zoom and you are allowed to bring a piece of paper 8x11 to the exams."
   },
   {
    "course": "ECON200",
-   "professor": "Hossein Abbasi",
    "rating": 4,
-   "created": "2025-12-17",
-   "excerpt": "gave a lot of homework, 2 things to do for each chapter. definitely a self taught class but you don't need to go to the lectures and he posts a lot of review."
+   "created": "2025-12-09",
+   "excerpt": "I am an economics major with 0 economic background in high school and currently have a 95 in the class before finals."
+  },
+  {
+   "course": "ECON200",
+   "rating": 3,
+   "created": "2026-01-09",
+   "excerpt": "Stopped attending his lectures because of tedious and less retaining lectures."
+  },
+  {
+   "course": "ECON200",
+   "rating": 2,
+   "created": "2025-09-22",
+   "excerpt": "She just doesn't explain things all that well , and also assigns graded assignments before covering that topic in class."
   },
   {
    "course": "ECON201",
-   "professor": "Naveen Sarna",
    "rating": 5,
    "created": "2026-03-13",
    "excerpt": "I'm not sure why his ratings are so low. His exams are actually pretty manageable—they’re all multiple choice, and there are only three total exams (two midterms and a final)."
   },
   {
    "course": "ECON201",
-   "professor": "Dereck Yang",
    "rating": 5,
    "created": "2026-02-12",
    "excerpt": "The whole class is asynchronous and on your own pace. There are three problem sets, a midterm exam, and a final exam."
   },
   {
    "course": "ECON201",
-   "professor": "John Shea",
    "rating": 5,
-   "created": "2025-12-10",
-   "excerpt": "Best professor ever. The practice exams are practically identical to the real ones, there's only two midterms and the final."
+   "created": "2025-06-26",
+   "excerpt": "If you did well on ECON200, you won’t really need to attend lecture for about the first half of the course."
+  },
+  {
+   "course": "ECON201",
+   "rating": 3,
+   "created": "2026-04-30",
+   "excerpt": "He is clearly very passionate about what he is teaching about but it is hard to understand in lecture."
+  },
+  {
+   "course": "ECON201",
+   "rating": 2,
+   "created": "2026-04-20",
+   "excerpt": "On the second exam, the class average was a failing grade. This was a direct result of the professor failing to provide study material relevant to the questions on the exam."
   },
   {
    "course": "STAT400",
-   "professor": "Mestiyage Gunatilleka",
-   "rating": 4,
-   "created": "2026-04-13",
-   "excerpt": "records lectures, fair homeworks, 3 r projects that arent very hard, fair exams."
-  },
-  {
-   "course": "STAT400",
-   "professor": "Shixin Zheng",
    "rating": 4,
    "created": "2026-01-26",
    "excerpt": "In the second half of the semester, he got so much better. His midterm 2 was really good and he gave us a practice exam that was very similar to the actual exam."
   },
   {
    "course": "STAT400",
-   "professor": "David Pincus",
+   "rating": 5,
+   "created": "2025-07-15",
+   "excerpt": "She taught really well. The exams were very fair and similar to what you'd find on the homework and practice exams."
+  },
+  {
+   "course": "STAT400",
    "rating": 4,
-   "created": "2025-12-24",
-   "excerpt": "I'd say i'm the average-slightly below student. I got below the means on all exams."
+   "created": "2025-05-23",
+   "excerpt": "Assignments are almost free 100's, so it's down to the exams, which aren't too bad if you know your calculus (and can be bothered to study)."
+  },
+  {
+   "course": "STAT400",
+   "rating": 2,
+   "created": "2025-12-20",
+   "excerpt": "He's not a very good lecturer, and his notes are confusing to read. The quizzes are pretty simple and the exams are okay since he posts the practice problems."
+  },
+  {
+   "course": "STAT400",
+   "rating": 2,
+   "created": "2025-12-04",
+   "excerpt": "Lectures are just reading off textbook definition. However, he is nice and answers to quizzes are given before taking it."
   },
   {
    "course": "BMGT220",
-   "professor": "Xin Zhao",
    "rating": 5,
    "created": "2026-01-13",
    "excerpt": "Great professor! She is super nice and keeps her lectures engaging. Discussions are straightforward generally composed of a small quiz to review that week’s material."
   },
   {
    "course": "BMGT220",
-   "professor": "Jingyi Qian",
-   "rating": 5,
-   "created": "2025-05-28",
-   "excerpt": "Class is easy. Professor is solid, but I rarely went to class. I just studied the slides and I was prepared for the exams."
+   "rating": 4,
+   "created": "2025-05-15",
+   "excerpt": "She is a very caring professor and wants the best for her students. Like others mentioned, her practice exams were very similar to her actual ones (except for the last exam)."
   },
   {
    "course": "BMGT220",
-   "professor": "Progyan Basu",
-   "rating": 5,
-   "created": "2024-12-16",
-   "excerpt": "Professor Basu was incredible. His class is structured so that you review the material beforehand then go into class to do practice problems."
-  },
-  {
-   "course": "CHEM131",
-   "professor": "Lee Friedman",
    "rating": 4,
-   "created": "2026-04-26",
-   "excerpt": "Ok he really isnt that bad. as someone who never took ap chem and is bad at math i was scared for this course but honestly u just have to study a lot go to gss and go to class."
+   "created": "2024-12-16",
+   "excerpt": "To be honest, the exams are weighted very heavily, but he's very generous with the grading system, which is technically his version of a curve."
+  },
+  {
+   "course": "BMGT220",
+   "rating": 3,
+   "created": "2025-12-09",
+   "excerpt": "While she is an enjoyable teacher and attempts to keep her lectures fun, she definitely has some glaring issues."
+  },
+  {
+   "course": "BMGT220",
+   "rating": 3,
+   "created": "2025-05-27",
+   "excerpt": "Very nice. Class is not difficult and practice exams are very similar to actual exams."
   },
   {
    "course": "CHEM131",
-   "professor": "Lenea Stocker",
    "rating": 4,
    "created": "2026-02-10",
    "excerpt": "Found her lecture style to fit my style of learning very well. She was very nice and used lots of non-chemistry examples to help you understand the material."
   },
   {
    "course": "CHEM131",
-   "professor": "Amanda Schech",
+   "rating": 4,
+   "created": "2026-01-09",
+   "excerpt": "I really liked her, she taught very well and the homework really connected to the concepts we learned in class."
+  },
+  {
+   "course": "CHEM131",
    "rating": 5,
-   "created": "2026-01-23",
-   "excerpt": "Amazing professor! So glad I took chem131 with her. Her lectures are very helpful and she gives lots of analogies and examples for concepts that will appear on the tests."
+   "created": "2025-12-17",
+   "excerpt": "A really great professor who did a great job of making the material understandable and providing many ways to review/practice."
+  },
+  {
+   "course": "CHEM131",
+   "rating": 3,
+   "created": "2025-12-05",
+   "excerpt": "Canvas is a little unorganized and yes the reflection quizzes are hard, but your experience really depends on how good your TA is."
+  },
+  {
+   "course": "CHEM131",
+   "rating": 1,
+   "created": "2024-12-04",
+   "excerpt": "He never covers topics that are on the homework and his exams are ridiculously hard."
   },
   {
    "course": "BSCI170",
-   "professor": "Niranjana Krishnan",
    "rating": 5,
    "created": "2026-04-30",
    "excerpt": "If you are going to take BSCI 170, you really should take this class-- she gives worksheets a week before the exam, and the worksheet is literally copied and pasted onto the exam."
   },
   {
    "course": "BSCI170",
-   "professor": "Nicholas Fletcher",
-   "rating": 5,
-   "created": "2026-03-10",
-   "excerpt": "Chill and nice dude. The exams were really fair, and there were a lot of buffer points besides the exams."
-  },
-  {
-   "course": "BSCI170",
-   "professor": "Swarna Mohan",
    "rating": 5,
    "created": "2026-01-31",
    "excerpt": "This class was incredibly easy. The exams were easy, not sure why people are complaining."
   },
   {
-   "course": "PHYS161",
-   "professor": "Rachel Rice",
-   "rating": 4,
-   "created": "2026-03-04",
-   "excerpt": "great professor, quick but easy to follow lectures and plenty of examples worked through in class."
-  },
-  {
-   "course": "PHYS161",
-   "professor": "Alberto Belloni",
+   "course": "BSCI170",
    "rating": 5,
-   "created": "2026-02-28",
-   "excerpt": "Great guy, and passionate lecture which made the class surprisingly engaging."
+   "created": "2025-12-21",
+   "excerpt": "Loves his job, explains things well and records lectures so you can go back if you don't understand the first time."
+  },
+  {
+   "course": "BSCI170",
+   "rating": 3,
+   "created": "2025-05-12",
+   "excerpt": "There is a lot of material in this class and going through 70-80 slides per lecture is a lot to digest."
+  },
+  {
+   "course": "BSCI170",
+   "rating": 3,
+   "created": "2024-12-02",
+   "excerpt": "She goes through lecture slides super fast but there isn't much work and it is pretty easy."
   },
   {
    "course": "PHYS161",
-   "professor": "David Buehrle",
-   "rating": 4,
+   "rating": 5,
    "created": "2026-01-08",
-   "excerpt": "Buehrle is not that bad in spite of the reviews posted here. I always felt like what he went over during class was way more simple than what was covered on the exams."
+   "excerpt": "I really liked him. He kept the lectures interesting and fun which is hard for a class like physics."
   },
   {
-   "course": "INST126",
-   "professor": "Joel Chan",
-   "rating": 5,
-   "created": "2025-05-01",
-   "excerpt": "Dr. Chan was the best professor I took at umd ever. He really want students to understand the course material, and also he doesn't have any midterms only one final."
-  },
-  {
-   "course": "INST126",
-   "professor": "Scott Jackson",
+   "course": "PHYS161",
    "rating": 4,
-   "created": "2024-12-23",
-   "excerpt": "Scott Jackson is a very nice person, like others have put it. He very forgiving and always does his best to adjust assignments."
+   "created": "2025-11-04",
+   "excerpt": "She is a pretty good professor. She doesn't make the lecture particularly boring but neither are they too exciting."
+  },
+  {
+   "course": "PHYS161",
+   "rating": 5,
+   "created": "2025-07-12",
+   "excerpt": "Took this course over the summer and overall a good professor. Quizzes were easy, exams were fair."
+  },
+  {
+   "course": "PHYS161",
+   "rating": 3,
+   "created": "2026-02-16",
+   "excerpt": "He is a very monotone speaker making lectures very boring but his style of teaching is very good."
+  },
+  {
+   "course": "PHYS161",
+   "rating": 2,
+   "created": "2025-01-24",
+   "excerpt": "Expect to learn more from the textbook than you do him. He is not good at explaining topics and when he decides to give out examples he just uses variables and only does half a problem."
   },
   {
    "course": "INST126",
-   "professor": "Scott Jackson",
+   "rating": 4,
+   "created": "2026-04-09",
+   "excerpt": "Fairly easy class, especially if you took AP computer science. Consists of three-ish short projects with weekly homework."
+  },
+  {
+   "course": "INST126",
+   "rating": 2,
+   "created": "2025-02-05",
+   "excerpt": "He was a nice person. However, he would take a very long time to grade stuff which was very stressful and annoying because the assignments would build off of each other."
+  },
+  {
+   "course": "INST126",
    "rating": 3,
    "created": "2024-11-07",
    "excerpt": "Much of the material learned was complicated, and a lot of the people in the class had a lot of advanced prior coding knowledge and were able to complete assignments without much worry."
   },
   {
    "course": "HIST200",
-   "professor": "Howard Smead",
    "rating": 5,
    "created": "2026-02-24",
    "excerpt": "His lectures are very engaging, and you can tell he is very knowledgeable about the subject he teaches."
   },
   {
    "course": "HIST200",
-   "professor": "Christopher Bonner",
-   "rating": 4,
-   "created": "2025-12-09",
-   "excerpt": "Prof. Bonner is very nice and begins lectures giving any important information or going over future essays/tests."
-  },
-  {
-   "course": "HIST200",
-   "professor": "Howard Smead",
    "rating": 5,
-   "created": "2025-01-02",
-   "excerpt": "Professor Smead is a cool dude. He really is passionate about a lot of the topics covered in lecture, even pretending to be a slave for us."
+   "created": "2025-05-09",
+   "excerpt": "Honestly, a great professor. You don't really need to go to the lectures, as he posts all the slides online, but the lectures are pretty interesting to attend."
   },
   {
    "course": "ENES100",
-   "professor": "Peter Sunderland",
-   "rating": 5,
-   "created": "2025-12-26",
-   "excerpt": "TAKE HIM. Really chill with everything. Wants you to succeed, and it's really easy when it comes to the final project."
-  },
-  {
-   "course": "ENES100",
-   "professor": "Kevin Chiu",
-   "rating": 5,
-   "created": "2025-12-23",
-   "excerpt": "Fun chill guy. When he grades he looks at the rubric verbatem, which makes his grading a little harsh."
-  },
-  {
-   "course": "ENES100",
-   "professor": "Ted Baker",
    "rating": 4,
    "created": "2025-12-20",
    "excerpt": "Decent professor, is understanding about assignments and their time, not a bad choice for ENES 100."
+  },
+  {
+   "course": "ENES100",
+   "rating": 5,
+   "created": "2025-05-21",
+   "excerpt": "She is a really really nice professor. Grading was usually very good and assignments were usually fun."
+  },
+  {
+   "course": "ENES100",
+   "rating": 1,
+   "created": "2025-12-24",
+   "excerpt": "Not a great lecturer, but he is a very chill teacher. Only problem is that he is very strict with grading."
+  },
+  {
+   "course": "ENES100",
+   "rating": 3,
+   "created": "2025-01-04",
+   "excerpt": "Super nice and sweet teacher but harsh and very meticulous in grading."
   }
  ]
 }
