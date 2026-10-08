@@ -227,3 +227,10 @@ select:not([multiple]) {
 @keyframes sketch-in { from { opacity: 0; transform: scale(.85); } to { opacity: 1; transform: none; } }
 .sketch-in { animation: sketch-in .5s ease-out; }
 @media (prefers-reduced-motion: reduce) { .sketch-in { animation: none; transition: none; } }
+
+/* The home page's scrolling review rows: two copies side by side, moved by half their width, loop seamlessly. */
+@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.marquee-track { animation: marquee var(--marquee-duration, 90s) linear infinite; }
+.marquee-track.reverse { animation-direction: reverse; }
+.marquee:hover .marquee-track, .marquee:focus-within .marquee-track { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) { .marquee-track { animation: none; } .marquee { overflow-x: auto; } }

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useDocumentLanguage } from "@/lib/document-language";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { CONTACT_EMAIL } from "@/lib/site-config";
+import homeReviews from "@/data/home-reviews.json";
 
 type Language = "en" | "zh";
 
@@ -191,6 +192,48 @@ function TimetableSketch({ language }: { language: Language }) {
   </figure>;
 }
 
+// Real student reviews of popular intro courses (data/home-reviews.json, from PlanetTerp), drifting past in
+// two rows. Each visit shows a different mix; hovering pauses them; each card opens the course on PlanetTerp.
+type HomeReview = { course: string; professor: string | null; rating: number; excerpt: string };
+const REVIEWS = (homeReviews as { reviews: HomeReview[] }).reviews;
+
+function ReviewCard({ review, copy = false }: { review: HomeReview; copy?: boolean }) {
+  return <a href={`https://planetterp.com/course/${review.course}`} target="_blank" rel="noreferrer" tabIndex={copy ? -1 : undefined} className="flex w-80 shrink-0 flex-col justify-between rounded-2xl border border-[#e3e0d8] bg-white p-4 text-left hover:border-[#536d64]">
+    <p className="text-sm leading-6 text-[#2c3533]">“{review.excerpt}”</p>
+    <p className="mt-3 flex items-center justify-between gap-2 text-[11px] text-[#646c68]">
+      <span className="min-w-0 truncate"><span className="font-semibold text-[#273c38]">{review.course}</span>{review.professor ? ` · ${review.professor}` : ""}</span>
+      <span className="shrink-0 text-[#a3772b]" aria-label={`${review.rating} / 5`}>{"★".repeat(review.rating)}</span>
+    </p>
+  </a>;
+}
+
+function ReviewStream({ language }: { language: Language }) {
+  const [order, setOrder] = useState(REVIEWS);
+  useEffect(() => {
+    // A new mix each visit, shuffled after the first render so the server and client HTML match.
+    const shuffled = [...REVIEWS];
+    for (let index = shuffled.length - 1; index > 0; index -= 1) { const other = Math.floor(Math.random() * (index + 1)); [shuffled[index], shuffled[other]] = [shuffled[other]!, shuffled[index]!]; }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOrder(shuffled);
+  }, []);
+  const rows = [order.slice(0, 14), order.slice(14, 28)];
+  return <section aria-labelledby="reviews-title" className="py-12">
+    <div className="mx-auto max-w-6xl px-5 sm:px-8">
+      <h2 id="reviews-title" className="font-serif text-3xl">{language === "zh" ? "同学们怎么说这些课" : "What students say about these courses"}</h2>
+      <p className="mt-2 text-sm text-[#5d6561]">{language === "zh" ? "来自 PlanetTerp 的真实评论，随机选自热门入门课。点开可以看原文。" : "Real reviews from PlanetTerp, a random mix from popular intro courses. Open one to read it in full."}</p>
+    </div>
+    <div className="mt-6 space-y-4 [mask-image:linear-gradient(to_right,transparent,black_6%,black_94%,transparent)]">
+      {rows.map((row, index) => <div key={index} className="marquee overflow-hidden">
+        {/* Two copies of the row: moving by half the width loops without a jump. The copy is hidden from screen readers. */}
+        <div className={`marquee-track flex w-max ${index ? "reverse" : ""}`} style={{ ["--marquee-duration" as string]: index ? "110s" : "95s" }}>
+          <div className="flex gap-4 pr-4">{row.map((review, item) => <ReviewCard key={item} review={review} />)}</div>
+          <div aria-hidden="true" className="flex gap-4 pr-4">{row.map((review, item) => <ReviewCard key={item} review={review} copy />)}</div>
+        </div>
+      </div>)}
+    </div>
+  </section>;
+}
+
 export default function Home() {
   const [language, setLanguage] = useState<Language>("en");
   useDocumentLanguage(language);
@@ -247,6 +290,8 @@ export default function Home() {
         <p className="mt-2 text-sm leading-6 text-[#5d6561]">{body}</p>
       </li>)}</ol>
     </div></section>
+
+    <ReviewStream language={language} />
 
     <section className="mx-auto max-w-6xl px-5 py-12 sm:px-8">
       <h2 className="font-serif text-3xl">{t.whyTitle}</h2>
