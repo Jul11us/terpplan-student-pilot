@@ -130,18 +130,51 @@ const POOL: Array<{ id: string; sections: Section[] }> = [
   { id: "PHYS161", sections: [pattern(MWF, 10, 0.83), pattern(MWF, 15, 0.83), pattern(TUTH, 8, 1.25)] },
   { id: "ARTT100", sections: [pattern([4], 13, 2.75), pattern([1], 13, 2.75), pattern([3], 9, 2.75)] },
 ];
-const OWN: Array<{ label: { en: string; zh: string }; text: { en: string; zh: string }; meetings: Section }> = [
-  { label: { en: "Job", zh: "打工" }, text: { en: "Job Tue & Thu 1–4pm", zh: "周二周四 1–4pm 打工" }, meetings: pattern(TUTH, 13, 3) },
-  { label: { en: "Job", zh: "打工" }, text: { en: "Job Mon & Wed 3–6pm", zh: "周一周三 3–6pm 打工" }, meetings: pattern(MW, 15, 3) },
-  { label: { en: "Job", zh: "打工" }, text: { en: "Job Fri mornings", zh: "周五上午打工" }, meetings: pattern([4], 8.5, 3.5) },
-  { label: { en: "Gym", zh: "健身" }, text: { en: "Gym Tue & Thu 8–9am", zh: "周二周四早上健身" }, meetings: pattern(TUTH, 8, 1) },
-  { label: { en: "Club", zh: "社团" }, text: { en: "Club Wed 4–6pm", zh: "周三下午社团" }, meetings: pattern([2], 16, 2) },
+const OWN: Array<{ label: { en: string; zh: string }; text: { en: string; zh: string }; explanation: { en: string; zh: string }; meetings: Section }> = [
+  { label: { en: "Job", zh: "打工" }, text: { en: "Job Tue & Thu 1–4pm", zh: "周二周四 1–4pm 打工" }, explanation: { en: "Classes now avoid work on Tuesday and Thursday, 1–4pm.", zh: "已避开周二、周四下午 1–4 点的打工时间。" }, meetings: pattern(TUTH, 13, 3) },
+  { label: { en: "Job", zh: "打工" }, text: { en: "Job Mon & Wed 3–6pm", zh: "周一周三 3–6pm 打工" }, explanation: { en: "Classes now avoid work on Monday and Wednesday, 3–6pm.", zh: "已避开周一、周三下午 3–6 点的打工时间。" }, meetings: pattern(MW, 15, 3) },
+  { label: { en: "Job", zh: "打工" }, text: { en: "Job Fri mornings", zh: "周五上午打工" }, explanation: { en: "Friday morning is now kept free for work.", zh: "已为周五上午的打工时间留出空档。" }, meetings: pattern([4], 8.5, 3.5) },
+  { label: { en: "Gym", zh: "健身" }, text: { en: "Gym Tue & Thu 8–9am", zh: "周二周四早上健身" }, explanation: { en: "Tuesday and Thursday, 8–9am, are now kept free for the gym.", zh: "已为周二、周四早上 8–9 点的健身留出时间。" }, meetings: pattern(TUTH, 8, 1) },
+  { label: { en: "Club", zh: "社团" }, text: { en: "Club Wed 4–6pm", zh: "周三下午社团" }, explanation: { en: "Wednesday, 4–6pm, is now kept free for your club.", zh: "已为周三下午 4–6 点的社团活动留出时间。" }, meetings: pattern([2], 16, 2) },
 ];
 type Preference = "none" | "noFriday" | "lateStart" | "earlyEnd";
 const PREFERENCES: Record<Preference, { en: string; zh: string } | null> = {
   none: null, noFriday: { en: "No Friday classes", zh: "周五不上课" }, lateStart: { en: "Nothing before 10", zh: "10 点前不上课" }, earlyEnd: { en: "Done by 3pm", zh: "下午 3 点前下课" },
 };
+const PREFERENCE_EXPLANATIONS: Record<Preference, { en: string; zh: string }> = {
+  none: { en: "The time preference is cleared; personal commitments still stay free.", zh: "已取消时间偏好，仍为个人日程留出时间。" },
+  noFriday: { en: "Friday is now free; classes fit into Monday through Thursday.", zh: "已避开周五，把课程排在周一至周四。" },
+  lateStart: { en: "Early classes are avoided; every class now starts at 10am or later.", zh: "已避开早课，所有课程都在上午 10 点或之后开始。" },
+  earlyEnd: { en: "Every class now finishes by 3pm.", zh: "已调整上课时间，最晚下午 3 点下课。" },
+};
 type Week = { courses: string[]; picked: Record<string, number>; own: number; preference: Preference };
+
+// Describe the result actually shown, including course replacements made by this illustrative sketch.
+function weekExplanation(before: Week | null, after: Week, language: Language) {
+  const zh = language === "zh";
+  if (!before) return OWN[after.own]!.explanation[language];
+  const added = after.courses.filter((id) => !before.courses.includes(id));
+  const removed = before.courses.filter((id) => !after.courses.includes(id));
+  const replacements = added.length || removed.length
+    ? zh ? " 示例课程组合也已调整。" : " The sample course mix was also adjusted."
+    : "";
+  if (before.own !== after.own) return OWN[after.own]!.explanation[language] + replacements;
+  if (before.preference !== after.preference) return PREFERENCE_EXPLANATIONS[after.preference][language] + replacements;
+  if (added.length === 1 && removed.length === 1) return zh
+    ? `已将 ${removed[0]} 换为 ${added[0]}，重新避开时间冲突。`
+    : `Replaced ${removed[0]} with ${added[0]} and checked for time conflicts.`;
+  if (added.length) return zh
+    ? `已换入 ${added.join("、")}，重新调整课表。`
+    : `Added ${added.join(", ")} and rearranged the sample schedule.`;
+  if (removed.length) return zh
+    ? `已移除无法排入的示例课程 ${removed.join("、")}。`
+    : `Removed sample courses that could not fit: ${removed.join(", ")}.`;
+  const changed = after.courses.filter((id) => after.picked[id] !== before.picked[id]);
+  if (changed.length) return zh
+    ? `已调整 ${changed.join("、")} 的班次，避开时间冲突。`
+    : `Changed sections for ${changed.join(", ")} to avoid time conflicts.`;
+  return zh ? "已重新检查，当前课表仍避开个人日程。" : "Rechecked the schedule; personal commitments still stay free.";
+}
 
 const random = (count: number) => Math.floor(Math.random() * count);
 const overlaps = (a: Meeting, b: Meeting) => a.day === b.day && a.start < b.end && b.start < a.end;
@@ -190,10 +223,12 @@ const toneOf = (id: string) => TONES[[...id].reduce((sum, char) => sum + char.ch
 
 function TimetableSketch({ language }: { language: Language }) {
   const days = language === "zh" ? ["周一", "周二", "周三", "周四", "周五"] : ["Mon", "Tue", "Wed", "Thu", "Fri"];
-  const [week, setWeek] = useState<Week>(FIRST_WEEK);
+  const [preview, setPreview] = useState<{ before: Week | null; week: Week }>({ before: null, week: FIRST_WEEK });
+  const { week } = preview;
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const timer = window.setInterval(() => setWeek((current) => nextWeek(current)), 2200);
+    // Leave enough time to read the explanation before the next change.
+    const timer = window.setInterval(() => setPreview((current) => ({ before: current.week, week: nextWeek(current.week) })), 4500);
     return () => window.clearInterval(timer);
   }, []);
   const at = (hour: number) => ((hour - 8) / 10) * 100;
@@ -203,17 +238,21 @@ function TimetableSketch({ language }: { language: Language }) {
     ...week.courses.flatMap((id) => POOL.find((item) => item.id === id)!.sections[week.picked[id]!]!.map((meeting, index) => ({ key: `${id}-${index}`, label: id, tone: toneOf(id), meeting }))),
     ...own.meetings.map((meeting, index) => ({ key: `own-${index}`, label: own.label[language], tone: OWN_TONE, meeting })),
   ];
-  return <figure aria-hidden="true" className="rounded-2xl border border-[#e0ddd5] bg-white p-3 shadow-sm">
-    <figcaption className="mb-3 flex min-h-7 flex-wrap items-center gap-1.5 px-1 text-[11px] font-semibold">
+  return <figure className="rounded-2xl border border-[#e0ddd5] bg-white p-3 shadow-sm">
+    <div aria-hidden="true" className="mb-3 flex min-h-7 flex-wrap items-center gap-1.5 px-1 text-[11px] font-semibold">
       <span className="rounded-full bg-[#f1efe9] px-2.5 py-1 text-[#48534f] transition-all">{own.text[language]}</span>
       {preference && <span className="rounded-full bg-[#edf3ef] px-2.5 py-1 text-[#273c38]">{preference[language]}</span>}
-    </figcaption>
-    <div className="grid grid-cols-5 gap-1.5 text-center text-[10px] font-semibold text-[#646c68]">{days.map((day, index) => <span key={day} className={`transition-opacity duration-500 ${week.preference === "noFriday" && index === 4 ? "opacity-40" : ""}`}>{day}</span>)}</div>
-    <div className="relative mt-2 grid h-60 grid-cols-5 gap-1.5">
+    </div>
+    <div aria-hidden="true" className="grid grid-cols-5 gap-1.5 text-center text-[10px] font-semibold text-[#646c68]">{days.map((day, index) => <span key={day} className={`transition-opacity duration-500 ${week.preference === "noFriday" && index === 4 ? "opacity-40" : ""}`}>{day}</span>)}</div>
+    <div aria-hidden="true" className="relative mt-2 grid h-60 grid-cols-5 gap-1.5">
       {days.map((day, index) => <div key={day} className={`rounded-md transition-colors duration-500 ${week.preference === "noFriday" && index === 4 ? "bg-[#efece6]" : "bg-[#f7f5f0]"}`} />)}
       {blocks.map(({ key, label, tone, meeting }) => <div key={key} className={`sketch-in absolute flex items-center justify-center overflow-hidden rounded-md text-[10px] font-semibold transition-all duration-700 ease-out ${tone}`}
         style={{ left: `calc(${meeting.day} * (100% + 6px) / 5)`, width: "calc((100% - 24px) / 5)", top: `${at(meeting.start)}%`, height: `${at(meeting.end) - at(meeting.start)}%` }}>{label}</div>)}
     </div>
+    <figcaption className="mt-3 flex min-h-16 items-start gap-2 border-t border-[#eeece6] px-1 pt-3 text-xs leading-5 text-[#48534f]">
+      <span aria-hidden="true" className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#edf3ef] text-[10px] font-bold text-[#315c43]">✓</span>
+      <span>{weekExplanation(preview.before, week, language)}</span>
+    </figcaption>
   </figure>;
 }
 
