@@ -69,15 +69,15 @@
   },
   {
    "course": "CMSC131",
-   "rating": 1,
-   "created": "2025-12-24",
-   "excerpt": "This course was significantly more difficult than other sections of the same course due to the instructor's exam design and grading policies."
+   "rating": 2,
+   "created": "2024-12-15",
+   "excerpt": "The mean for all of his exams have been less than 77%, the projects and the quizzes aren't too bad but the exams are so hard."
   },
   {
    "course": "CMSC131",
-   "rating": 1,
-   "created": "2025-09-08",
-   "excerpt": "This class was a genuine disaster. None of the study material ever matched the content on the tests or quizzes."
+   "rating": 3,
+   "created": "2024-12-13",
+   "excerpt": "He is a really chill and relaxed professor; he makes lectures pretty engaging but my only issue with him is how long it takes to get our grades back."
   },
   {
    "course": "CMSC132",
@@ -118,14 +118,14 @@
   {
    "course": "CMSC216",
    "rating": 5,
-   "created": "2025-12-24",
-   "excerpt": "Amazing Professor! Lectures are very engaging and he explains things clearly."
+   "created": "2025-06-20",
+   "excerpt": "Really well ran course. The projects were pretty instructive, especially the Assembly project."
   },
   {
    "course": "CMSC216",
    "rating": 5,
-   "created": "2025-06-20",
-   "excerpt": "Really well ran course. The projects were pretty instructive, especially the Assembly project."
+   "created": "2025-05-29",
+   "excerpt": "Great professor who cares about his students' learning. Great class structure with lots of flexibility, difficult but rewarding projects, and easy but not free exams."
   },
   {
    "course": "COMM107",
@@ -345,9 +345,9 @@
   },
   {
    "course": "CHEM131",
-   "rating": 1,
+   "rating": 3,
    "created": "2024-12-04",
-   "excerpt": "He never covers topics that are on the homework and his exams are ridiculously hard."
+   "excerpt": "As far as gen chem professors go, he is not that bad. His tests are very theoretical and can be quite difficult, but he does curve a decent amount, so that helps a bit."
   },
   {
    "course": "BSCI170",
@@ -453,15 +453,15 @@
   },
   {
    "course": "ENES100",
-   "rating": 1,
-   "created": "2025-12-24",
-   "excerpt": "Not a great lecturer, but he is a very chill teacher. Only problem is that he is very strict with grading."
-  },
-  {
-   "course": "ENES100",
    "rating": 3,
    "created": "2025-01-04",
    "excerpt": "Super nice and sweet teacher but harsh and very meticulous in grading."
+  },
+  {
+   "course": "ENES100",
+   "rating": 2,
+   "created": "2024-12-12",
+   "excerpt": "Provides little guidance on what he expects from you and grading of assignments seemed arbitrary."
   }
  ]
 }

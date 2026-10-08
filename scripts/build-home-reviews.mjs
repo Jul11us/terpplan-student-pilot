@@ -2,7 +2,7 @@
 // courses, shown scrolling on the home page (a random mix on each visit, each one linking to its course page).
 // Run: node scripts/build-home-reviews.mjs   (a minute or two; rerun once a term)
 // Kept: reviews from the last two years that talk about the course itself (exams, homework, lectures...),
-// excerpted to a sentence or two, praise and criticism both: up to three reviews rated 4–5 and two rated 1–3
+// excerpted to a sentence or two, praise and criticism both: up to three reviews rated 4–5 and two rated 2–3
 // per course. The home page shows them without instructor names, so criticism reads as what the course was
 // like, not as TerpPlan singling someone out. Still left out: insults, telling students to avoid someone,
 // remarks on looks, shouting, and casual or misspelled writing that would look careless on the page.
@@ -13,7 +13,7 @@ const COURSES = ["MATH140", "MATH141", "CMSC131", "CMSC132", "CMSC216", "COMM107
 const PRAISE = 3, CRITICISM = 2;
 const MAX_AGE_DAYS = 730;
 const ABOUT_COURSE = /\b(homework|assignments?|exams?|midterms?|finals?|quiz(zes)?|lectures?|workload|projects?|office hours|grading|curve|labs?|discussions?|tests?|essays?|papers?|readings?|textbook|practice|study|studying)\b/i;
-const NOT_SHOWN = /\b(fuck\w*|shit\w*|damn|ass|bitch\w*|crap|cute|hot|sexy|attractive|ugly|stupid|idiot\w*|dumb|hate|hated|kill|trash|garbage|worst|racist|sexist|wtf|lmao|lol|awful|terrible|horrible|useless|nightmare|rude|avoid|don'?t take|do not take|take (him|her|them)|pick another|any other professor|no passion|neglected|ridiculous|weird|slander|slackers|care about teaching|not care|just don'?t|thinks (s?he|they)|poorly|bad (teacher|lecturer|professor)|condescending|learned (literally )?nothing|goat|guy|dude|lady|man)\b/i;
+const NOT_SHOWN = /\b(fuck\w*|shit\w*|damn|ass|bitch\w*|crap|cute|hot|sexy|attractive|ugly|stupid|idiot\w*|dumb|hate|hated|kill|trash|garbage|worst|racist|sexist|wtf|lmao|lol|awful|terrible|horrible|useless|nightmare|rude|avoid|don'?t take|do not take|take (him|her|them)|pick another|any other professor|no passion|neglected|ridiculous|weird|slander|slackers|care about teaching|not care|just don'?t|thinks (s?he|they)|poorly|bad (teacher|lecturer|professor)|condescending|learned (literally )?nothing|disaster|ridiculous\w*|insane\w*|brutal|impossible|goat|guy|dude|lady|man)\b/i;
 // Casual or misspelled writing (quoted as is, it would look like TerpPlan's own typo).
 const CARELESS = /\b(barley|verbatem|alot|definately|recieve|seperate|wierd|untill|arent|isnt|dont|doesnt|didnt|cant|wont|im|ive|u|ur|imo|tbh|gonna|wanna|kinda|sooo+|pls|id|shes|hes|fr|yaps|kaufman|lets)\b|\si\s|!!|\?\?/i;
 const ABBREVIATION = /\b(Dr|Prof|Mr|Ms|Mrs|St|vs)\.$/i;
@@ -47,7 +47,8 @@ for (const course of COURSES) {
     const full = String(review.review ?? "");
     const text = excerpt(full);
     const letters = text.replace(/[^A-Za-z]/g, "");
-    if (!Number.isFinite(created) || now - created > MAX_AGE_DAYS * 86_400_000 || !(rating >= 1 && rating <= 5)) return [];
+    // 1-star reviews are left out: criticism stays, the harshest first impressions do not.
+    if (!Number.isFinite(created) || now - created > MAX_AGE_DAYS * 86_400_000 || !(rating >= 2 && rating <= 5)) return [];
     if (text.length < 60 || text.length > 190 || !/^[A-Z"“]/.test(text) || /^\w+( & \w+)?:/.test(text) || !/[.!]$/.test(text) || ABBREVIATION.test(text)) return [];
     if (!ABOUT_COURSE.test(text) || NOT_SHOWN.test(full) || CARELESS.test(text)) return [];
     // A name in the excerpt (the instructor's, or "Dr. ...") would bring the person back in.

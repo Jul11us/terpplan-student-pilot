@@ -6,6 +6,8 @@ import { useDocumentLanguage } from "@/lib/document-language";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { CONTACT_EMAIL } from "@/lib/site-config";
 import homeReviews from "@/data/home-reviews.json";
+import { readRegistrationDay, savedReminder } from "@/lib/registration-day";
+import { RegistrationCountdown } from "@/app/components/registration-countdown";
 
 type Language = "en" | "zh";
 
@@ -47,6 +49,16 @@ const copy = {
     footer: "TerpPlan is an independent student project, not affiliated with the University of Maryland. Always confirm sections and register in Testudo.",
     contact: "Feedback or ideas:",
     closing: "Registration is coming. Have a backup plan ready.",
+    registrationDay: "Registration day", registrationOpen: "Open your section numbers and backups",
+    faqTitle: "Questions",
+    faq: [
+      ["Is TerpPlan official?", "No. It is an independent project by UMD students, not affiliated with the university. You still register in Testudo, and Testudo is the final word on sections, times and seats."],
+      ["Does it cost anything?", "No. TerpPlan is free, and you can plan without an account."],
+      ["Where is my plan stored?", "In your browser. If you sign in with your email, your plan, preferences and courses taken are also kept in your account so they open on your other devices; you can delete that copy. Degree audit PDFs are read in your browser and never uploaded."],
+      ["How fresh are the seat counts?", "With seat emails on, watched sections are checked about every 10 minutes, sometimes later at busy times. While the planner is open it reads seats at most once a minute. A seat can fill again before you see it, so register right away."],
+      ["Where does the course data come from?", "Courses, sections and seats come from UMD's Schedule of Classes (Testudo) and umd.io. Instructor ratings, reviews and average GPAs come from PlanetTerp."],
+      ["Is there a Chinese version?", "Yes. Switch to 中文 at the top of any page."],
+    ] as Array<[string, string]>,
   },
   zh: {
     nav: { audit: "学位审计", minor: "辅修 / 双专业", hard: "最难抢的课" },
@@ -73,6 +85,16 @@ const copy = {
     footer: "TerpPlan 是学生独立开发的项目，与马里兰大学没有隶属关系。班次以 Testudo 为准，并在 Testudo 完成注册。",
     contact: "反馈和建议：",
     closing: "下学期选课前，先排好一份备选方案。",
+    registrationDay: "选课当天", registrationOpen: "打开课号、班号和备选清单",
+    faqTitle: "常见问题",
+    faq: [
+      ["TerpPlan 是官方的吗？", "不是。这是 UMD 学生做的独立项目，与学校没有隶属关系。最终仍要在 Testudo 注册，班次、时间和余位以 Testudo 为准。"],
+      ["要钱吗？", "不要，完全免费，不注册账号也能排课。"],
+      ["我的数据存在哪？", "默认存在你的浏览器里。用邮箱登录后，方案、偏好和已修课程也会保存到账号，换设备登录就能看到，你也可以删除这份副本。学位审计 PDF 只在你的浏览器里读取，不会上传。"],
+      ["余位多久更新一次？", "开通邮件提醒后，关注的班次大约每 10 分钟检查一次，高峰时可能更晚。排课页打开时，最多每分钟读取一次余位。空位可能很快又被抢走，收到提醒请尽快注册。"],
+      ["课程数据从哪来？", "课程、班次和余位来自 UMD 官方课表（Testudo）和 umd.io；老师评分、评论和平均 GPA 来自 PlanetTerp。"],
+      ["有中文吗？", "有，在任意页面右上角切换。"],
+    ] as Array<[string, string]>,
   },
 } as const;
 
@@ -242,6 +264,8 @@ export default function Home() {
   const [language, setLanguage] = useState<Language>("en");
   useDocumentLanguage(language);
   const [hasPlan, setHasPlan] = useState(false);
+  // Shown only to students whose planner saved a registration-day list (and their own registration time).
+  const [registration, setRegistration] = useState<{ date: string; time: string } | null>(null);
   const t = copy[language];
 
   useEffect(() => {
@@ -250,6 +274,8 @@ export default function Home() {
     /* eslint-disable react-hooks/set-state-in-effect */
     if (saved.language) setLanguage(saved.language);
     setHasPlan(Object.values(saved.plans).some((courses) => courses.length > 0));
+    const day = readRegistrationDay();
+    if (day?.courses.length) setRegistration(savedReminder(day.termName));
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
@@ -266,6 +292,7 @@ export default function Home() {
         <Link href="/hard-courses" className="whitespace-nowrap hover:text-[#a34a39]">{t.nav.hard}</Link>
       </nav>
       <div className="flex items-center gap-2">
+        {registration && <Link href="/register" className="whitespace-nowrap rounded-lg border border-[#cddbd1] bg-[#edf3ef] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#e2ece6]">📋 {t.registrationDay}</Link>}
         <button type="button" onClick={switchLanguage} className="rounded-lg border border-[#dcd9d0] px-3 py-2 text-xs">{language === "en" ? "中文" : "English"}</button>
         <Link href="/plan" className="whitespace-nowrap rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c]">{hasPlan ? t.continue : t.start} →</Link>
       </div>
@@ -273,6 +300,10 @@ export default function Home() {
 
     <section className="mx-auto grid max-w-6xl items-center gap-10 px-5 pb-12 pt-12 sm:px-8 sm:pt-16 lg:grid-cols-[1.15fr_1fr]">
       <div>
+        {registration && <Link href="/register" className="mb-6 flex max-w-xl flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-xl border border-[#cddbd1] bg-[#edf3ef] px-4 py-3 hover:border-[#536d64]">
+          <span className="min-w-0"><span className="block text-sm font-semibold text-[#273c38]">📋 {t.registrationDay}</span>{registration.date && registration.time ? <RegistrationCountdown date={registration.date} time={registration.time} language={language} /> : null}</span>
+          <span className="text-xs font-semibold text-[#a34a39]">{t.registrationOpen} →</span>
+        </Link>}
         <p className="text-[11px] font-semibold uppercase tracking-[.17em] text-[#a34a39]">{t.eyebrow}</p>
         <h1 className="mt-4 max-w-2xl font-serif text-4xl leading-[1.1] tracking-[-.02em] sm:text-6xl">{t.title}</h1>
         <p className="mt-5 max-w-xl text-base leading-7 text-[#48534f]">{t.lead}</p>
@@ -306,6 +337,11 @@ export default function Home() {
       </Link>)}</div>
       <h2 className="mt-12 text-sm font-semibold uppercase tracking-[.13em] text-[#5d6561]">{t.extrasTitle}</h2>
       <ul className="mt-3 flex flex-wrap gap-2">{t.extras.map((item) => <li key={item} className="rounded-full border border-[#e0ddd5] bg-white px-3 py-1.5 text-xs text-[#48534f]">{item}</li>)}</ul>
+      <h2 className="mt-12 font-serif text-3xl">{t.faqTitle}</h2>
+      <div className="mt-4 divide-y divide-[#e3e0d8] rounded-2xl border border-[#e3e0d8] bg-white">{t.faq.map(([question, answer]) => <details key={question} className="group px-5 py-4">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-semibold text-[#24312d]">{question}<span aria-hidden="true" className="text-[#646c68] transition-transform group-open:rotate-45">+</span></summary>
+        <p className="mt-2 text-sm leading-6 text-[#5d6561]">{answer}</p>
+      </details>)}</div>
       <div className="mt-12 flex flex-col items-start gap-4 rounded-2xl bg-[#273c38] p-6 text-white sm:flex-row sm:items-center sm:justify-between sm:p-8">
         <p className="font-serif text-2xl">{t.closing}</p>
         <Link href="/plan" className="inline-flex shrink-0 items-center rounded-xl bg-white px-5 py-3 text-sm font-semibold text-[#273c38] hover:bg-[#edf3ef]">{hasPlan ? t.continue : t.start} →</Link>
