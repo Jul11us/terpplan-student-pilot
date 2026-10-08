@@ -73,7 +73,7 @@ function diagnosisText(item: PlanDiagnosis, blocks: BusyBlock[], language: Langu
   }
 }
 
-function repairText(repair: PlanRepair, blocks: BusyBlock[], language: Language) {
+export function repairText(repair: PlanRepair, blocks: BusyBlock[], language: Language, pinned: Record<string, string | undefined> = {}) {
   const zh = language === "zh";
   switch (repair.kind) {
     case "allowDay": return zh ? `允许${dayLabel(repair.day!, language)}上课` : `Allow classes on ${repair.day}`;
@@ -83,20 +83,81 @@ function repairText(repair: PlanRepair, blocks: BusyBlock[], language: Language)
     case "removeBlock": return zh ? `移除日程：${blocks.find((block) => block.id === repair.blockId)?.label || "固定日程"}` : `Remove commitment: ${blocks.find((block) => block.id === repair.blockId)?.label || "Commitment"}`;
     case "allowFull": return zh ? "允许排入已满班次（需要候补或等余位）" : "Include full sections (waitlist or watch for seats)";
     case "clearCampusAreas": return zh ? "取消校园区域限制" : "Allow classes anywhere on campus";
-    case "unpin": return zh ? `取消 ${repair.courseId} 的指定班次` : `Unpin ${repair.courseId}`;
+    case "unpin": {
+      const from = pinned[repair.courseId!]?.split("-")[1];
+      const to = repair.preview?.find((item) => item.courseId === repair.courseId)?.sectionId.split("-")[1];
+      if (from && to) return zh ? `把 ${repair.courseId} 从 ${from} 班换成 ${to} 班` : `Switch ${repair.courseId} from section ${from} to ${to}`;
+      return zh ? `取消 ${repair.courseId} 的指定班次` : `Unpin ${repair.courseId}`;
+    }
     case "resetFilters": return zh ? `重置 ${repair.courseId} 的班次和教师筛选` : `Reset section & instructor filters for ${repair.courseId}`;
     case "removeCourse": return zh ? `从本次计划移除 ${repair.courseId}` : `Remove ${repair.courseId} from this plan`;
   }
 }
 
-export function ScheduleRecovery({ diagnostics, repairs, blocks, language, disabled, onRepair, onBack }: { diagnostics: PlanDiagnosis[]; repairs: PlanRepair[]; blocks: BusyBlock[]; language: Language; disabled: boolean; onRepair: (repair: PlanRepair) => void; onBack: () => void }) {
+// What the student gives up with a fix, in one line.
+function tradeOff(repair: PlanRepair, blocks: BusyBlock[], language: Language) {
   const zh = language === "zh";
+  const label = blocks.find((block) => block.id === repair.blockId)?.label || (zh ? "这项日程" : "this commitment");
+  switch (repair.kind) {
+    case "unpin": return zh ? "只换这一门课的班次，其他课都不变。" : "Only this course changes section; everything else stays.";
+    case "resetFilters": return zh ? `${repair.courseId} 可能会换成你之前排除的班次或老师。` : `${repair.courseId} may use a section or instructor you had ruled out.`;
+    case "clearBuffer": return zh ? "有些课之间会没有空档，下课直接去下一节。" : "Some classes may be back to back, with no gap between them.";
+    case "relaxWindow": return zh ? "有些课可能落在你设的时间段之外。" : "Some classes may fall outside your preferred hours.";
+    case "clearEarliest": return zh ? "可能会有比你设定更早的课。" : "You may have a class earlier than your cutoff.";
+    case "allowDay": return zh ? `需要${dayLabel(repair.day!, language)}去上课。` : `You would have class on ${repair.day}.`;
+    case "clearCampusAreas": return zh ? "有些课可能在你选的校区范围之外。" : "Some classes may be outside the parts of campus you chose.";
+    case "allowFull": return zh ? "会用到已满的班，要等空位或候补才能注册。" : "Uses full sections: you would need a seat to open or a waitlist spot.";
+    case "removeBlock": return zh ? `课会和“${label}”的时间重叠。` : `Classes may overlap ${label}.`;
+    case "removeCourse": return zh ? `这学期不上 ${repair.courseId}。` : `You would not take ${repair.courseId} this term.`;
+  }
+}
+
+function previewTime(meeting: { days: string; start: string; end: string }) {
+  if (!meeting.days || !meeting.start) return "TBA";
+  return `${meeting.days} ${meeting.start}–${meeting.end}`;
+}
+
+export function ScheduleRecovery({ diagnostics, repairs, blocks, pinned, language, disabled, onRepair, onBack }: { diagnostics: PlanDiagnosis[]; repairs: PlanRepair[]; blocks: BusyBlock[]; pinned: Record<string, string | undefined>; language: Language; disabled: boolean; onRepair: (repair: PlanRepair) => void; onBack: () => void }) {
+  const zh = language === "zh";
+  const [previewing, setPreviewing] = useState<number | null>(null);
   if (!diagnostics.length) return null;
   return <section aria-label={zh ? "排课问题与解法" : "Schedule issues & fixes"} className="mt-5 rounded-xl border border-[#ead8b5] bg-[#fff8e8] p-4 sm:p-5">
     <h3 className="font-semibold text-[#745424]">{zh ? "哪些限制挡住了排课？" : "What is blocking this schedule?"}</h3>
     <ul className="mt-3 list-disc space-y-2 pl-5 text-xs leading-5 text-[#745424]">{diagnostics.map((item, index) => <li key={index}>{diagnosisText(item, blocks, language)}{item.sample && <p className="mt-1 text-[11px]">{item.sample.days.map((day) => dayLabel(day, language)).join(" / ")} · {item.sectionIds?.[0]} {item.sample.leftStart}–{item.sample.leftEnd} · {item.sectionIds?.[1]} {item.sample.rightStart}–{item.sample.rightEnd}</p>}</li>)}</ul>
-    <p className="mt-4 text-xs leading-5 text-[#5d6561]">{repairs.length ? (zh ? "下面每个调整都已找到覆盖调整后全部课程的方案。点击后才会修改你的计划；上课时间待定的班次仍需确认。" : "Each change below has a schedule covering every remaining course. Your plan changes only when you apply it; TBA times still need confirmation.") : (zh ? "尚未验证出只改一项就能解决的方案。可尝试调整多个限制，或返回找课修改班次。" : "A fix involving just one change has not been confirmed. Adjust multiple constraints or review sections in course search.")}</p>
-    <div className="mt-3 space-y-2">{repairs.map((repair, index) => <div key={index} className="rounded-lg border border-[#e7dcc3] bg-white p-3"><button type="button" disabled={disabled} className={button} onClick={() => onRepair(repair)}>{repairText(repair, blocks, language)}</button><p className="mt-2 break-words text-[11px] text-[#646c68]">{zh ? "可排入：" : "Possible sections: "}{repair.sectionIds.join(" · ")}</p></div>)}</div>
+    <p className="mt-4 text-xs leading-5 text-[#5d6561]">{repairs.length ? (zh ? "下面每个调整都已验证能排出包含其余全部课程的课表，改动最小的排在最前。先预览，确认后才会修改你的计划，之后也可以撤销。" : "Each fix below is checked to fit every remaining course, smallest change first. Preview it first; your plan changes only when you confirm, and you can undo it.") : (zh ? "尚未验证出只改一项就能解决的方案。可尝试调整多个限制，或返回找课修改班次。" : "A fix involving just one change has not been confirmed. Adjust multiple constraints or review sections in course search.")}</p>
+    <div className="mt-3 space-y-2">{repairs.map((repair, index) => {
+      const open = previewing === index;
+      const full = repair.preview?.filter((item) => item.full).length ?? 0;
+      return <div key={`${repair.kind}-${repair.courseId ?? repair.day ?? repair.blockId ?? ""}`} className={`rounded-lg border bg-white p-3 ${index === 0 ? "border-[#9fbcae]" : "border-[#e7dcc3]"}`}>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-[#24312d]">{repairText(repair, blocks, language, pinned)}</p>
+            <p className="mt-1 text-[11px] leading-4 text-[#646c68]">{tradeOff(repair, blocks, language)}{full > 0 && repair.kind !== "allowFull" ? (zh ? ` 示例课表里有 ${full} 个班已满。` : ` ${full} section${full > 1 ? "s" : ""} in the example ${full > 1 ? "are" : "is"} full.`) : ""}</p>
+          </div>
+          {index === 0 && <span className="shrink-0 rounded-full bg-[#e3f0e8] px-2 py-0.5 text-[11px] font-semibold text-[#24523a]">{zh ? "推荐 · 改动最小" : "Recommended · smallest change"}</span>}
+        </div>
+        {open && repair.preview && <div className="mt-3 rounded-lg border border-[#e3e0d8] bg-[#fbfaf8] p-2.5">
+          <p className="text-[11px] font-semibold text-[#48534f]">{zh ? "调整后的一种课表：" : "One schedule after this change:"}</p>
+          <ul className="mt-1.5 space-y-1 text-[11px] leading-4">{repair.preview.map((item) => {
+            const changed = item.courseId === repair.courseId || (pinned[item.courseId] !== undefined && pinned[item.courseId] !== item.sectionId);
+            return <li key={item.sectionId} className={`flex flex-wrap gap-x-2 rounded px-1.5 py-1 ${changed ? "bg-[#fff1d6]" : ""}`}>
+              <span className="font-semibold text-[#24312d]">{item.sectionId}</span>
+              <span className="text-[#5d6561]">{item.meetings.length ? item.meetings.map(previewTime).join(" · ") : "TBA"}</span>
+              {changed && <span className="font-semibold text-[#8a5a17]">{zh ? "变动" : "changed"}</span>}
+              {item.full && <span className="font-semibold text-[#a34a39]">{zh ? "已满" : "full"}</span>}
+            </li>;
+          })}</ul>
+          {repair.kind === "removeCourse" && <p className="mt-1.5 text-[11px] text-[#a34a39]">{zh ? `不包含 ${repair.courseId}。` : `Without ${repair.courseId}.`}</p>}
+          <p className="mt-1.5 text-[11px] text-[#646c68]">{zh ? "应用后会重新生成方案，最终课表可能是另一种同样可行的组合。" : "After applying, options are generated again; you may get another equally valid combination."}</p>
+        </div>}
+        <div className="mt-3 flex flex-wrap gap-2">
+          {open
+            ? <><button type="button" disabled={disabled} className="rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:opacity-50" onClick={() => { setPreviewing(null); onRepair(repair); }}>{zh ? "确认应用" : "Apply this fix"}</button>
+              <button type="button" className={button} onClick={() => setPreviewing(null)}>{zh ? "取消" : "Cancel"}</button></>
+            : <button type="button" disabled={disabled} className={button} onClick={() => setPreviewing(index)}>{zh ? "预览这个调整" : "Preview this fix"}</button>}
+        </div>
+      </div>;
+    })}</div>
     <button type="button" onClick={onBack} className="mt-3 text-xs font-medium text-[#745424] underline underline-offset-2">{zh ? "返回找课修改班次" : "Review sections in course search"}</button>
   </section>;
 }

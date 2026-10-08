@@ -338,3 +338,29 @@ test("a saved early-class time survives, and anything else falls back to the def
     if (previous === undefined) delete globalThis.window; else globalThis.window = previous;
   }
 });
+
+test("fixes come smallest change first, each with an example schedule to preview", () => {
+  // MATH140 is pinned to a section that overlaps CMSC131's only section; MATH140 also has an open one at 2pm.
+  const cmsc = course("CMSC131", [section("CMSC131-0101", "10:00", "10:50")]);
+  const math = course("MATH140", [section("MATH140-0101", "10:30", "11:20"), section("MATH140-0201", "14:00", "14:50")], { pinnedSectionId: "MATH140-0101" });
+  const result = generateOptions([cmsc, math], {}, { excludedDays: ["Fri"] });
+  const kinds = result.repairs.map((repair) => repair.kind);
+  assert.equal(kinds[0], "unpin", "switching the pinned section is the smallest change");
+  assert.ok(kinds.indexOf("unpin") < kinds.indexOf("removeCourse"));
+  assert.deepEqual(result.repairs.map((repair) => repair.cost), [...result.repairs.map((repair) => repair.cost)].sort((x, y) => x - y));
+  const unpin = result.repairs[0];
+  assert.deepEqual(unpin.preview.map((item) => [item.courseId, item.sectionId, item.full]), [["CMSC131", "CMSC131-0101", false], ["MATH140", "MATH140-0201", false]]);
+  assert.deepEqual(unpin.preview[1].meetings, [{ days: "Mon", start: "14:00", end: "14:50" }]);
+  assert.deepEqual([...unpin.sectionIds].sort(), ["CMSC131-0101", "MATH140-0201"]);
+});
+
+test("an example schedule uses open sections before full ones when both fit", () => {
+  const cmsc = course("CMSC131", [section("CMSC131-0101", "10:00", "10:50")]);
+  const math = course("MATH140", [
+    section("MATH140-0101", "10:30", "11:20"),
+    section("MATH140-0201", "13:00", "13:50", { open_seats: 0 }),
+    section("MATH140-0301", "15:00", "15:50"),
+  ], { pinnedSectionId: "MATH140-0101" });
+  const unpin = generateOptions([cmsc, math], {}, {}).repairs.find((repair) => repair.kind === "unpin");
+  assert.equal(unpin.preview.find((item) => item.courseId === "MATH140").sectionId, "MATH140-0301");
+});

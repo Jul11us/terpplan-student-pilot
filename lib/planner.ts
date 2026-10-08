@@ -133,6 +133,17 @@ export type PlanRepair = {
   blockId?: string;
   courseId?: string;
   sectionIds: string[];
+  // How big a change this is for the student (REPAIR_COST); repairs come smallest first.
+  cost?: number;
+  // One schedule that works after the change, to preview before applying it; full sections are marked.
+  preview?: Array<{ courseId: string; sectionId: string; full: boolean; meetings: Array<{ days: string; start: string; end: string }> }>;
+};
+
+// Smallest change first: another section of a course they pinned, then loosening one course's filters or
+// the gap between classes, then a time or day preference, then sections they cannot register for yet,
+// then giving up a commitment, and last dropping a course.
+export const REPAIR_COST: Record<PlanRepair["kind"], number> = {
+  unpin: 1, resetFilters: 2, clearBuffer: 2, relaxWindow: 3, clearEarliest: 3, allowDay: 3, clearCampusAreas: 3, allowFull: 5, removeBlock: 6, removeCourse: 7,
 };
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
@@ -622,11 +633,12 @@ function diagnose(courses: PlanCourse[], preferences: PlanPreferences): PlanDiag
 function completeWitness(courses: PlanCourse[], preferences: PlanPreferences, budget: { remaining: number }) {
   if (!courses.length) return null;
   const parsed = parsePrefs(preferences);
-  const groups = courses.map((course) => ({ course, sections: eligibleSections(course, parsed) })).sort((a, b) => a.sections.length - b.sections.length);
+  // Open sections are tried first, so the example schedule is one the student could register for.
+  const groups = courses.map((course) => ({ course, sections: [...eligibleSections(course, parsed)].sort((a, b) => Number(isFull(a)) - Number(isFull(b))) })).sort((a, b) => a.sections.length - b.sections.length);
   if (groups.some((group) => !group.sections.length)) return null;
   const picked: Array<{ course: PlanCourse; section: PlanSection }> = [];
-  const visit = (index: number): string[] | null => {
-    if (index === groups.length) return picked.map(({ course, section }) => sectionId(section, course.course_id));
+  const visit = (index: number): Array<{ course: PlanCourse; section: PlanSection }> | null => {
+    if (index === groups.length) return [...picked];
     for (const section of groups[index].sections) {
       if (--budget.remaining < 0) return null;
       if (picked.some((item) => conflicts(item.section, section, parsed.bufferMinutes))) continue;
@@ -675,6 +687,8 @@ export function generateOptions(courses: PlanCourse[], ratings: Record<string, P
     if (course.instructors?.length || course.excludedSectionIds?.length) candidates.push({ kind: "resetFilters", courseId: course.course_id });
   }
   for (const course of courses) candidates.push({ kind: "removeCourse", courseId: course.course_id });
+  // Smallest changes are tried first, so they are the ones found before the budget or the six-repair cap.
+  candidates.sort((a, b) => REPAIR_COST[a.kind] - REPAIR_COST[b.kind]);
   const budget = { remaining: 80_000 };
   const repairs: PlanRepair[] = [];
   for (const candidate of candidates) {
@@ -682,11 +696,22 @@ export function generateOptions(courses: PlanCourse[], ratings: Record<string, P
     // A difficult first trial must not starve every other possible repair.
     const trialBudget = { remaining: Math.min(8_000, budget.remaining) };
     const before = trialBudget.remaining;
-    const sectionIds = completeWitness(changed.courses, changed.preferences, trialBudget);
+    const witness = completeWitness(changed.courses, changed.preferences, trialBudget);
     budget.remaining -= before - Math.max(0, trialBudget.remaining);
-    if (sectionIds) repairs.push({ ...candidate, sectionIds });
+    if (witness) repairs.push({
+      ...candidate,
+      sectionIds: witness.map(({ course, section }) => sectionId(section, course.course_id)),
+      cost: REPAIR_COST[candidate.kind],
+      preview: witness.map(({ course, section }) => ({
+        courseId: course.course_id, sectionId: sectionId(section, course.course_id), full: isFull(section),
+        meetings: (section.meetings ?? []).map((meeting) => ({ days: meeting.days ?? "", start: meeting.start_time ?? "", end: meeting.end_time ?? "" })),
+      })).sort((a, b) => a.courseId.localeCompare(b.courseId)),
+    });
     if (repairs.length >= 6 || budget.remaining <= 0) break;
   }
+  // Same size of change: the one whose example needs fewer full sections first.
+  const fullCount = (repair: PlanRepair) => repair.preview?.filter((item) => item.full).length ?? 0;
+  repairs.sort((a, b) => (a.cost ?? 0) - (b.cost ?? 0) || fullCount(a) - fullCount(b));
   return { ...result, diagnostics, repairs };
 }
 

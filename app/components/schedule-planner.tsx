@@ -21,7 +21,7 @@ import { sharePath } from "@/lib/shared-schedule";
 import { weekFromSections, writeMyWeek } from "@/lib/my-week";
 import { anonymousBusyBlocks, type BusyBlock } from "@/lib/personal-schedule";
 import type { ScheduleOption, ScheduledSection, PlanDiagnosis, PlanRepair } from "@/lib/planner";
-import { PersonalSchedule, ScheduleRecovery, SectionSwap } from "@/app/components/schedule-tools";
+import { PersonalSchedule, repairText, ScheduleRecovery, SectionSwap } from "@/app/components/schedule-tools";
 import { SeasonNote, useOfferingSeasons } from "@/app/components/season-note";
 import { PrintSchedule } from "@/app/components/print-sheet";
 import { WorkloadCard } from "@/app/components/workload-card";
@@ -196,6 +196,8 @@ type Props = {
   planSwitch?: React.ReactNode;
   onBack: () => void;
   onUpdateCourse: (courseId: string, patch: Partial<PlanCourse>) => void;
+  // Puts a course back at its place in the plan (undoing "remove this course" from a fix).
+  onRestoreCourse?: (course: PlanCourse, index: number) => void;
   // Reports the option being viewed so the Gen Ed finder can check conflicts against it.
   onChosenChange?: (schedule: ReferenceSchedule) => void;
 };
@@ -476,7 +478,7 @@ export function CalendarExport({ sections, term, termName, language, incomplete,
   </div>;
 }
 
-export default function SchedulePlanner({ courses, term, termName, language, creditsLabel, creditWarning, creditMeter, prereqNeeds = {}, takenEditor, planSwitch, onRemove, onBack, onChosenChange, onUpdateCourse }: Props) {
+export default function SchedulePlanner({ courses, term, termName, language, creditsLabel, creditWarning, creditMeter, prereqNeeds = {}, takenEditor, planSwitch, onRemove, onBack, onChosenChange, onUpdateCourse, onRestoreCourse }: Props) {
   const t = copy[language];
   const [generated, setGenerated] = useState<{ requestKey: string; prefsKey: string; options: ScheduleOption[]; warnings: PlanWarning[]; diagnostics?: PlanDiagnosis[]; repairs?: PlanRepair[] }>({ requestKey: "", prefsKey: "", options: [], warnings: [] });
   // The option being viewed, kept by its section ids so re-sorting the list does not move the selection.
@@ -619,9 +621,22 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
   // Courses in the plan that an option could not place; an option missing any is incomplete.
   const missingFrom = (option: ScheduleOption) => courses.map((course) => course.courseId).filter((courseId) => !option.selectedSections.some((section) => section.course_id === courseId));
   const chosenMissing = chosen ? missingFrom(chosen) : [];
+  // The last fix applied from "What is blocking this schedule?", with what it changed, so it can be undone.
+  const [undo, setUndo] = useState<{ label: string; restore: () => void } | null>(null);
+  const pinned = Object.fromEntries(courses.map((course) => [course.courseId, course.pinnedSectionId]));
   const applyRepair = (repair: PlanRepair) => {
     generationSeq.current++;
     setShareUrl(""); setShareCopied(false);
+    const before = { excludedDays, earliestStart, strictTime, bufferMinutes, busyBlocks, openSeatsOnly, campusAreas };
+    const index = courses.findIndex((course) => course.courseId === repair.courseId);
+    const course = courses[index];
+    setUndo({ label: repairText(repair, busyBlocks, language, pinned), restore: () => {
+      generationSeq.current++;
+      setExcludedDays(before.excludedDays); setEarliestStart(before.earliestStart); setStrictTime(before.strictTime); setBufferMinutes(before.bufferMinutes);
+      setBusyBlocks(before.busyBlocks); setOpenSeatsOnly(before.openSeatsOnly); setCampusAreas(before.campusAreas);
+      if (course && repair.kind === "removeCourse") onRestoreCourse?.(course, index);
+      else if (course) onUpdateCourse(course.courseId, { pinnedSectionId: course.pinnedSectionId, excludedSectionIds: course.excludedSectionIds, instructors: course.instructors });
+    } });
     switch (repair.kind) {
       case "allowDay": setExcludedDays((current) => current.filter((day) => day !== repair.day)); break;
       case "clearEarliest": setEarliestStart(""); break;
@@ -630,7 +645,8 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
       case "removeBlock": setBusyBlocks((current) => current.filter((block) => block.id !== repair.blockId)); break;
       case "allowFull": setOpenSeatsOnly(false); break;
       case "clearCampusAreas": setCampusAreas([]); break;
-      case "unpin": onUpdateCourse(repair.courseId!, { pinnedSectionId: undefined }); break;
+      // "Switch to section 0201": pin the section the preview showed, so the result is what was promised.
+      case "unpin": onUpdateCourse(repair.courseId!, { pinnedSectionId: repair.preview?.find((item) => item.courseId === repair.courseId)?.sectionId }); break;
       case "resetFilters": onUpdateCourse(repair.courseId!, { pinnedSectionId: undefined, excludedSectionIds: [], instructors: undefined }); break;
       case "removeCourse": onRemove(repair.courseId!); break;
     }
@@ -735,8 +751,13 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
       {error && <p role="alert" className="mt-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]">{error}</p>}
       <div className="mt-5 flex flex-wrap items-center justify-end gap-3"><p className="text-xs text-[#646c68]">{t.autoNote}</p><button onClick={() => void generate()} disabled={loading} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1d302c] disabled:opacity-60">{loading ? t.generating : t.generate}</button></div>
     </>}
+    {undo && <div role="status" className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-[#cddbd1] bg-[#edf3ef] px-4 py-3 text-sm text-[#273c38]">
+      <span className="min-w-0 flex-1">{language === "zh" ? `已应用：${undo.label}` : `Applied: ${undo.label}`}</span>
+      <button type="button" onClick={() => { undo.restore(); setUndo(null); }} className="rounded-lg border border-[#536d64] bg-white px-3 py-1.5 text-xs font-semibold hover:bg-[#f4f8f5]">{language === "zh" ? "撤销" : "Undo"}</button>
+      <button type="button" onClick={() => setUndo(null)} aria-label={language === "zh" ? "关闭" : "Dismiss"} className="rounded-lg px-2 py-1 text-xs text-[#5d6561] hover:bg-white">✕</button>
+    </div>}
     {warnings.length > 0 && <ul className="mt-5 space-y-2 rounded-xl border border-[#ead8b5] bg-[#fff8e8] p-4 text-sm text-[#745424]">{warnings.map((warning, index) => <li key={index}>{warningText(warning, language)}</li>)}</ul>}
-    {generated.requestKey === requestKey && <ScheduleRecovery diagnostics={generated.diagnostics ?? []} repairs={generated.repairs ?? []} blocks={busyBlocks} language={language} disabled={loading || !upToDate} onRepair={applyRepair} onBack={onBack} />}
+    {generated.requestKey === requestKey && <ScheduleRecovery diagnostics={generated.diagnostics ?? []} repairs={generated.repairs ?? []} blocks={busyBlocks} pinned={pinned} language={language} disabled={loading || !upToDate} onRepair={applyRepair} onBack={onBack} />}
     {courses.length > 0 && options.length === 0 && !loading && !error && warnings.length > 0 && <p className="mt-4 text-sm text-[#5d6561]">{t.noOptions}</p>}
     {options.length > 0 && <div className="mt-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
