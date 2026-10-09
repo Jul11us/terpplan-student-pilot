@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDocumentLanguage } from "@/lib/document-language";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { CONTACT_EMAIL } from "@/lib/site-config";
@@ -12,6 +12,32 @@ import { RegistrationCountdown } from "@/app/components/registration-countdown";
 import { TimetableSketch } from "@/app/components/timetable-sketch";
 
 type Language = "en" | "zh";
+
+// "Between classes, find a room to study": a way into /rooms, with how many rooms are free right now. The
+// count is asked for only once the band scrolls into view, so the home page itself loads nothing extra.
+function RoomsBand({ t }: { t: { roomsTitle: string; roomsBody: string; roomsLive: (rooms: number, buildings: number) => string; roomsButton: string } }) {
+  const [now, setNow] = useState<{ show: boolean; rooms: number; buildings: number } | null>(null);
+  const band = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const element = band.current;
+    if (!element) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry?.isIntersecting) return;
+      observer.disconnect();
+      void fetch("/api/rooms/now").then((response) => response.ok ? response.json() as Promise<{ show: boolean; rooms: number; buildings: number }> : null).then(setNow).catch(() => undefined);
+    }, { rootMargin: "200px" });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  return <section ref={band} aria-labelledby="rooms-band-title" className="mt-12 flex flex-col gap-4 rounded-2xl border border-[#cddbd1] bg-[#edf3ef] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+    <div className="min-w-0">
+      <h2 id="rooms-band-title" className="font-serif text-2xl text-[#273c38]">{t.roomsTitle}</h2>
+      <p className="mt-1 max-w-xl text-sm leading-6 text-[#315c43]">{t.roomsBody}</p>
+      {now?.show && now.rooms > 0 && <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-[#273c38]"><span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-[#3f9b6e]" />{t.roomsLive(now.rooms, now.buildings)}</p>}
+    </div>
+    <Link href="/rooms" className="inline-flex shrink-0 items-center self-start rounded-xl bg-[#273c38] px-5 py-3 text-sm font-semibold text-white hover:bg-[#1d302c] sm:self-center">{t.roomsButton} →</Link>
+  </section>;
+}
 
 // The planner used to live at "/", so links already sent out (QR-code posters aside, which carry only ?ref=)
 // can still point here with planner parameters: a sample (?demo=1), a seat alert (?opening=), a course
@@ -46,6 +72,8 @@ const copy = {
       ["Will it be too much?", "A workload estimate from each course's historical GPA, and how many hours a day you would be in class.", "/plan", "Build a schedule"],
       ["Minor or double major?", "See which of your courses already count, what is left, and how much it overlaps with your major.", "/minor", "Explore minors"],
     ],
+    roomsTitle: "Between classes, find a room to study", roomsBody: "See which classrooms have no class right now, how long they stay free, and which are closest to you.",
+    roomsLive: (rooms: number, buildings: number) => `Right now ${rooms} classrooms in ${buildings} buildings have no class.`, roomsButton: "Find an empty room",
     extrasTitle: "Also included",
     extras: ["Plan A and Plan B for each term", "Export to Apple or Google Calendar, or print", "\"My week\" on your phone, even offline", "Share a schedule with a link", "Your plan on every device once you sign in", "English and 中文"],
     footer: "TerpPlan is an independent student project, not affiliated with the University of Maryland. Always confirm sections and register in Testudo.",
@@ -59,6 +87,7 @@ const copy = {
       ["Where is my plan stored?", "In your browser. If you sign in with your email, your plan, preferences and courses taken are also kept in your account so they open on your other devices; you can delete that copy. Degree audit PDFs are read in your browser and never uploaded."],
       ["How fresh are the seat counts?", "With seat emails on, watched sections are checked about every 10 minutes, sometimes later at busy times. While the planner is open it reads seats at most once a minute. A seat can fill again before you see it, so register right away."],
       ["Where does the course data come from?", "Courses, sections and seats come from UMD's Schedule of Classes (Testudo) and umd.io. Instructor ratings, reviews and average GPAs come from PlanetTerp."],
+      ["Are the empty rooms accurate?", "A room on the empty-room page has no class scheduled at that time, from this term's Testudo schedule. It can still be used for an exam, a review session or an event, and some rooms are locked outside class hours, so treat it as a good place to look, not a booking."],
       ["Is there a Chinese version?", "Yes. Switch to 中文 at the top of any page."],
     ] as Array<[string, string]>,
   },
@@ -82,6 +111,8 @@ const copy = {
       ["会不会太累？", "按每门课往年的平均 GPA 估算学期负担，还能看到每天要上几小时课。", "/plan", "去排课"],
       ["修辅修 / 双专业？", "看看你已修的课哪些能算进去、还差什么、和主修重合多少。", "/minor", "评估辅修"],
     ],
+    roomsTitle: "课间去哪自习？", roomsBody: "看看哪些教室现在没有课、能空到几点，以及离你最近的是哪间。",
+    roomsLive: (rooms: number, buildings: number) => `现在有 ${buildings} 栋楼的 ${rooms} 间教室没有排课。`, roomsButton: "找空教室",
     extrasTitle: "还有这些",
     extras: ["每学期两个方案（A / B）", "导出到苹果或谷歌日历，或打印", "手机上的“我的一周”，离线也能看", "用链接分享课表", "登录后所有设备看到同一份方案", "中文和 English"],
     footer: "TerpPlan 是学生独立开发的项目，与马里兰大学没有隶属关系。班次以 Testudo 为准，并在 Testudo 完成注册。",
@@ -95,6 +126,7 @@ const copy = {
       ["我的数据存在哪？", "默认存在你的浏览器里。用邮箱登录后，方案、偏好和已修课程也会保存到账号，换设备登录就能看到，你也可以删除这份副本。学位审计 PDF 只在你的浏览器里读取，不会上传。"],
       ["余位多久更新一次？", "开通邮件提醒后，关注的班次大约每 10 分钟检查一次，高峰时可能更晚。排课页打开时，最多每分钟读取一次余位。空位可能很快又被抢走，收到提醒请尽快注册。"],
       ["课程数据从哪来？", "课程、班次和余位来自 UMD 官方课表（Testudo）和 umd.io；老师评分、评论和平均 GPA 来自 PlanetTerp。"],
+      ["空教室准吗？", "列出的教室只表示这个时段没有排课（根据 Testudo 本学期的课表）。它仍可能被考试、习题课或活动占用，有些教室课后会上锁，所以把它当作“值得去看看”的地方，而不是预约。"],
       ["有中文吗？", "有，在任意页面右上角切换。"],
     ] as Array<[string, string]>,
   },
@@ -220,6 +252,7 @@ export default function Home() {
         <p className="mt-2 text-sm leading-6 text-[#5d6561]">{body}</p>
         <p className="mt-3 text-sm font-semibold text-[#a34a39] group-hover:underline">{link} →</p>
       </Link>)}</div>
+      <RoomsBand t={t} />
       <h2 className="mt-12 text-sm font-semibold uppercase tracking-[.13em] text-[#5d6561]">{t.extrasTitle}</h2>
       <ul className="mt-3 flex flex-wrap gap-2">{t.extras.map((item) => <li key={item} className="rounded-full border border-[#e0ddd5] bg-white px-3 py-1.5 text-xs text-[#48534f]">{item}</li>)}</ul>
       <h2 className="mt-12 font-serif text-3xl">{t.faqTitle}</h2>

@@ -66,3 +66,15 @@ test("Eastern time, the term calendar and labels", () => {
   assert.ok(Math.abs(distanceMeters(buildings.CSI, buildings.EGR) - 165) < 20);
   assert.equal(walkMinutesFrom(400), 7);
 });
+
+test("the home page count: rooms free for 30 minutes or more, only on class weekdays, 8am to 8pm", async () => {
+  const { roomsNow } = await import("../lib/rooms.ts");
+  const calendar = { firstDay: "2026-08-31", lastDay: "2026-12-11", noClasses: [["2026-11-25", "2026-11-29"]] };
+  const rooms = usableRooms(data, buildings);
+  // Monday Oct 12 is Fall Break in the real calendar but not in this one: 11:00am Eastern.
+  assert.deepEqual(roomsNow(rooms, calendar, buildings, new Date("2026-10-12T15:00:00Z")), { show: true, rooms: 3, buildings: 2 });
+  assert.equal(roomsNow(rooms, calendar, buildings, new Date("2026-10-10T15:00:00Z")).show, false, "Saturday");
+  assert.equal(roomsNow(rooms, calendar, buildings, new Date("2026-10-13T03:00:00Z")).show, false, "11pm");
+  assert.equal(roomsNow(rooms, calendar, buildings, new Date("2026-10-13T01:00:00Z")).show, false, "9pm: nearly every room is free and many buildings are locked");
+  assert.equal(roomsNow(rooms, calendar, buildings, new Date("2026-11-25T15:00:00Z")).show, false, "Thanksgiving break");
+});

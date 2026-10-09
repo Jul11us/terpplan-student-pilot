@@ -108,3 +108,13 @@ export function clockLabel(minute: number, language: "en" | "zh") {
   if (language === "zh") return `${hour}:${rest}`;
   return `${(hour + 11) % 12 + 1}:${rest}${hour < 12 ? "am" : "pm"}`;
 }
+
+// "How many rooms have no class right now" for the home page, counted the way /rooms counts by default (free
+// for 30 minutes or more). Only during class weeks, on weekdays, 8am-8pm: later almost every room is free
+// and many buildings are locked, so the number would mislead (`show` is false).
+export function roomsNow(rooms: Room[], calendar: TermCalendar | null, buildings: Record<string, Position>, now = new Date()) {
+  const clock = easternClock(now);
+  const list = buildingsAt(rooms, clock.day, clock.minute, { minFree: 30, buildings });
+  const show = termDay(calendar, clock.date) === "classes" && clock.day <= 4 && clock.minute >= 8 * 60 && clock.minute < 20 * 60;
+  return { show, rooms: list.reduce((sum, entry) => sum + entry.free.length, 0), buildings: list.length };
+}
