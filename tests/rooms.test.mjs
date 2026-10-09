@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildingsAt, clockLabel, dayIndexes, distanceMeters, easternClock, minutes, roomStatus, termDay, usableRooms, walkMinutesFrom } from "../lib/rooms.ts";
+import { NO_CLASSES_DAY, buildingsAt, clockLabel, dayIndexes, distanceMeters, easternClock, minutes, roomStatus, termDay, usableRooms, walkMinutesFrom } from "../lib/rooms.ts";
 
 const buildings = { CSI: { lat: 38.9899, lng: -76.9362 }, EGR: { lat: 38.9890, lng: -76.9378 }, TYD: { lat: 38.9852, lng: -76.9441 } };
 const data = { builtAt: "2026-10-08", term: "202608", calendar: null, rooms: [
@@ -77,4 +77,11 @@ test("the home page count: rooms free for 30 minutes or more, only on class week
   assert.equal(roomsNow(rooms, calendar, buildings, new Date("2026-10-13T03:00:00Z")).show, false, "11pm");
   assert.equal(roomsNow(rooms, calendar, buildings, new Date("2026-10-13T01:00:00Z")).show, false, "9pm: nearly every room is free and many buildings are locked");
   assert.equal(roomsNow(rooms, calendar, buildings, new Date("2026-11-25T15:00:00Z")).show, false, "Thanksgiving break");
+});
+
+test("on a break or holiday every room is free for the rest of the day", () => {
+  const rooms = usableRooms(data, buildings);
+  const holiday = buildingsAt(rooms, NO_CLASSES_DAY, 660, { buildings, minFree: 120 });
+  assert.equal(holiday.reduce((sum, entry) => sum + entry.free.length, 0), rooms.length);
+  assert.ok(holiday.every((entry) => entry.busy === 0 && entry.free.every((status) => status.until === null)));
 });

@@ -6,7 +6,7 @@ import { useDocumentLanguage } from "@/lib/document-language";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { formatTermName } from "@/lib/seat-trends";
 import { mapsUrl, type Building } from "@/lib/campus-walk";
-import { buildingsAt, clockLabel, easternClock, termDay, walkMinutesFrom, type Position, type Room, type RoomStatus } from "@/lib/rooms";
+import { buildingsAt, clockLabel, easternClock, NO_CLASSES_DAY, termDay, walkMinutesFrom, type Position, type Room, type RoomStatus } from "@/lib/rooms";
 import type { TermCalendar } from "@/lib/term-calendar";
 import { countUse } from "@/lib/usage";
 
@@ -101,18 +101,20 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
   }, []);
 
   const day = mode === "now" ? clock?.day ?? 0 : pickDay;
+  // On a break or holiday no class meets, so "now" lists every room as free (as the note above the list says).
+  const holiday = mode === "now" && clock !== null && termDay(calendar, clock.date) === "noClasses";
   const minute = mode === "now" ? clock?.minute ?? 0 : pickMinute;
   const list = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const matching = needle ? rooms.filter((room) => room.building.toLowerCase().includes(needle) || (buildings[room.building]?.name ?? "").toLowerCase().includes(needle)) : rooms;
-    return buildingsAt(matching, day, minute, { minFree, position, buildings });
-  }, [rooms, buildings, query, day, minute, minFree, position]);
+    return buildingsAt(matching, holiday ? NO_CLASSES_DAY : day, minute, { minFree, position, buildings });
+  }, [rooms, buildings, query, day, holiday, minute, minFree, position]);
   const freeRooms = list.reduce((sum, entry) => sum + entry.free.length, 0);
 
   const duration = (minutes: number) => minutes < 60 ? t.minutes(minutes) : t.hours(Math.floor(minutes / 60), minutes % 60);
   const status = (item: RoomStatus) => item.until === null ? t.restOfDay : `${t.freeUntil(clockLabel(item.until, language))} · ${t.left(duration(item.until - minute))}`;
   const notes = [
-    mode === "now" && clock && termDay(calendar, clock.date) === "noClasses" ? t.noClasses : null,
+    holiday ? t.noClasses : null,
     mode === "now" && clock && ["beforeTerm", "afterTerm"].includes(termDay(calendar, clock.date)) ? t.outside : null,
     day >= 5 ? t.weekend : minute < 7 * 60 || minute >= 22 * 60 ? t.late : null,
   ].filter(Boolean) as string[];

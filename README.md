@@ -27,6 +27,7 @@ It is an independent student tool, not an official UMD service. Final registrati
 | [Minor & double-major explorer](https://terpplan.com/minor) | Estimate remaining requirements, prerequisites, and overlap. |
 | [Hardest courses to get](https://terpplan.com/hard-courses) | See courses that remained nearly full in recent semesters and plan backups. |
 | [My week](https://terpplan.com/week) | Keep a saved daily class list and building map links on your phone. |
+| [Empty-classroom finder](https://terpplan.com/rooms) | Find rooms with no scheduled class, compare free time, and optionally sort by distance. |
 | [Registration-day view](https://terpplan.com/register) | Open the course numbers, section numbers, and backups saved from your schedule. |
 
 ## What you can do
@@ -78,6 +79,12 @@ Use **My week** for a daily class list with building map links. Save your chosen
 - Sign in with email to sync plans, preferences, courses taken, and registration times across devices. If both copies changed, choose which to keep.
 - Use a device-transfer link to move your plans without signing in. It includes plan preferences and courses taken, so share it only with someone you want to see that information.
 
+### Find a place to study between classes
+
+Use the **empty-classroom finder** to search College Park buildings, check rooms now or at a selected weekday and time, and filter for at least 30 minutes, one hour, or two hours without a scheduled class. Optional browser location sorts buildings by distance and shows approximate walking times; coordinates are used in this browser. Breaks and holidays in the term calendar show no scheduled classes.
+
+The results come from a dated Testudo class-schedule snapshot, not live occupancy or room reservations. Exams, events, locked doors, and building hours can still prevent access. A room listed as free is not guaranteed to be open.
+
 ## Privacy and data
 
 | Information | How TerpPlan handles it |
@@ -100,6 +107,7 @@ Course and seat information comes from UMD/Testudo and UMD.io; instructor rating
 
 - **找课与排课**：搜索课程和 Gen Ed 类别，比较班次、教师评价与余位，生成最多三个避开已知时间冲突的方案。支持指定／排除班次、筛选教师、避开某些日期和设置时间偏好。
 - **个人日程与校园步行**：为打工、社团、午饭等固定日程留时间，设置课间最小间隔；查看楼宇间的粗略步行估算和赶课提示，也可优先选择少跑校园的方案。步行估算与自定缓冲是两项不同功能。
+- **找空教室**：按楼名、时间和空闲时长筛选没有排课的教室，可选择定位并按距离排序。依据 Testudo 课表快照，不代表实时占用情况；考试、活动和门禁仍可能影响使用，假期没有排课也不保证楼宇开放。
 - **冲突解法与直接换班**：解释哪些限制挡住了完整课表，为建议调整找到覆盖剩余课程的方案；在课表中比较兼容班次，只替换所选课程，保留其他已选班号。
 - **Plan A／B**：每个学期保留两套课程计划，随时切换或复制，提前准备备选方案。
 - **学位、辅修与双专业**：在浏览器中读取 uAchieve 审计，区分已修、转学分和在修课程；按余位优先推荐课程，估算辅修／双专业的剩余要求、先修路径与可能重叠。未能自动判断的目录要求需自行核对。

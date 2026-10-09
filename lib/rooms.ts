@@ -57,6 +57,9 @@ export function termDay(calendar: TermCalendar | null, date: string): "classes" 
   return calendar.noClasses.some(([start, end]) => date >= start && date <= end) ? "noClasses" : "classes";
 }
 
+// The weekday to look up on a date with no classes (a break or holiday): none, so every room is free all day.
+export const NO_CLASSES_DAY = -1;
+
 export type RoomStatus = { room: Room; free: boolean; until: number | null; busyUntil: number | null };
 
 // A room at one moment: free (and until when its next class starts that day, null if none) or in a class
