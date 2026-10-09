@@ -6,7 +6,8 @@ const nextConfig: NextConfig = {
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "Referrer-Policy", value: "no-referrer" },
       { key: "Strict-Transport-Security", value: "max-age=31536000" },
-      { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+      // Location only for TerpPlan's own pages (the empty-room finder's "nearest first", after the browser asks).
+      { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self)" },
       // Keep the supported Sites preview while preventing arbitrary sites
       // from framing the signed-in planner. React currently needs inline scripts.
       { key: "Content-Security-Policy", value: "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self' https://chatgpt.com https://*.chatgpt.com https://*.openai.com" },

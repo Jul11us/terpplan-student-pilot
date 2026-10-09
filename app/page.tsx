@@ -27,7 +27,7 @@ if (typeof window !== "undefined") {
 
 const copy = {
   en: {
-    nav: { audit: "Degree audit", minor: "Minor / double major", hard: "Hardest courses" },
+    nav: { audit: "Degree audit", minor: "Minor / double major", hard: "Hardest courses", rooms: "Empty rooms" },
     eyebrow: "University of Maryland · Free, student-built",
     title: "Plan a semester you can actually get into.",
     lead: "Get conflict-free schedules built around your job, and an email the moment a full section opens.",
@@ -63,7 +63,7 @@ const copy = {
     ] as Array<[string, string]>,
   },
   zh: {
-    nav: { audit: "学位审计", minor: "辅修 / 双专业", hard: "最难抢的课" },
+    nav: { audit: "学位审计", minor: "辅修 / 双专业", hard: "最难抢的课", rooms: "空教室" },
     eyebrow: "马里兰大学 · 学生开发 · 免费",
     title: "排一份能上、也抢得到的课表",
     lead: "自动避开打工时间排课，满了的班一有空位就发邮件提醒你。",
@@ -174,6 +174,7 @@ export default function Home() {
         <Link href="/audit" className="whitespace-nowrap hover:text-[#a34a39]">{t.nav.audit}</Link>
         <Link href="/minor" className="whitespace-nowrap hover:text-[#a34a39]">{t.nav.minor}</Link>
         <Link href="/hard-courses" className="whitespace-nowrap hover:text-[#a34a39]">{t.nav.hard}</Link>
+        <Link href="/rooms" className="whitespace-nowrap hover:text-[#a34a39]">{t.nav.rooms}</Link>
       </nav>
       <div className="flex items-center gap-2">
         {registration && <Link href="/register" className="whitespace-nowrap rounded-lg border border-[#cddbd1] bg-[#edf3ef] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#e2ece6]">📋 {t.registrationDay}</Link>}

@@ -7,7 +7,7 @@ import { isDemo } from "@/lib/demo";
 import { easternDay } from "@/lib/referral";
 
 // In the order a visitor usually goes through them.
-export const FEATURES = ["planner", "course", "schedule", "share", "calendar", "alert", "signin", "register", "hard", "demo"] as const;
+export const FEATURES = ["planner", "course", "schedule", "share", "calendar", "alert", "signin", "register", "hard", "rooms", "demo"] as const;
 export type Feature = (typeof FEATURES)[number];
 
 export function validFeature(value: unknown): value is Feature {

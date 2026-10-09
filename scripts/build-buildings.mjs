@@ -13,13 +13,25 @@ const BY_ID = {
   EAF: "228", // E.A. Fernandez IDEA Factory
   BMS: "296", // Biomolecular Sciences Building
   CHI: "059", // Chincoteague Hall
+  YDH: "436", // Yahentamitsi Dining Hall (Honors seminars meet here)
+  ERC: "068", // Eppley Recreation Center (umd.io calls it CRC; Testudo uses ERC for KNES activity classes)
+  HIL: "C105", // Rosenbloom Hillel Center for Jewish Life
 };
 
 // Not in umd.io at all; positions from OpenStreetMap.
 const EXTRA = {
   ATL: { name: "Atlantic Building", lat: 38.99098, lng: -76.94256 },
   PSC: { name: "Physical Sciences Complex", lat: 38.99092, lng: -76.94134 },
+  PFR: { name: "Prince Frederick Hall (Residence Hall)", lat: 38.982976, lng: -76.946127 },
+  // The veterinary college's College Park building on Greenmead Drive (Google Maps' position for it; the
+  // street-address point is 350 m off).
+  GVC: { name: "Avrum Gudelsky Veterinary Center", lat: 39.004243, lng: -76.941928 },
+  // 5245 Greenbelt Road, off the north edge of campus.
+  SEN: { name: "Severn Building", lat: 38.995834, lng: -76.922052 },
 };
+// Testudo codes left out on purpose: BA and DC are the Smith School's Baltimore and Washington sites, not
+// College Park. Not identified (one or two classes each, Fall 2026): LCC (TLPL cohort rooms 504/507),
+// PBR (a PLSC lab) and PWS (a PHYS lab).
 
 // Map links search Google Maps by building name, so the place card shows the building rather than a
 // coordinate. "<name>, College Park, MD" opens the right place for most buildings (checked 2026-10-01
@@ -73,6 +85,8 @@ for (const [code, id] of Object.entries(BY_ID)) {
   out[code] = entry(building);
 }
 Object.assign(out, EXTRA);
+// umd.io's name for these is too short to recognise.
+out.YDH.name = "Yahentamitsi Dining Hall";
 
 for (const [code, building] of Object.entries(out)) building.map = mapQuery(code, building.name);
 
