@@ -16,6 +16,7 @@ import type { PrereqNode } from "@/lib/programs";
 import { readTaken, TAKEN_EVENT, TAKEN_KEY, type TakenCourses } from "@/lib/taken-courses";
 import { scheduleFit, type ScheduleFit } from "@/lib/result-filters";
 import TakenCoursesEditor from "@/app/components/taken-courses";
+import TestudoImport, { type ImportedCourse } from "@/app/components/testudo-import";
 import { SeasonNote, useOfferingSeasons } from "@/app/components/season-note";
 import type { SeatSummary } from "@/lib/seat-summary";
 import { filterResults, filtersActive, NO_FILTERS, sortResults, type CreditFilter, type ResultFilters, type ResultSort } from "@/lib/result-filters";
@@ -784,6 +785,17 @@ export default function Home() {
     setError("");
   };
 
+  // "Import from Testudo": the registered sections, each pinned, replacing the plan or joining it.
+  const importSchedule = (courses: ImportedCourse[], replace: boolean, importTerm: string) => {
+    if (importTerm !== term) switchTerm(importTerm);
+    setPlanCourses((current) => replace ? courses : [
+      ...current.map((item) => { const hit = courses.find((course) => course.courseId === item.courseId); return hit ? { ...item, pinnedSectionId: hit.pinnedSectionId, excludedSectionIds: (item.excludedSectionIds ?? []).filter((other) => other !== hit.pinnedSectionId), instructors: undefined } : item; }),
+      ...courses.filter((course) => !current.some((item) => item.courseId === course.courseId)),
+    ].slice(0, 10));
+    setError("");
+    if (courses.length) countUse("course");
+  };
+
   const addWatch = async (course: Course, section: Section) => {
     setError("");
     try {
@@ -981,6 +993,7 @@ export default function Home() {
           </div>
           <div className="mt-2">{planSwitch}</div>
           {planCreditWarning && <p role="status" className="mt-2 rounded-lg bg-[#fff8e8] px-3 py-2 text-xs leading-5 text-[#745424]">⚠ {planCreditWarning}</p>}
+          <div className="mt-2 border-t border-[#ece9e2] pt-2"><TestudoImport term={term} terms={terms} termName={(item) => termLabel(item, language)} planCount={planCourses.length} language={language} onImport={importSchedule} /></div>
           <div className="mt-2 border-t border-[#ece9e2] pt-2"><TakenCoursesEditor taken={taken} language={language} /></div>
           <div className="mt-2 border-t border-[#ece9e2] pt-2 text-xs"><button type="button" onClick={() => void makeTransferLink()} className="font-medium text-[#a34a39] hover:underline">{t.transferButton} →</button>
             {transferLink && <div className="mt-2"><p className="text-[#48534f]">{transferCopied ? "✓ " + t.transferCopied : t.transferReady}</p><input readOnly value={transferLink} onFocus={(event) => event.target.select()} aria-label={t.transferButton} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-xs text-[#273c38]" /><p className="mt-1 text-[11px] leading-5 text-[#646c68]">{t.transferPrivacy}</p></div>}
