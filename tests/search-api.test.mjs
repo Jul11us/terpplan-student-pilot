@@ -20,3 +20,13 @@ test("department and title searches still return matching courses", async () => 
   const title = await (await GET(new Request("https://example.test/api/search?q=calculus&term=202701"))).json();
   assert.ok(title.results.some((course) => course.course_id === "MATH140"));
 });
+
+test("results carry each course's Gen Ed codes, and history courses are searchable", async () => {
+  const ling = await (await GET(new Request("https://example.test/api/search?q=LING200&term=202701"))).json();
+  assert.deepEqual(ling.results[0].ge, [["DSHS"]]);
+  const hist = await (await GET(new Request("https://example.test/api/search?q=hist%20200&term=202701"))).json();
+  assert.equal(hist.results[0].course_id, "HIST200");
+  assert.deepEqual(hist.results[0].ge, [["DSHS", "DSHU"]], "counts for DSHS or DSHU");
+  const noGenEd = await (await GET(new Request("https://example.test/api/search?q=CHEM134&term=202701"))).json();
+  assert.equal(noGenEd.results[0].ge, undefined);
+});

@@ -27,7 +27,7 @@ function matchCourses(courses: CatalogItem[], query: string, compactQuery: strin
     .sort((a, b) => a.rank - b.rank || a.course.course_id.localeCompare(b.course.course_id, "en", { numeric: true }))
     .slice(0, MAX_RESULTS)
     // Prerequisite rules are for the planner (/api/prereqs), not for the results list.
-    .map(({ course }) => ({ course_id: course.course_id, name: course.name, department: course.department, credits: course.credits }));
+    .map(({ course }) => ({ course_id: course.course_id, name: course.name, department: course.department, credits: course.credits, ...(course.ge ? { ge: course.ge } : {}) }));
 }
 
 export async function GET(request: Request) {

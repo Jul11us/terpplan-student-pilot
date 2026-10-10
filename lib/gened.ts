@@ -1,5 +1,5 @@
-import { GEN_ED_CATEGORIES, parseGenEdGroups } from "@/lib/gened-categories";
-import { classTexts, firstClassText, htmlText, parseTestudoSections, testudoHtml, type UmdSection } from "@/lib/umd";
+import { GEN_ED_CATEGORIES } from "@/lib/gened-categories";
+import { classTexts, firstClassText, genEdGroupsIn, htmlText, parseTestudoSections, testudoHtml, type UmdSection } from "@/lib/umd";
 
 // Gen Ed lists always come from Testudo, for every term: it lists a whole category on one page and
 // returns sections for many courses per request, while umd.io needs many slow calls for the same data.
@@ -93,14 +93,6 @@ async function testudoGenEd(term: string, code: GenEdCode): Promise<GenEdCourse[
     }
   });
   return courses;
-}
-
-// The course's "GenEd: ..." line, as groups.
-function genEdGroupsIn(block: string) {
-  const start = block.indexOf("gen-ed-codes-group");
-  if (start < 0) return [];
-  const end = block.indexOf("approved-course-texts", start);
-  return parseGenEdGroups(htmlText(block.slice(start, end > start ? end : start + 1500).replace(/^[^>]*>/, "")));
 }
 
 export function getGenEdCourses(term: string, code: GenEdCode) {

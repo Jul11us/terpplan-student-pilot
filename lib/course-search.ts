@@ -1,4 +1,4 @@
-export type SearchCourse = { course_id: string; name: string; department?: string; credits?: string };
+export type SearchCourse = { course_id: string; name: string; department?: string; credits?: string; ge?: string[][] };
 export type CourseSearchState = {
   key: string;
   status: "loading" | "ready" | "error";

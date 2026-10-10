@@ -1,3 +1,5 @@
+import { parseGenEdGroups } from "@/lib/gened-categories";
+
 const UMDIO = "https://api.umd.io/v1";
 const TESTUDO = "https://app.testudo.umd.edu/soc";
 const TESTUDO_TERM = "202701";
@@ -40,6 +42,9 @@ export type CatalogItem = {
   credits?: string;
   // Prerequisite rule as a logic tree (see lib/prereq-check.ts); same catalog, same script.
   pr?: unknown;
+  // Gen Ed codes as Testudo groups them: one entry per requirement, with its alternatives ([["DSHS", "DVUP"]]
+  // is "DSHS or DVUP"); same catalog, same script.
+  ge?: string[][];
 };
 
 export function parseCount(value: unknown): number | null {
@@ -201,6 +206,21 @@ export function parseTestudoSections(html: string, courseId: string): UmdSection
   });
 }
 
+// A course's "GenEd: ..." line on a Testudo page, as groups ([] when it has none). The line is the whole
+// gen-ed-codes-group element, found by matching its <div> tags (Testudo pads it with a lot of whitespace).
+export function genEdGroupsIn(block: string) {
+  const start = block.search(/<div[^>]*gen-ed-codes-group/);
+  if (start < 0) return [];
+  const tags = /<\/?div\b[^>]*>/gi;
+  tags.lastIndex = start;
+  let depth = 0, end = block.length;
+  for (let tag = tags.exec(block); tag; tag = tags.exec(block)) {
+    depth += tag[0][1] === "/" ? -1 : 1;
+    if (depth === 0) { end = tag.index; break; }
+  }
+  return parseGenEdGroups(htmlText(block.slice(start, end).replace(/^[^>]*>/, "")));
+}
+
 function parseTestudoCourse(html: string, courseId: string) {
   // A Testudo course-code URL can return several prefix matches, such as
   // BMGT220 and BMGT220L. Parse only the exact course's block.
@@ -220,7 +240,7 @@ function parseTestudoCourse(html: string, courseId: string) {
   const sections = parseTestudoSections(courseHtml, courseId);
 
   return {
-    course: { course_id: courseId, name, department, credits, max_credits: maxCredits, ...parseTestudoRequirements(courseHtml) },
+    course: { course_id: courseId, name, department, credits, max_credits: maxCredits, genEdGroups: genEdGroupsIn(courseHtml), ...parseTestudoRequirements(courseHtml) },
     sections,
   };
 }
