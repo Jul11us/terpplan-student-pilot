@@ -5,6 +5,9 @@ import { useDocumentLanguage } from "@/lib/document-language";
 import Link from "next/link";
 import type { AdminStats } from "@/lib/admin";
 import { readSavedState } from "@/lib/saved-state";
+import { AdminBoard, AdminPanel } from "./admin-board";
+import { AdminVisitorsChart } from "./admin-visitors-chart";
+import "./admin.css";
 
 type Language = "en" | "zh";
 type State = { status: "loading" } | { status: "signedOut" } | { status: "notConfigured" } | { status: "forbidden" } | { status: "error" } | { status: "ok"; stats: AdminStats };
@@ -142,30 +145,53 @@ export default function AdminPage() {
   const stats = state.status === "ok" ? state.stats : null;
   const maxDay = Math.max(1, ...(stats?.signupsByDay.map((row) => row.count) ?? [1]));
 
-  return <main className="min-h-screen bg-[#f4f2ed] px-4 py-8 text-[#202728] sm:px-6">
-    <div className="mx-auto max-w-5xl">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <Link href="/" className="text-xs font-medium text-[#a34a39] hover:underline">{t.back}</Link>
-          <p className="mt-4 text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{t.eyebrow}</p>
-          <h1 className="mt-2 font-serif text-3xl">{t.title}</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setLanguage(language === "zh" ? "en" : "zh")} className="rounded-lg border border-[#d9d6ce] px-3 py-1.5 text-xs font-semibold text-[#48534f] hover:bg-white">{language === "zh" ? "English" : "中文"}</button>
-          {stats && <button type="button" onClick={() => { setState({ status: "loading" }); setReload((value) => value + 1); }} className="rounded-lg bg-[#273c38] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1d302c]">{t.refresh}</button>}
-        </div>
-      </div>
+  const runs = stats?.backgroundRuns;
+  const minutesAgo = stats && runs?.lastSuccessAt ? Math.max(0, (Date.parse(stats.generatedAt) - Date.parse(runs.lastSuccessAt)) / 60_000) : null;
+  const health = minutesAgo === null || minutesAgo > 15 ? t.runStopped : !runs?.recent[0]?.ok || minutesAgo > 5 ? t.runLate : t.runHealthy;
 
-      {state.status !== "ok" && <p role={state.status === "loading" ? "status" : "alert"} className={`mt-6 rounded-xl border px-4 py-3 text-sm ${state.status === "loading" ? "border-[#e0ddd5] bg-[#fbfaf8] text-[#5d6561]" : "border-[#ead8b5] bg-[#fff8e8] text-[#745424]"}`}>{t[state.status]}</p>}
+  return <main className="admin-workspace">
+    <div className="admin-shell">
+      <div className="admin-window-bar"><span className="admin-window-lights" aria-hidden="true"><span /><span /><span /></span><span>TerpPlan / {language === "zh" ? "管理后台" : "Dashboard"}</span><span className="admin-window-note">OWNER WORKSPACE · COLLEGE PARK</span></div>
+      <div className="admin-layout">
+        <aside className="admin-sidebar">
+          <Link href="/" className="admin-brand"><span className="admin-brand-mark">T</span>TerpPlan</Link>
+          <p className="admin-sidebar-tag">OWNER WORKSPACE</p>
+          <nav className="admin-nav" aria-label={language === "zh" ? "后台导航" : "Dashboard navigation"}>
+            {[
+              ["#admin-overview", "▦", language === "zh" ? "总览" : "Overview"],
+              ["#admin-visitors", "↗", t.visits], ["#admin-usage", "◫", t.usage],
+              ["#admin-runs", "◷", t.runs], ["#admin-mail", "✉", t.mailQuota],
+              ["#admin-errors", "!", t.errors], ["#admin-feedback", "☰", t.feedback],
+            ].filter(([href]) => stats || href === "#admin-overview").map(([href, icon, label]) => <a key={href} href={href}><span className="admin-nav-symbol" aria-hidden="true">{icon}</span>{label}</a>)}
+          </nav>
+          <p className="admin-sidebar-footer">{t.eyebrow}<br />{language === "zh" ? "数据按美东时间展示" : "Times shown in Eastern time"}<br /><Link href="/">{t.back}</Link></p>
+        </aside>
+        <div className="admin-body" id="admin-overview">
+          <header className="admin-heading">
+            <div><p className="admin-eyebrow">{t.eyebrow} / TERPPLAN</p><h1 className="admin-title">{language === "zh" ? "今天，网站怎么样？" : "How’s TerpPlan doing?"}</h1><p className="admin-subtitle">{language === "zh" ? "访问、使用和运行状态，都在这里。" : "Visitors, activity and operations, in one place."}</p></div>
+            <div className="admin-actions">
+              <button type="button" onClick={() => setLanguage(language === "zh" ? "en" : "zh")} className="admin-button">{language === "zh" ? "English" : "中文"}</button>
+              <button type="button" disabled={state.status === "loading"} onClick={() => { setState({ status: "loading" }); setReload((value) => value + 1); }} className="admin-button admin-button-yellow">↻ {state.status === "loading" ? t.loading : t.refresh}</button>
+            </div>
+          </header>
+          {state.status !== "ok" && <div role={state.status === "loading" ? "status" : "alert"} className="admin-notice"><p>{t[state.status]}</p>{state.status === "signedOut" && <Link href="/plan">{language === "zh" ? "前往排课页 →" : "Go to the planner →"}</Link>}</div>}
+          {stats && <div className="admin-hero">
+            {[
+              [language === "zh" ? "今日访客" : "VISITORS TODAY", stats.visitors.today, t.vTodayNote.replace("{n}", String(stats.visitors.newToday))],
+              [t.watches, stats.watches, t.watchesNote.replace("{n}", String(stats.watchedSections))],
+              [language === "zh" ? "今日剩余邮件额度" : "DAILY EMAIL SLOTS LEFT", Math.max(0, stats.mailBudget.dayLimit - stats.mailBudget.today), `${stats.mailBudget.today} / ${stats.mailBudget.dayLimit} · ${stats.mailBudget.enabled ? t.mailDay : t.mailPaused}`],
+              [t.runs, health, t.run24.replace("{n}", String(stats.backgroundRuns.last24h))],
+            ].map(([label, value, note]) => <div className="admin-metric" key={String(label)}><p className="admin-metric-label">{label}</p><strong className="admin-metric-value">{value}</strong><p className="admin-metric-note">{note}</p></div>)}
+          </div>}
 
-      {stats && <>
+      {stats && <AdminBoard language={language}>
         {(() => {
           const runs = stats.backgroundRuns;
           const last = runs.recent[0];
           const minutesAgo = runs.lastSuccessAt ? Math.max(0, (Date.parse(stats.generatedAt) - Date.parse(runs.lastSuccessAt)) / 60_000) : null;
           const health = minutesAgo === null || minutesAgo > 15 ? "stopped" : !last?.ok || minutesAgo > 5 ? "late" : "healthy";
           const badge = { healthy: ["bg-[#e3f0e8] text-[#24523a]", t.runHealthy], late: ["bg-[#fff1d6] text-[#7a5212]", t.runLate], stopped: ["bg-[#fbe1dc] text-[#8a2f22]", t.runStopped] } as const;
-          return <section className="mt-6 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
+          return <AdminPanel cardId="runs" title={t.runs}>
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-sm font-semibold text-[#24312d]">{t.runs}</h2>
               {health && <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${badge[health][0]}`}>{badge[health][1]}</span>}
@@ -179,10 +205,10 @@ export default function AdminPage() {
             </> : <p className="mt-2 text-xs text-[#646c68]">{t.runNever}</p>}
             {last && (last.deferred > 0 || last.emailsDeferred > 0) && <p role="status" className="mt-2 text-xs text-[#7a5212]">{t.backlog} · {last.deferred} / {last.emailsDeferred}</p>}
             {last && !last.ok && <p role="alert" className="mt-2 text-xs text-[#8a2f22]">{t.failures} · {last.failedCourses} / {last.emailsFailed}</p>}
-          </section>;
+          </AdminPanel>;
         })()}
 
-        <section className="mt-4 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
+        <AdminPanel cardId="mail" title={t.mailQuota}>
           <h2 className="text-sm font-semibold text-[#24312d]">{t.mailQuota}</h2>
           <p className="mt-1 text-[11px] leading-4 text-[#646c68]">{t.mailQuotaNote}</p>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 text-xs">
@@ -191,14 +217,18 @@ export default function AdminPage() {
             <p>{t.mailAccepted}<strong className="mt-1 block text-lg">{stats.mailBudget.acceptedToday}</strong></p>
             <p>{t.mailFailed}<strong className="mt-1 block text-lg">{stats.mailBudget.failedToday}</strong></p>
           </div>
+          <div className="admin-quota-bars">
+            <label>{t.mailDay}<progress aria-label={t.mailDay} value={stats.mailBudget.today} max={Math.max(1, stats.mailBudget.dayLimit)} /></label>
+            <label>{t.mailMonth}<progress aria-label={t.mailMonth} value={stats.mailBudget.month} max={Math.max(1, stats.mailBudget.monthLimit)} /></label>
+          </div>
           <p className="mt-2 text-xs text-[#646c68]">{t.mailReserve.replace("{n}", String(stats.mailBudget.loginReserve))}</p>
           {(!stats.mailBudget.enabled || stats.mailBudget.nearLimit) && <p role="alert" className="mt-2 text-xs font-semibold text-[#8a2f22]">{stats.mailBudget.enabled ? t.mailNear : t.mailPaused}</p>}
-        </section>
+        </AdminPanel>
 
         {(() => {
           const total = stats.errors.reduce((sum, row) => sum + row.last24h, 0);
           const shown = stats.errors.filter((row) => row.last7Days > 0);
-          return <section className="mt-4 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
+          return <AdminPanel cardId="errors" title={t.errors}>
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-sm font-semibold text-[#24312d]">{t.errors}</h2>
               <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${total ? "bg-[#fbe1dc] text-[#8a2f22]" : "bg-[#e3f0e8] text-[#24523a]"}`}>{total ? t.errorsSome.replace("{n}", String(total)) : t.errorsNone}</span>
@@ -206,10 +236,10 @@ export default function AdminPage() {
             <p className="mt-1 text-[11px] leading-4 text-[#646c68]">{t.errorsNote}</p>
             {shown.length > 0 && <table className="mt-3 w-full text-xs"><thead><tr className="border-b border-[#ece9e2] text-left text-[#5d6561]"><th className="py-1.5 font-medium">{t.eKind}</th><th className="py-1.5 text-right font-medium">{t.e24}</th><th className="py-1.5 text-right font-medium">{t.e7}</th></tr></thead>
               <tbody>{shown.map((row) => <tr key={row.kind} className="border-b border-[#f0ede7]"><td className="py-1.5">{t.errorKinds[row.kind]}</td><td className={`py-1.5 text-right ${row.last24h ? "font-semibold text-[#8a2f22]" : ""}`}>{row.last24h}</td><td className="py-1.5 text-right">{row.last7Days}</td></tr>)}</tbody></table>}
-          </section>;
+          </AdminPanel>;
         })()}
 
-        <section className="mt-4 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
+        <AdminPanel cardId="feedback" title={t.feedback}>
           <h2 className="text-sm font-semibold text-[#24312d]">{t.feedback}</h2>
           <p className="mt-1 text-[11px] leading-4 text-[#646c68]">{t.feedbackNote}</p>
           {stats.feedback.length ? <ul className="mt-3 max-h-[28rem] space-y-2 overflow-y-auto">{stats.feedback.map((item) => <li key={item.id} className="rounded-xl border border-[#ece9e2] bg-white p-3">
@@ -221,9 +251,9 @@ export default function AdminPage() {
             <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-[#24312d]">{item.message}</p>
             {item.context && <p className="mt-1.5 text-[11px] text-[#646c68]">{item.context.split("\n").join(" · ")}</p>}
           </li>)}</ul> : <p className="mt-2 text-xs text-[#646c68]">{t.feedbackNone}</p>}
-        </section>
+        </AdminPanel>
 
-        <section className="mt-4 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
+        <AdminPanel cardId="visitors" title={t.visits}>
           <h2 className="text-sm font-semibold text-[#24312d]">{t.visits}</h2>
           <p className="mt-1 text-[11px] leading-4 text-[#646c68]">{stats.visitors.since ? t.visitsNote.replace("{d}", stats.visitors.since) : t.visitsNoteEmpty}</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -238,34 +268,17 @@ export default function AdminPage() {
               <p className="mt-1 text-[11px] text-[#646c68]">{note}</p>
             </div>)}
           </div>
-          {stats.visitorsByDay.length > 0 && (() => {
-            const max = Math.max(1, ...stats.visitorsByDay.map((row) => row.visitors));
-            const colon = language === "zh" ? "：" : ": ";
-            const unit = language === "zh" ? " 人" : "";
-            return <>
+          {stats.visitorsByDay.length > 0 && <>
               <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#5d6561]">
                 <span className="font-medium">{t.vDaily}</span>
                 <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#273c38]" />{t.vNew}</span>
                 <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#8fa79d]" />{t.vReturning}</span>
               </div>
-              <ul className="mt-2 space-y-1.5">{stats.visitorsByDay.map((row) => <li key={row.day} className="group relative grid grid-cols-[5.5rem_minmax(0,1fr)_2.5rem] items-center gap-3 text-xs">
-                <span className="text-[#5d6561]">{row.day.slice(5)}</span>
-                <span className="h-2.5 rounded-full bg-[#ece9e2]"><span className="flex h-full overflow-hidden rounded-full" style={{ width: `${(row.visitors / max) * 100}%` }}>
-                  <span className="h-full bg-[#273c38]" style={{ width: `${row.visitors ? (row.newVisitors / row.visitors) * 100 : 0}%` }} />
-                  <span className="h-full flex-1 bg-[#8fa79d]" />
-                </span></span>
-                <span className="text-right font-semibold text-[#24312d]">{row.visitors}</span>
-                <span className="pointer-events-none absolute bottom-full left-[5.5rem] z-10 mb-1 hidden whitespace-nowrap rounded-lg bg-[#273c38] px-2.5 py-1.5 text-[11px] leading-5 text-white shadow-md group-hover:block">
-                  <span className="block">{t.vNew}{colon}<b className="font-semibold">{row.newVisitors}</b>{unit}</span>
-                  <span className="block">{t.vReturning}{colon}<b className="font-semibold">{row.visitors - row.newVisitors}</b>{unit}</span>
-                  <span className="block text-[#c9d8d1]">{t.vTotal}{colon}{row.visitors}{unit}</span>
-                </span>
-              </li>)}</ul>
-            </>;
-          })()}
-        </section>
+              <AdminVisitorsChart days={stats.visitorsByDay} labels={{ daily: t.vDaily, total: t.vTotal, new: t.vNew, returning: t.vReturning }} />
+            </>}
+        </AdminPanel>
 
-        <section className="mt-4 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
+        <AdminPanel cardId="usage" title={t.usage} wide>
           <h2 className="text-sm font-semibold text-[#24312d]">{t.usage}</h2>
           <p className="mt-1 text-[11px] leading-4 text-[#646c68]">{stats.usageSince ? t.usageNote.replace("{d}", stats.usageSince) : t.usageNoteEmpty}</p>
           <div className="mt-3 overflow-x-auto"><table className="w-full min-w-[30rem] text-xs"><thead><tr className="border-b border-[#ece9e2] text-left text-[#5d6561]"><th className="py-1.5 font-medium">{t.uItem}</th><th className="py-1.5 text-right font-medium">{t.uToday}</th><th className="py-1.5 text-right font-medium">{t.u7}</th><th className="py-1.5 text-right font-medium">{t.u30}</th><th className="py-1.5 pl-3 font-medium">{t.uShare}</th></tr></thead>
@@ -274,9 +287,9 @@ export default function AdminPage() {
               return <tr key={row.feature} className="border-b border-[#f0ede7]"><td className="py-1.5">{t.features[row.feature]}</td><td className="py-1.5 text-right">{row.today}</td><td className="py-1.5 text-right font-semibold">{row.last7Days}</td><td className="py-1.5 text-right">{row.last30Days}</td>
                 <td className="py-1.5 pl-3"><span className="flex items-center gap-2"><span className="h-2 w-24 rounded-full bg-[#ece9e2]"><span className="block h-full rounded-full bg-[#536d64]" style={{ width: `${share}%` }} /></span><span className="w-8 text-right text-[#5d6561]">{share}%</span></span></td></tr>;
             })}</tbody></table></div>
-        </section>
+        </AdminPanel>
 
-        <section className="mt-4 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
+        <AdminPanel cardId="race" title={t.race.replace("{term}", termLabel(stats.seatRace.term, language))} wide>
           <h2 className="text-sm font-semibold text-[#24312d]">{t.race.replace("{term}", termLabel(stats.seatRace.term, language))}</h2>
           <p className="mt-1 text-[11px] leading-4 text-[#646c68]">{t.raceNote}</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
@@ -299,10 +312,9 @@ export default function AdminPage() {
                 : <p className="mt-2 text-xs text-[#646c68]">{t.noFastest}</p>}
             </div>
           </div>
-        </section>
+        </AdminPanel>
 
-        <h2 className="mt-6 text-sm font-semibold text-[#24312d]">{t.alertsHeading}</h2>
-        <section className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <AdminPanel cardId="alerts" title={t.alertsHeading} wide><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[
             [t.subscribers, stats.subscribers, t.subscribersNote.replace("{n}", String(stats.subscribersLast7Days))],
             [t.watching, stats.signedInWithWatches, t.watchingNote.replace("{n}", String(stats.subscribersWithWatches))],
@@ -313,9 +325,9 @@ export default function AdminPage() {
             <p className="mt-1 font-serif text-3xl text-[#24312d]">{value}</p>
             <p className="mt-1 text-[11px] text-[#646c68]">{note}</p>
           </div>)}
-        </section>
+        </div></AdminPanel>
 
-        <section className="mt-4 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
+        <AdminPanel cardId="referrals" title={t.referrals}>
           <h2 className="text-sm font-semibold text-[#24312d]">{t.referrals}</h2>
           <p className="mt-1 text-[11px] leading-4 text-[#646c68]">{t.referralsNote}</p>
           {stats.referrals.length ? <>
@@ -332,18 +344,18 @@ export default function AdminPage() {
               </li>)}</ul></>;
             })()}
           </> : <p className="mt-2 text-xs text-[#646c68]">{t.noReferrals}</p>}
-        </section>
+        </AdminPanel>
 
-        <section className="mt-4 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
+        <AdminPanel cardId="signups" title={t.byDay}>
           <h2 className="text-sm font-semibold text-[#24312d]">{t.byDay}</h2>
           {stats.signupsByDay.length ? <ul className="mt-3 space-y-1.5">{stats.signupsByDay.map((row) => <li key={row.day} className="grid grid-cols-[5.5rem_minmax(0,1fr)_2rem] items-center gap-3 text-xs">
             <span className="text-[#5d6561]">{row.day.slice(5)}</span>
             <span className="h-2.5 rounded-full bg-[#ece9e2]"><span className="block h-full rounded-full bg-[#536d64]" style={{ width: `${(row.count / maxDay) * 100}%` }} /></span>
             <span className="text-right font-semibold text-[#24312d]">{row.count}</span>
           </li>)}</ul> : <p className="mt-2 text-xs text-[#646c68]">{t.noneDay}</p>}
-        </section>
+        </AdminPanel>
 
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <AdminPanel cardId="courses" title={language === "zh" ? "关注的课程与学期" : "Courses & terms"} wide><div className="grid gap-5 lg:grid-cols-2">
           <section className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
             <h2 className="text-sm font-semibold text-[#24312d]">{t.byTerm}</h2>
             <table className="mt-3 w-full text-xs"><thead><tr className="border-b border-[#ece9e2] text-left text-[#5d6561]"><th className="py-1.5 font-medium">{t.term}</th><th className="py-1.5 text-right font-medium">{t.students}</th><th className="py-1.5 text-right font-medium">{t.count}</th></tr></thead>
@@ -354,17 +366,19 @@ export default function AdminPage() {
             <table className="mt-3 w-full text-xs"><thead><tr className="border-b border-[#ece9e2] text-left text-[#5d6561]"><th className="py-1.5 font-medium">{t.course}</th><th className="py-1.5 text-right font-medium">{t.students}</th></tr></thead>
               <tbody>{stats.topCourses.map((row) => <tr key={row.courseId} className="border-b border-[#f0ede7]"><td className="py-1.5"><span className="font-semibold">{row.courseId}</span> <span className="text-[#646c68]">{row.courseTitle}</span></td><td className="py-1.5 text-right">{row.students}</td></tr>)}</tbody></table>
           </section>
-        </div>
+        </div></AdminPanel>
 
-        <section className="mt-4 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
+        <AdminPanel cardId="recent" title={t.recent} wide>
           <h2 className="text-sm font-semibold text-[#24312d]">{t.recent} <span className="font-normal text-[#646c68]">· {t.recentNote}</span></h2>
           {stats.recentSubscribers.length ? <table className="mt-3 w-full text-xs"><thead><tr className="border-b border-[#ece9e2] text-left text-[#5d6561]"><th className="py-1.5 font-medium">{t.email}</th><th className="py-1.5 font-medium">{t.since}</th><th className="py-1.5 text-right font-medium">{t.sections}</th></tr></thead>
             <tbody>{stats.recentSubscribers.map((row, index) => <tr key={index} className="border-b border-[#f0ede7]"><td className="py-1.5">{row.email}</td><td className="py-1.5 text-[#5d6561]">{easternTime(row.createdAt, language)}</td><td className="py-1.5 text-right">{row.watches}</td></tr>)}</tbody></table>
             : <p className="mt-2 text-xs text-[#646c68]">{t.noneRecent}</p>}
-        </section>
+        </AdminPanel>
 
-        <p className="mt-4 text-[11px] text-[#646c68]">{t.updated.replace("{t}", easternTime(stats.generatedAt, language))} ET</p>
-      </>}
+      </AdminBoard>}
+      {stats && <p className="admin-updated">{t.updated.replace("{t}", easternTime(stats.generatedAt, language))} ET</p>}
+        </div>
+      </div>
     </div>
   </main>;
 }
