@@ -9,6 +9,8 @@ import { mapsUrl, type Building } from "@/lib/campus-walk";
 import { buildingsAt, clockLabel, easternClock, NO_CLASSES_DAY, type Bookings, termDay, walkMinutesFrom, type Position, type Room, type RoomStatus } from "@/lib/rooms";
 import type { TermCalendar } from "@/lib/term-calendar";
 import { countUse } from "@/lib/usage";
+import { classesOn, readMyWeek, WEEK_DAYS, type MyWeek } from "@/lib/my-week";
+import { dayGaps, roomsForGap, roomsForWeekTerm } from "@/lib/study-gaps";
 
 type Language = "en" | "zh";
 const BUILDINGS_SHOWN = 10;
@@ -42,6 +44,8 @@ const copy = {
     howBody: "General-purpose classrooms are checked against today's bookings in UMD 25Live (classes, exams, review sessions and events), read every couple of hours. Department rooms are not in 25Live, so they follow this term's class times in Testudo and may be locked or used for other things. Nothing booked is not a promise a room is open. Rooms under 10 seats and buildings outside College Park are left out.",
     updated: (date: string) => `Class schedule read ${date}.`,
     hours: (h: number, m: number) => m ? `${h} h ${m} min` : `${h} h`, minutes: (m: number) => `${m} min`,
+    gapTitle: "Before your next class", gapLine: (from: string, to: string, start: string, end: string, minutes: number) => `${from} ends ${start}, ${to} starts ${end}: ${minutes} min free`,
+    gapRoom: (sit: number, a: number, b: number) => `sit ${sit} min · walk ${a} min there, ${b} min to class`, gapNone: "No room nearby stays free for the whole gap.",
   },
   zh: {
     home: "返回排课", eyebrow: (term: string) => `College Park · ${term}课表`, title: "找空教室",
@@ -69,6 +73,8 @@ const copy = {
     howBody: "公共教室会对照 UMD 25Live 里当天的预约（上课、考试、习题课和活动），每隔几小时更新一次。系里的教室不在 25Live 里，只按 Testudo 本学期的上课时间计算，可能上锁或另作他用。没有预约不代表一定开着门。少于 10 个座位的房间和不在 College Park 校园内的楼不计入。",
     updated: (date: string) => `课表读取于 ${date}。`,
     hours: (h: number, m: number) => m ? `${h} 小时 ${m} 分` : `${h} 小时`, minutes: (m: number) => `${m} 分钟`,
+    gapTitle: "你下一节课前", gapLine: (from: string, to: string, start: string, end: string, minutes: number) => `${from} ${start} 下课，${to} ${end} 上课：空档 ${minutes} 分钟`,
+    gapRoom: (sit: number, a: number, b: number) => `能坐 ${sit} 分钟 · 走过去 ${a} 分钟，再到下一节 ${b} 分钟`, gapNone: "附近没有能整段空着的教室。",
   },
 } as const;
 
@@ -78,6 +84,8 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
   // The clock is read after the first render, so the server and client HTML match.
   const [clock, setClock] = useState<ReturnType<typeof easternClock> | null>(null);
   const [nowMs, setNowMs] = useState(0);
+  // The student's saved week (My week), for "before your next class"; only used when it is for this term.
+  const [myWeek, setMyWeek] = useState<MyWeek | null>(null);
   // Today's 25Live bookings (general-purpose classrooms), read again every ten minutes.
   const [live, setLive] = useState<{ date: string; syncedAt: string | null; bookings: Bookings } | null>(null);
   const [mode, setMode] = useState<"now" | "pick">("now");
@@ -98,7 +106,7 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
     /* eslint-disable react-hooks/set-state-in-effect */
     if (saved === "en" || saved === "zh") setLanguage(saved);
     const now = easternClock();
-    setClock(now); setNowMs(Date.now());
+    setClock(now); setNowMs(Date.now()); setMyWeek(readMyWeek());
     // "Pick a time" starts on today (a weekday) at the next half hour.
     setPickDay(now.day <= 4 ? now.day : 0);
     setPickMinute(Math.min(22 * 60, Math.max(7 * 60, Math.ceil(now.minute / 30) * 30)));
@@ -130,6 +138,14 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
     const matching = needle ? rooms.filter((room) => room.building.toLowerCase().includes(needle) || (buildings[room.building]?.name ?? "").toLowerCase().includes(needle)) : rooms;
     return buildingsAt(matching, holiday ? NO_CLASSES_DAY : day, minute, { minFree, position, buildings, bookings });
   }, [rooms, buildings, query, day, holiday, minute, minFree, position, bookings]);
+  // Today's next gap in My week (one still to come or under way), with rooms that stay free through it.
+  const nextGap = useMemo(() => {
+    if (!clock || !myWeek || !roomsForWeekTerm(myWeek.term, term) || clock.day > 6) return null;
+    const gap = dayGaps(classesOn(myWeek, WEEK_DAYS[clock.day]!)).find((candidate) => candidate.end - Math.max(candidate.start, clock.minute) >= 30);
+    if (!gap) return null;
+    const from = Math.max(gap.start, clock.minute);
+    return { gap: { ...gap, start: from }, rooms: roomsForGap(rooms, { ...gap, start: from }, clock.day, buildings, bookings) };
+  }, [clock, myWeek, term, rooms, buildings, bookings]);
   const freeRooms = list.reduce((sum, entry) => sum + entry.free.length, 0);
 
   const duration = (minutes: number) => minutes < 60 ? t.minutes(minutes) : t.hours(Math.floor(minutes / 60), minutes % 60);
@@ -177,6 +193,16 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
         </div>
         {locationFailed && <p role="alert" className="text-xs text-[#8c352c]">{t.locationFailed}</p>}
       </section>
+
+      {nextGap && <section aria-label={t.gapTitle} className="mt-4 rounded-2xl border border-[#cddbd1] bg-[#edf3ef] p-4">
+        <h2 className="text-sm font-semibold text-[#273c38]">{t.gapTitle}</h2>
+        <p className="mt-1 text-xs text-[#315c43]">{t.gapLine(nextGap.gap.from.courseId, nextGap.gap.to.courseId, clockLabel(nextGap.gap.start, language), clockLabel(nextGap.gap.end, language), nextGap.gap.end - nextGap.gap.start)}</p>
+        {nextGap.rooms.length ? <ul className="mt-2 grid gap-2 sm:grid-cols-3">{nextGap.rooms.map((item) => <li key={item.room.building + item.room.room} className="rounded-xl border border-[#cddbd1] bg-white px-3 py-2">
+          <p className="flex items-baseline justify-between gap-2"><span className="font-semibold">{item.room.building} {item.room.room}</span><span className="text-[11px] text-[#646c68]">{t.seats(item.room.size)}</span></p>
+          <p className="mt-0.5 text-xs text-[#315c43]">{t.gapRoom(item.sit, item.walkIn, item.walkOut)}</p>
+          {item.room.liveId === null && <p className="mt-0.5 text-[11px] text-[#646c68]">{t.department}</p>}
+        </li>)}</ul> : <p className="mt-2 text-xs text-[#646c68]">{t.gapNone}</p>}
+      </section>}
 
       {notes.map((note) => <p key={note} className="mt-3 rounded-xl border border-[#ead8b5] bg-[#fff8e8] px-4 py-2.5 text-xs leading-5 text-[#745424]">{note}</p>)}
 

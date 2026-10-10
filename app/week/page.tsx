@@ -8,6 +8,7 @@ import { applyWeekChanges, classesOn, compareWeek, dayOf, readMyWeek, weekFromSe
 import { roomLabel } from "@/lib/room";
 import type { MeetingTime } from "@/lib/meeting-time";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
+import { dayGaps, type Gap } from "@/lib/study-gaps";
 
 type Language = "en" | "zh";
 
@@ -23,6 +24,8 @@ const copy = {
     install: "iPhone (Safari): Share → Add to Home Screen. Android (Chrome): ⋮ → Add to Home screen or Install app. After one visit it opens without internet too.",
     changesTitle: "Your sections changed since you saved", changedWas: "Was", changedNow: "Now", gone: "No longer listed this term. Check Testudo.", update: "Update my week", updated: "My week is up to date with the Schedule of Classes.", testudo: "Open Testudo",
     days: { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday" },
+    gapTitle: "{n} min free · rooms nearby with nothing booked", gapSit: "sit {n} min", gapWalk: "walk {a} min there, {b} min to class", gapMore: "More empty rooms",
+    gapDepartment: "department room, may be locked",
   },
   zh: {
     title: "我的一周", plan: "规划课程", today: "今天", week: "本周课表", noClasses: "没有课",
@@ -35,6 +38,8 @@ const copy = {
     install: "iPhone（Safari）：分享 → 添加到主屏幕。Android（Chrome）：⋮ → 添加到主屏幕或安装应用。打开过一次之后，没有网络也能打开。",
     changesTitle: "保存之后，这些班次有变化", changedWas: "原来", changedNow: "现在", gone: "本学期已经找不到这个班次，请到 Testudo 确认。", update: "更新我的一周", updated: "已按最新的课程表更新。", testudo: "打开 Testudo",
     days: { Mon: "周一", Tue: "周二", Wed: "周三", Thu: "周四", Fri: "周五", Sat: "周六", Sun: "周日" },
+    gapTitle: "空档 {n} 分钟 · 附近没有预约的教室", gapSit: "能坐 {n} 分钟", gapWalk: "走过去 {a} 分钟，再到下一节 {b} 分钟", gapMore: "更多空教室",
+    gapDepartment: "系里的教室，可能上锁",
   },
 } as const;
 
@@ -53,6 +58,34 @@ function ClassRow({ item, language, highlight = false }: { item: WeekClass; lang
       <p className="mt-0.5 text-xs text-[#5d6561]">{roomLabel(item.building, item.room, language)}{building ? ` · ${building.name}` : ""}</p>
     </div>
     {building && <a href={mapsUrl(building)} target="_blank" rel="noopener noreferrer" className="shrink-0 rounded-lg border border-[#d9d6ce] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#273c38] hover:bg-[#f7f5f0]">{t.map} ↗</a>}
+  </li>;
+}
+
+type GapRoomResult = { building: string; room: string; size: number; general: boolean; walkIn: number; walkOut: number; sit: number };
+
+// Rooms to sit in during one gap today, asked from the server when online (nothing is shown offline, or
+// while the room data is for another term than the saved week).
+function GapRooms({ gap, day, term, language }: { gap: Gap; day: number; term: string; language: Language }) {
+  const t = copy[language];
+  const [rooms, setRooms] = useState<GapRoomResult[]>([]);
+  useEffect(() => {
+    if (!navigator.onLine) return;
+    let active = true;
+    const params = new URLSearchParams({ term, day: String(day), start: String(gap.start), end: String(gap.end), from: gap.from.building ?? "", to: gap.to.building ?? "" });
+    void fetch(`/api/rooms/gap?${params}`)
+      .then((response) => response.ok ? response.json() as Promise<{ active: boolean; rooms: GapRoomResult[] }> : null)
+      .then((body) => { if (active && body?.active) setRooms(body.rooms); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [gap.start, gap.end, gap.from.building, gap.to.building, day, term]);
+  if (!rooms.length) return null;
+  return <li className="rounded-xl border border-dashed border-[#cddbd1] bg-[#f4f8f5] px-3 py-2.5">
+    <p className="text-xs font-semibold text-[#315c43]">{t.gapTitle.replace("{n}", String(gap.end - gap.start))}</p>
+    <ul className="mt-1.5 space-y-1">{rooms.map((room) => <li key={room.building + room.room} className="text-xs text-[#48534f]">
+      <span className="font-semibold text-[#24312d]">{room.building} {room.room}</span> · {t.gapSit.replace("{n}", String(room.sit))} · <span className="text-[#646c68]">{t.gapWalk.replace("{a}", String(room.walkIn)).replace("{b}", String(room.walkOut))}</span>
+      {!room.general && <span className="text-[#8a5a17]"> · {t.gapDepartment}</span>}
+    </li>)}</ul>
+    <Link href="/rooms" className="mt-1.5 inline-block text-xs font-semibold text-[#a34a39] hover:underline">{t.gapMore} →</Link>
   </li>;
 }
 
@@ -108,6 +141,7 @@ export default function MyWeekPage() {
   const todays = week ? classesOn(week, today) : [];
   const current = todays.find((item) => item.start <= minuteNow && minuteNow < item.end);
   const upcoming = todays.find((item) => item.start > minuteNow);
+  const todayGaps = dayGaps(todays) as Array<Gap & { from: WeekClass; to: WeekClass }>;
   const shownDays = WEEK_DAYS.filter((day) => (day !== "Sat" && day !== "Sun") || (week && classesOn(week, day).length));
   const savedDate = week?.savedAt ? new Date(week.savedAt).toLocaleDateString(language === "zh" ? "zh-CN" : "en-US", { month: "short", day: "numeric" }) : "";
 
@@ -136,7 +170,12 @@ export default function MyWeekPage() {
           {current ? <p className="mt-2 text-sm font-semibold text-[#315c43]">{t.now}</p>
             : upcoming ? <p className="mt-2 text-sm font-semibold text-[#315c43]">{t.next} · {t.inMinutes.replace("{n}", String(upcoming.start - minuteNow))}</p>
             : <p className="mt-2 text-sm text-[#5d6561]">{todays.length ? t.doneToday : t.freeToday}</p>}
-          {todays.length > 0 && <ul className="mt-3 space-y-2">{todays.map((item) => <ClassRow key={item.sectionId + item.start} item={item} language={language} highlight={item === (current ?? upcoming)} />)}</ul>}
+          {todays.length > 0 && <ul className="mt-3 space-y-2">{todays.map((item) => {
+            // A gap after this class that has not ended yet: rooms to sit in until the next one.
+            const gap = todayGaps.find((candidate) => candidate.from === item && candidate.end > minuteNow);
+            return [<ClassRow key={item.sectionId + item.start} item={item} language={language} highlight={item === (current ?? upcoming)} />,
+              gap && week ? <GapRooms key={`gap-${gap.start}`} gap={gap} day={WEEK_DAYS.indexOf(today)} term={week.term} language={language} /> : null];
+          })}</ul>}
         </section>
         <section aria-label={t.week} className="mt-6">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-[#5d6561]">{t.week}</h2>
