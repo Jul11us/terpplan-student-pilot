@@ -7,6 +7,7 @@ import { trackCourseSeats } from "@/lib/history-db";
 import { DEFAULT_TERM } from "@/lib/umd";
 import { countError } from "@/lib/error-counts";
 import { errorHour } from "@/lib/error-kinds";
+import { syncRoomBookings } from "@/lib/room-bookings";
 import { asc, isNull, lt, or } from "drizzle-orm";
 import { MAX_CLEANUP_ROWS_PER_RUN, MAX_COURSES_PER_RUN, MAX_WATCH_ROWS_PER_RUN, RUN_WORK_BUDGET_MS, reserveBackgroundRun, releaseBackgroundRun } from "@/lib/background-budget";
 
@@ -88,6 +89,12 @@ export async function POST(request: Request) {
       try { seatTracking = await trackCourseSeats(DEFAULT_TERM, new Date(), startedAt + RUN_WORK_BUDGET_MS); } catch { seatTracking = { tracked: 0, failed: true }; }
     }
 
+    // Then, under the same rule as seat tracking, one request to 25Live for the empty-room finder's bookings.
+    let roomBookings = 0;
+    if (Date.now() - startedAt < 20_000) {
+      try { roomBookings = (await syncRoomBookings()).synced; } catch { await countError("rooms"); }
+    }
+
     await countError("testudo", failedCourses);
     await countError("email", email.emailsFailed);
     await recordRun(startedAt, failedCourses === 0 && email.emailsFailed === 0, {
@@ -108,6 +115,7 @@ export async function POST(request: Request) {
       ...email,
       expiredWatches,
       trackedCourses: seatTracking.tracked,
+      roomBookings,
       durationMs: Date.now() - startedAt,
     });
   } catch (error) {

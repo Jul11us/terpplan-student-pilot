@@ -6,7 +6,7 @@ import { useDocumentLanguage } from "@/lib/document-language";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { formatTermName } from "@/lib/seat-trends";
 import { mapsUrl, type Building } from "@/lib/campus-walk";
-import { buildingsAt, clockLabel, easternClock, NO_CLASSES_DAY, termDay, walkMinutesFrom, type Position, type Room, type RoomStatus } from "@/lib/rooms";
+import { buildingsAt, clockLabel, easternClock, NO_CLASSES_DAY, type Bookings, termDay, walkMinutesFrom, type Position, type Room, type RoomStatus } from "@/lib/rooms";
 import type { TermCalendar } from "@/lib/term-calendar";
 import { countUse } from "@/lib/usage";
 
@@ -18,51 +18,55 @@ const PICK_TIMES = Array.from({ length: 31 }, (_, index) => 7 * 60 + index * 30)
 const copy = {
   en: {
     home: "Back to planner", eyebrow: (term: string) => `College Park · ${term} class schedule`, title: "Find an empty classroom",
-    intro: "Classrooms with no class scheduled, how long until the next one, and which are closest to you. Good for studying between classes.",
+    intro: "Classrooms with nothing booked, how long until the next booking, and which are closest to you. Good for studying between classes.",
     now: "Now", pick: "Pick a time", day: "Day", time: "Time",
     days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
     search: "Search a building (name or code)", minFree: "Free for",
     minFreeOptions: [[0, "Any time"], [30, "30 min or more"], [60, "1 hour or more"], [120, "2 hours or more"]] as Array<[number, string]>,
     near: "Sort by distance from me", locating: "Finding you…", nearOn: "Nearest first", nearOff: "Stop sorting by distance",
     locationFailed: "Your location could not be read. Allow location for this site, or search a building instead.",
-    summary: (rooms: number, buildings: number) => `${rooms} rooms in ${buildings} buildings have no class`,
+    summary: (rooms: number, buildings: number) => `${rooms} rooms in ${buildings} buildings have nothing booked`,
     at: (time: string) => `at ${time}`,
-    walk: (minutes: number) => `~${minutes} min walk`, counts: (free: number, busy: number) => `${free} free · ${busy} in class`,
-    map: "Map", freeUntil: (time: string) => `free until ${time}`, restOfDay: "no more classes today", left: (text: string) => `${text} left`,
-    seats: (n: number) => `about ${n} seats`, rare: "rarely booked, may be locked",
+    walk: (minutes: number) => `~${minutes} min walk`, counts: (free: number, busy: number) => `${free} free · ${busy} in use`,
+    map: "Map", freeUntil: (time: string) => `free until ${time}`, restOfDay: "nothing else booked today", left: (text: string) => `${text} left`,
+    seats: (n: number) => `about ${n} seats`, rare: "rarely booked, may be locked", department: "department room, may be locked",
+    live: (rooms: number, ago: string) => `Exams and events included for ${rooms} general-purpose classrooms, from UMD 25Live (updated ${ago}).`, liveAgo: (minutes: number) => minutes < 1 ? "just now" : `${minutes} min ago`,
+    pickNote: "Picked times use the weekly class schedule; exams and events are only known for today.",
     showRooms: (n: number) => `Show all ${n} rooms`, fewerRooms: "Show fewer", moreBuildings: "Show more buildings",
     none: "No room matches. Try a shorter free time or another building.",
     weekend: "It's the weekend: most academic buildings are locked or have short hours.",
     late: "Outside usual building hours: many buildings may be locked.",
-    noClasses: "No classes meet today (a break or holiday), so every room shows as free, but buildings may be closed.",
+    noClasses: "No classes meet today (a break or holiday), so rooms show as free apart from events booked in 25Live, but buildings may be closed.",
     outside: "The term's classes are not meeting now; these rooms follow the weekly class schedule.",
     how: "How this works",
-    howBody: "Built from this term's class times in Testudo: every room that hosts a class, and when. A room listed here has no class at that time, which is not a promise it is open: rooms are also used for exams, review sessions and events, and some stay locked outside class hours. Rooms under 10 seats and buildings outside College Park are left out.",
+    howBody: "General-purpose classrooms are checked against today's bookings in UMD 25Live (classes, exams, review sessions and events), read every couple of hours. Department rooms are not in 25Live, so they follow this term's class times in Testudo and may be locked or used for other things. Nothing booked is not a promise a room is open. Rooms under 10 seats and buildings outside College Park are left out.",
     updated: (date: string) => `Class schedule read ${date}.`,
     hours: (h: number, m: number) => m ? `${h} h ${m} min` : `${h} h`, minutes: (m: number) => `${m} min`,
   },
   zh: {
     home: "返回排课", eyebrow: (term: string) => `College Park · ${term}课表`, title: "找空教室",
-    intro: "这个时段没有排课的教室、能空到几点，以及离你最近的是哪些。适合课间找地方自习。",
+    intro: "这个时段没有任何预约的教室、能空到几点，以及离你最近的是哪些。适合课间找地方自习。",
     now: "现在", pick: "选时间", day: "星期", time: "时间",
     days: ["周一", "周二", "周三", "周四", "周五"],
     search: "搜索楼名或代码", minFree: "至少空",
     minFreeOptions: [[0, "不限"], [30, "30 分钟以上"], [60, "1 小时以上"], [120, "2 小时以上"]] as Array<[number, string]>,
     near: "按离我远近排序", locating: "正在定位…", nearOn: "已按距离排序", nearOff: "取消按距离排序",
     locationFailed: "读取不到你的位置。请允许本网站使用定位，或者直接搜索楼名。",
-    summary: (rooms: number, buildings: number) => `${buildings} 栋楼共 ${rooms} 间教室没有排课`,
+    summary: (rooms: number, buildings: number) => `${buildings} 栋楼共 ${rooms} 间教室没有预约`,
     at: (time: string) => `（${time}）`,
-    walk: (minutes: number) => `步行约 ${minutes} 分钟`, counts: (free: number, busy: number) => `${free} 间空 · ${busy} 间在上课`,
-    map: "地图", freeUntil: (time: string) => `空到 ${time}`, restOfDay: "今天没有课了", left: (text: string) => `还有 ${text}`,
-    seats: (n: number) => `约 ${n} 座`, rare: "很少排课，可能上锁",
+    walk: (minutes: number) => `步行约 ${minutes} 分钟`, counts: (free: number, busy: number) => `${free} 间空 · ${busy} 间在使用`,
+    map: "地图", freeUntil: (time: string) => `空到 ${time}`, restOfDay: "今天没有其他预约了", left: (text: string) => `还有 ${text}`,
+    seats: (n: number) => `约 ${n} 座`, rare: "很少排课，可能上锁", department: "系里的教室，可能上锁",
+    live: (rooms: number, ago: string) => `${rooms} 间公共教室已结合 UMD 25Live 的考试和活动预约（${ago}更新）。`, liveAgo: (minutes: number) => minutes < 1 ? "刚刚" : `${minutes} 分钟前`,
+    pickNote: "选时间时按每周课表计算；考试和活动只知道今天的。",
     showRooms: (n: number) => `显示全部 ${n} 间`, fewerRooms: "收起", moreBuildings: "显示更多楼",
     none: "没有符合条件的教室。试试缩短空闲时间，或换一栋楼。",
     weekend: "今天是周末：大部分教学楼不开门或开放时间很短。",
     late: "现在不在一般的开楼时间，很多楼可能已经锁门。",
-    noClasses: "今天没有课（放假或节假日），所以所有教室都显示为空，但楼可能不开门。",
+    noClasses: "今天没有课（放假或节假日），除了 25Live 里预约的活动，教室都显示为空，但楼可能不开门。",
     outside: "现在不在本学期上课期间，下面按每周课表显示。",
     how: "怎么算的",
-    howBody: "根据 Testudo 上本学期的上课时间：每间有课的教室、在什么时候上课。这里列出的教室只表示这个时段没有排课，不保证开着门：教室也会用来考试、习题课和办活动，有些课后会上锁。少于 10 个座位的房间和不在 College Park 校园内的楼不计入。",
+    howBody: "公共教室会对照 UMD 25Live 里当天的预约（上课、考试、习题课和活动），每隔几小时更新一次。系里的教室不在 25Live 里，只按 Testudo 本学期的上课时间计算，可能上锁或另作他用。没有预约不代表一定开着门。少于 10 个座位的房间和不在 College Park 校园内的楼不计入。",
     updated: (date: string) => `课表读取于 ${date}。`,
     hours: (h: number, m: number) => m ? `${h} 小时 ${m} 分` : `${h} 小时`, minutes: (m: number) => `${m} 分钟`,
   },
@@ -73,6 +77,9 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
   useDocumentLanguage(language);
   // The clock is read after the first render, so the server and client HTML match.
   const [clock, setClock] = useState<ReturnType<typeof easternClock> | null>(null);
+  const [nowMs, setNowMs] = useState(0);
+  // Today's 25Live bookings (general-purpose classrooms), read again every ten minutes.
+  const [live, setLive] = useState<{ date: string; syncedAt: string | null; bookings: Bookings } | null>(null);
   const [mode, setMode] = useState<"now" | "pick">("now");
   const [pickDay, setPickDay] = useState(0);
   const [pickMinute, setPickMinute] = useState(10 * 60);
@@ -91,14 +98,28 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
     /* eslint-disable react-hooks/set-state-in-effect */
     if (saved === "en" || saved === "zh") setLanguage(saved);
     const now = easternClock();
-    setClock(now);
+    setClock(now); setNowMs(Date.now());
     // "Pick a time" starts on today (a weekday) at the next half hour.
     setPickDay(now.day <= 4 ? now.day : 0);
     setPickMinute(Math.min(22 * 60, Math.max(7 * 60, Math.ceil(now.minute / 30) * 30)));
     /* eslint-enable react-hooks/set-state-in-effect */
-    const timer = window.setInterval(() => setClock(easternClock()), 60_000);
+    const timer = window.setInterval(() => { setClock(easternClock()); setNowMs(Date.now()); }, 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  const today = clock?.date ?? null;
+  useEffect(() => {
+    if (!today) return;
+    let active = true;
+    const load = () => void fetch(`/api/rooms/bookings?date=${today}`)
+      .then((response) => response.ok ? response.json() as Promise<{ date: string; syncedAt: string | null; rooms: Record<string, Array<[number, number]>> }> : null)
+      .then((body) => { if (active && body) setLive({ date: body.date, syncedAt: body.syncedAt, bookings: new Map(Object.entries(body.rooms).map(([id, slots]) => [Number(id), slots])) }); })
+      .catch(() => undefined);
+    load();
+    const timer = window.setInterval(load, 10 * 60_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [today]);
+  const bookings = mode === "now" && live && live.date === today && live.bookings.size ? live.bookings : null;
 
   const day = mode === "now" ? clock?.day ?? 0 : pickDay;
   // On a break or holiday no class meets, so "now" lists every room as free (as the note above the list says).
@@ -107,8 +128,8 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
   const list = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const matching = needle ? rooms.filter((room) => room.building.toLowerCase().includes(needle) || (buildings[room.building]?.name ?? "").toLowerCase().includes(needle)) : rooms;
-    return buildingsAt(matching, holiday ? NO_CLASSES_DAY : day, minute, { minFree, position, buildings });
-  }, [rooms, buildings, query, day, holiday, minute, minFree, position]);
+    return buildingsAt(matching, holiday ? NO_CLASSES_DAY : day, minute, { minFree, position, buildings, bookings });
+  }, [rooms, buildings, query, day, holiday, minute, minFree, position, bookings]);
   const freeRooms = list.reduce((sum, entry) => sum + entry.free.length, 0);
 
   const duration = (minutes: number) => minutes < 60 ? t.minutes(minutes) : t.hours(Math.floor(minutes / 60), minutes % 60);
@@ -161,6 +182,8 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
 
       {!clock ? <p className="mt-6 text-sm text-[#646c68]">…</p> : <>
         <p className="mt-5 text-xs text-[#646c68]" aria-live="polite">{t.summary(freeRooms, list.length)} {t.at(`${mode === "pick" ? t.days[pickDay] + " " : ""}${clockLabel(minute, language)}`)}</p>
+        {bookings && live?.syncedAt ? <p className="mt-1 text-[11px] text-[#315c43]">{t.live(bookings.size, t.liveAgo(Math.max(0, Math.round((nowMs - Date.parse(live.syncedAt)) / 60_000))))}</p>
+          : mode === "pick" && <p className="mt-1 text-[11px] text-[#646c68]">{t.pickNote}</p>}
         {list.length ? <ul className="mt-3 space-y-3">{list.slice(0, buildingsShown).map((entry) => {
           const building = buildings[entry.code]!;
           const open = expanded.includes(entry.code);
@@ -177,7 +200,7 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
             <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{shown.map((item) => <li key={item.room.room} className={`rounded-xl border px-3 py-2 ${item.room.rare ? "border-dashed border-[#d9d6ce] bg-[#fbfaf8]" : item.until === null || item.until - minute >= 60 ? "border-[#cddbd1] bg-[#f4f8f5]" : "border-[#ece9e2] bg-[#fbfaf8]"}`}>
               <p className="flex items-baseline justify-between gap-2"><span className="font-semibold">{entry.code} {item.room.room}</span><span className="text-[11px] text-[#646c68]">{t.seats(item.room.size)}</span></p>
               <p className="mt-0.5 text-xs text-[#315c43]">{status(item)}</p>
-              {item.room.rare && <p className="mt-0.5 text-[11px] text-[#8a5a17]">{t.rare}</p>}
+              {item.room.rare ? <p className="mt-0.5 text-[11px] text-[#8a5a17]">{t.rare}</p> : item.room.liveId === null && <p className="mt-0.5 text-[11px] text-[#646c68]">{t.department}</p>}
             </li>)}</ul>
             {entry.free.length > ROOMS_SHOWN && <button type="button" onClick={() => setExpanded((current) => open ? current.filter((code) => code !== entry.code) : [...current, entry.code])} className="mt-2 text-xs font-semibold text-[#273c38] hover:underline">{open ? t.fewerRooms : t.showRooms(entry.free.length)}</button>}
           </li>;

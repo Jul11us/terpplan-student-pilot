@@ -242,3 +242,17 @@ export const feedback = sqliteTable("feedback", {
   context: text("context"),
   language: text("language").notNull(),
 });
+
+// One day's 25Live bookings for a general-purpose classroom, for the empty-room finder: the times only (as
+// [start, end] minutes after midnight, JSON), never what the booking is. Read every couple of hours by the
+// background run (lib/room-bookings.ts); old days are deleted.
+export const roomBookingDays = sqliteTable(
+  "room_booking_days",
+  {
+    spaceId: integer("space_id").notNull(),
+    day: text("day").notNull(),
+    slots: text("slots").notNull(),
+    syncedAt: text("synced_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.spaceId, table.day] })],
+);

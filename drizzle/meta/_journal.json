@@ -113,6 +113,13 @@
       "when": 1791489601000,
       "tag": "0015_mail_safety",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1791591948364,
+      "tag": "0016_room_booking_days",
+      "breakpoints": true
     }
   ]
 }

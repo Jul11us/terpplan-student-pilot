@@ -4,7 +4,7 @@
 // Seen in a visitor's browser: a TerpPlan API request that failed, by area, or an uncaught page error.
 export const CLIENT_ERROR_KINDS = ["search", "course", "schedule", "seats", "alerts", "sync", "signin", "api", "page"] as const;
 // Seen by the server itself.
-export const SERVER_ERROR_KINDS = ["testudo", "email", "run"] as const;
+export const SERVER_ERROR_KINDS = ["testudo", "email", "run", "rooms"] as const;
 export const ERROR_KINDS = [...CLIENT_ERROR_KINDS, ...SERVER_ERROR_KINDS] as const;
 export type ClientErrorKind = (typeof CLIENT_ERROR_KINDS)[number];
 export type ErrorKind = (typeof ERROR_KINDS)[number];
