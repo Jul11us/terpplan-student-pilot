@@ -1,10 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { parsePastedSchedule } from "@/lib/testudo-import";
 import { readTaken, writeTaken } from "@/lib/taken-courses";
 import { weekFromSections, writeMyWeek } from "@/lib/my-week";
 import type { UmdMeeting } from "@/lib/umd";
+import { countUse } from "@/lib/usage";
+
+// Links elsewhere (the empty-room page, My week) open the planner at /plan#import with this box open.
+export const IMPORT_HASH = "#import";
 
 export type ImportedCourse = { courseId: string; courseTitle: string; pinnedSectionId: string };
 type Found = { courseId: string; section: string; title: string | null; problem: "course" | "section" | null; meetings: UmdMeeting[] };
@@ -82,13 +86,22 @@ export default function TestudoImport({ term, terms, termName, planCount, langua
   onImport: (courses: ImportedCourse[], replace: boolean, term: string) => void;
 }) {
   const t = copy[language];
-  const [open, setOpen] = useState(false);
+  // The box mounts after the saved plan is restored, so reading the address here does not affect the first render.
+  const [open, setOpen] = useState(() => typeof window !== "undefined" && window.location.hash === IMPORT_HASH);
+  const box = useRef<HTMLDivElement>(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [result, setResult] = useState<{ term: string; found: Found[]; codes: string[] } | null>(null);
   // What was already done with this result: saved as My week, counted as taken.
   const [done, setDone] = useState<{ week?: boolean; taken?: boolean }>({});
+
+  useEffect(() => {
+    if (window.location.hash !== IMPORT_HASH) return;
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    box.current?.scrollIntoView({ block: "center" });
+    box.current?.querySelector("textarea")?.focus({ preventScroll: true });
+  }, []);
 
   const close = () => { setOpen(false); setText(""); setResult(null); setNote(""); setDone({}); };
 
@@ -114,6 +127,7 @@ export default function TestudoImport({ term, terms, termName, planCount, langua
         found.push({ courseId, section, title: typeof reply.course?.name === "string" ? reply.course.name : courseId, problem: listed ? null : "section", meetings: listed?.meetings ?? [] });
       }
       setResult({ term: importTerm, found, codes: pasted.sections.map((item) => item.courseId) });
+      if (found.some((item) => !item.problem)) countUse("import");
     } catch {
       setNote(t.failed);
     } finally {
@@ -143,7 +157,7 @@ export default function TestudoImport({ term, terms, termName, planCount, langua
   const saveWeek = () => {
     if (!result) return;
     const sections = result.found.filter((item) => !item.problem).map((item) => ({ course_id: item.courseId, course_title: item.title ?? item.courseId, section_id: `${item.courseId}-${item.section}`, meetings: item.meetings }));
-    if (writeMyWeek(weekFromSections(sections, result.term, termName(result.term, "en")))) setDone((now) => ({ ...now, week: true }));
+    if (writeMyWeek(weekFromSections(sections, result.term, termName(result.term, "en")))) { setDone((now) => ({ ...now, week: true })); countUse("week"); }
     else setNote(t.weekFailed);
   };
 
@@ -154,7 +168,7 @@ export default function TestudoImport({ term, terms, termName, planCount, langua
 
   const okCount = result?.found.filter((item) => !item.problem).length ?? 0;
   const button = "rounded-lg px-3 py-2 text-xs font-semibold";
-  return <div className="text-xs text-[#48534f]">
+  return <div ref={box} className="text-xs text-[#48534f]">
     <p className="leading-5">{t.steps}</p>
     <textarea value={text} onChange={(event) => { setText(event.target.value); setResult(null); }} rows={4} placeholder={t.placeholder} aria-label={t.open} className="mt-2 w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-xs text-[#273c38]" />
     <p className="mt-1 text-[11px] leading-5 text-[#646c68]">{t.privacy}</p>

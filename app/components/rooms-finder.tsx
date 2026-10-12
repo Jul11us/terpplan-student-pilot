@@ -48,6 +48,7 @@ const copy = {
     hours: (h: number, m: number) => m ? `${h} h ${m} min` : `${h} h`, minutes: (m: number) => `${m} min`,
     gapTitle: "Before your next class", gapLine: (from: string, to: string, start: string, end: string, minutes: number) => `${from} ends ${start}, ${to} starts ${end}: ${minutes} min free`,
     gapRoom: (sit: number, a: number, b: number) => `sit ${sit} min · walk ${a} min there, ${b} min to class`, gapNone: "No room nearby stays free for the whole gap.",
+    importHint: "Import this term's schedule from Testudo, and this page will start with the rooms near your classes and suggest where to sit between them.", importLink: "Import your schedule",
   },
   zh: {
     home: "返回排课", eyebrow: (term: string) => `College Park · ${term}课表`, title: "找空教室",
@@ -79,6 +80,7 @@ const copy = {
     hours: (h: number, m: number) => m ? `${h} 小时 ${m} 分` : `${h} 小时`, minutes: (m: number) => `${m} 分钟`,
     gapTitle: "你下一节课前", gapLine: (from: string, to: string, start: string, end: string, minutes: number) => `${from} ${start} 下课，${to} ${end} 上课：空档 ${minutes} 分钟`,
     gapRoom: (sit: number, a: number, b: number) => `能坐 ${sit} 分钟 · 走过去 ${a} 分钟，再到下一节 ${b} 分钟`, gapNone: "附近没有能整段空着的教室。",
+    importHint: "导入你这学期的 Testudo 课表，这里就会先列出你上课的楼附近的教室，并推荐课间能去坐的地方。", importLink: "导入课表",
   },
 } as const;
 
@@ -205,6 +207,8 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
         </div>
         {locationFailed && <p role="alert" className="text-xs text-[#8c352c]">{t.locationFailed}</p>}
       </section>
+
+      {clock && !(myWeek && roomsForWeekTerm(myWeek.term, term)) && <p className="mt-4 rounded-2xl border border-[#cddbd1] bg-[#edf3ef] px-4 py-3 text-xs leading-5 text-[#315c43]">{t.importHint} <Link href="/plan#import" className="whitespace-nowrap font-semibold text-[#a34a39] hover:underline">{t.importLink} →</Link></p>}
 
       {nextGap && <section aria-label={t.gapTitle} className="mt-4 rounded-2xl border border-[#cddbd1] bg-[#edf3ef] p-4">
         <h2 className="text-sm font-semibold text-[#273c38]">{t.gapTitle}</h2>

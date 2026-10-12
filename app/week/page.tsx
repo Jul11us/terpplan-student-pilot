@@ -17,7 +17,7 @@ const copy = {
     title: "My week", plan: "Plan courses", today: "Today", week: "This week", noClasses: "No classes",
     now: "In class now", next: "Next class", inMinutes: "in {n} min", doneToday: "No more classes today.", freeToday: "No classes today.",
     map: "Map", saved: "{term} · saved {date}",
-    empty: "No week saved yet. Build a schedule in TerpPlan, then tap “Use as my week” under the timetable.", emptyButton: "Build a schedule",
+    empty: "No week saved yet. Import your schedule from Testudo, or build one in TerpPlan and tap “Use as my week” under the timetable.", emptyImport: "Import from Testudo", emptyButton: "Build a schedule",
     unscheduled: "Online or time to be announced:",
     note: "Times and rooms are as they were when you saved. If a section changes, check Testudo and save your week again.",
     installTitle: "Keep it on your home screen",
@@ -31,7 +31,7 @@ const copy = {
     title: "我的一周", plan: "规划课程", today: "今天", week: "本周课表", noClasses: "没有课",
     now: "正在上课", next: "下一节课", inMinutes: "{n} 分钟后", doneToday: "今天的课都上完了。", freeToday: "今天没有课。",
     map: "地图", saved: "{term} · 保存于 {date}",
-    empty: "还没有保存课表。先在 TerpPlan 排好课，再点课表下面的“设为我的一周”。", emptyButton: "去排课",
+    empty: "还没有保存课表。可以从 Testudo 导入你的课表，或者在 TerpPlan 排好课后点课表下面的“设为我的一周”。", emptyImport: "从 Testudo 导入", emptyButton: "去排课",
     unscheduled: "线上课程或时间待定：",
     note: "时间和教室是保存时的信息。如果班次有变化，请以 Testudo 为准，并重新保存。",
     installTitle: "放到手机主屏幕",
@@ -153,7 +153,7 @@ export default function MyWeekPage() {
     <div className="mx-auto max-w-2xl px-4 pb-12 pt-6">
       <h1 className="font-serif text-3xl">{t.title}</h1>
       {week && <p className="mt-1 text-xs text-[#5d6561]">{t.saved.replace("{term}", week.termName).replace("{date}", savedDate)}</p>}
-      {week === null && <div className="mt-5 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5"><p className="text-sm leading-6 text-[#48534f]">{t.empty}</p><Link href="/plan" className="mt-3 inline-block rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white">{t.emptyButton}</Link></div>}
+      {week === null && <div className="mt-5 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5"><p className="text-sm leading-6 text-[#48534f]">{t.empty}</p><div className="mt-3 flex flex-wrap gap-2"><Link href="/plan#import" className="rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white">{t.emptyImport}</Link><Link href="/plan" className="rounded-lg border border-[#536d64] bg-white px-3 py-2 text-xs font-semibold text-[#273c38]">{t.emptyButton}</Link></div></div>}
       {week && changes.length > 0 && <section role="status" className="mt-5 rounded-2xl border border-[#ead8b5] bg-[#fff8e8] p-4 text-[#745424]">
         <h2 className="text-sm font-semibold">⚠ {t.changesTitle}</h2>
         <ul className="mt-2 space-y-2 text-xs leading-5">{changes.map((change) => <li key={change.sectionId}>
