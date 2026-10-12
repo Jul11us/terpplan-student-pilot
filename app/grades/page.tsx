@@ -106,7 +106,10 @@ const copy = {
     manualFallback: "Nothing works? Everything still functions by hand: add a course, upload its syllabus, and type the scores you can see in Canvas. The grading maths and the GPA are identical.",
     ask: "Worth one attempt: search UMD's IT knowledge base for “Canvas API token” and open a ticket. Some institutions grant tokens on request for coursework — do not count on it for a personal project.",
 
-    thisTerm: "This term", credits: "credits", course: "courses", noCoursesYet: "No courses yet. Connect Canvas, load the sample term, or add a course.",
+    thisTerm: "This term", credits: "credits", course: "courses",
+    categoryOne: "category", categoryMany: "categories",
+    toCheckOne: "thing to check", toCheckMany: "things to check",
+    noCoursesYet: "No courses yet. Connect Canvas, load the sample term, or add a course.",
     current: "Current", best: "Best case", nothingGraded: "Nothing graded yet", letter: "Letter",
     semesterGpa: "Semester GPA", cumulative: "Cumulative", counted: "Counted", leftOut: "Left out",
     projection: "Projection, not a real GPA",
@@ -173,7 +176,10 @@ const copy = {
     manualFallback: "都不行？功能依然完整：添加课程、上传课程大纲、把 Canvas 上能看到的分数据填进去。评分计算和 GPA 结果完全一样。",
     ask: "值得试一次：在 UMD 的 IT 知识库里搜 “Canvas API token”，然后开一张工单。有些学校会为教学用途按需发放令牌 —— 但个人项目不要指望这条路。",
 
-    thisTerm: "本学期", credits: "学分", course: "门课", noCoursesYet: "还没有课程。连接 Canvas、载入示例学期，或手动添加一门课。",
+    thisTerm: "本学期", credits: "学分", course: "门课",
+    categoryOne: "个类别", categoryMany: "个类别",
+    toCheckOne: "处待确认", toCheckMany: "处待确认",
+    noCoursesYet: "还没有课程。连接 Canvas、载入示例学期，或手动添加一门课。",
     current: "当前", best: "最好情况", nothingGraded: "还没有已评分作业", letter: "字母等级",
     semesterGpa: "本学期 GPA", cumulative: "累计", counted: "已计入", leftOut: "未计入",
     projection: "这是预测值，不是真实 GPA",
@@ -617,8 +623,12 @@ export default function GradesPage() {
                       {course.term ? `${formatTerm(course.term, language)} · ` : ""}
                       {course.credits ? `${course.credits} ${t.credits}` : t.creditsLabel}
                       {course.canvasCurrentScore != null && ` · Canvas ${pct(course.canvasCurrentScore)}`}
-                      {course.scheme?.categories?.length ? ` · ${course.scheme.categories.length} ${t.category}` : ` · ${t.noStructure}`}
-                      {warnings.length ? ` · ${warnings.length} ${t.warnings}` : ""}
+                      {course.scheme?.categories?.length
+                        ? ` · ${course.scheme.categories.length} ${course.scheme.categories.length === 1 ? t.categoryOne : t.categoryMany}`
+                        : ` · ${t.noStructure}`}
+                      {warnings.length
+                        ? ` · ${warnings.length} ${warnings.length === 1 ? t.toCheckOne : t.toCheckMany}`
+                        : ""}
                     </p>
                   </div>
                   <div className="shrink-0 text-right">
