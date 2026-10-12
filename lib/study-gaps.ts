@@ -67,6 +67,21 @@ export function roomsForGap(rooms: Room[], gap: Gap, day: number, positions: Rec
     .map(({ room, walkIn, walkOut, arrive, leave, sit }) => ({ room, walkIn, walkOut, arrive, leave, sit }));
 }
 
+// Where the student probably is, from one day's classes in My week, so the room list can start with the
+// rooms nearest to it without asking for their location: the class under way, else the one that ended in the
+// last two hours, else the one starting in the next two hours. Only classes in a building on the map count.
+export const NEAR_CLASS_WINDOW = 120;
+export type NearClass = { when: "in" | "after" | "before"; at: DayClass };
+export function classNearNow(classes: DayClass[], minute: number, known: (building: string) => boolean): NearClass | null {
+  const placed = classes.filter((item) => item.building && known(item.building));
+  const under = placed.find((item) => item.start <= minute && minute < item.end);
+  if (under) return { when: "in", at: under };
+  const ended = placed.filter((item) => item.end <= minute && minute - item.end <= NEAR_CLASS_WINDOW).sort((a, b) => b.end - a.end)[0];
+  if (ended) return { when: "after", at: ended };
+  const next = placed.filter((item) => item.start > minute && item.start - minute <= NEAR_CLASS_WINDOW).sort((a, b) => a.start - b.start)[0];
+  return next ? { when: "before", at: next } : null;
+}
+
 // My week and the room data must describe the same term; otherwise there is nothing to suggest.
 export function roomsForWeekTerm(weekTerm: string | null | undefined, roomTerm: string) {
   return Boolean(weekTerm) && weekTerm === roomTerm;

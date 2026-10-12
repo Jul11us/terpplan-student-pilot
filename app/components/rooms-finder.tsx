@@ -10,7 +10,7 @@ import { buildingsAt, clockLabel, easternClock, NO_CLASSES_DAY, type Bookings, t
 import type { TermCalendar } from "@/lib/term-calendar";
 import { countUse } from "@/lib/usage";
 import { classesOn, readMyWeek, WEEK_DAYS, type MyWeek } from "@/lib/my-week";
-import { dayGaps, roomsForGap, roomsForWeekTerm } from "@/lib/study-gaps";
+import { classNearNow, dayGaps, roomsForGap, roomsForWeekTerm, type NearClass } from "@/lib/study-gaps";
 
 type Language = "en" | "zh";
 const BUILDINGS_SHOWN = 10;
@@ -25,13 +25,15 @@ const copy = {
     days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
     search: "Search a building (name or code)", minFree: "Free for",
     minFreeOptions: [[0, "Any time"], [30, "30 min or more"], [60, "1 hour or more"], [120, "2 hours or more"]] as Array<[number, string]>,
-    near: "Sort by distance from me", locating: "Finding you…", nearOn: "Nearest first", nearOff: "Stop sorting by distance",
+    near: "Sort by distance from me", nearShort: "Nearest to me", locating: "Finding you…", nearOn: "Nearest first", nearOff: "Stop sorting by distance",
+    nearClass: (near: NearClass, time: string) => `Nearest to ${near.at.building} first, where ${near.when === "in" ? `you're in ${near.at.courseId}` : near.when === "after" ? `${near.at.courseId} ended at ${time}` : `${near.at.courseId} starts at ${time}`}`,
+    nearClassOff: "Don't sort this way", lockLegend: "Department or rarely used room: may be locked",
     locationFailed: "Your location could not be read. Allow location for this site, or search a building instead.",
     summary: (rooms: number, buildings: number) => `${rooms} rooms in ${buildings} buildings have nothing booked`,
     at: (time: string) => `at ${time}`,
     walk: (minutes: number) => `~${minutes} min walk`, counts: (free: number, busy: number) => `${free} free · ${busy} in use`,
-    map: "Map", freeUntil: (time: string) => `free until ${time}`, restOfDay: "nothing else booked today", left: (text: string) => `${text} left`,
-    seats: (n: number) => `about ${n} seats`, rare: "rarely booked, may be locked", department: "department room, may be locked",
+    map: "Map", freeUntil: (time: string) => `free till ${time}`, restOfDay: "free the rest of the day", left: (text: string) => `(${text})`,
+    seats: (n: number) => `~${n} seats`, rare: "rarely booked, may be locked", department: "department room, may be locked",
     live: (rooms: number, ago: string) => `Exams and events included for ${rooms} general-purpose classrooms, from UMD 25Live (updated ${ago}).`, liveAgo: (minutes: number) => minutes < 1 ? "just now" : `${minutes} min ago`,
     pickNote: "Picked times use the weekly class schedule; exams and events are only known for today.",
     showRooms: (n: number) => `Show all ${n} rooms`, fewerRooms: "Show fewer", moreBuildings: "Show more buildings",
@@ -54,12 +56,14 @@ const copy = {
     days: ["周一", "周二", "周三", "周四", "周五"],
     search: "搜索楼名或代码", minFree: "至少空",
     minFreeOptions: [[0, "不限"], [30, "30 分钟以上"], [60, "1 小时以上"], [120, "2 小时以上"]] as Array<[number, string]>,
-    near: "按离我远近排序", locating: "正在定位…", nearOn: "已按距离排序", nearOff: "取消按距离排序",
+    near: "按离我远近排序", nearShort: "离我最近", locating: "正在定位…", nearOn: "已按距离排序", nearOff: "取消按距离排序",
+    nearClass: (near: NearClass, time: string) => `按离 ${near.at.building} 远近排序：${near.when === "in" ? `你正在这里上 ${near.at.courseId}` : near.when === "after" ? `${near.at.courseId} ${time} 在这里下课` : `${near.at.courseId} ${time} 在这里上课`}`,
+    nearClassOff: "不按这个排序", lockLegend: "系里的教室或很少排课的教室，可能上锁",
     locationFailed: "读取不到你的位置。请允许本网站使用定位，或者直接搜索楼名。",
     summary: (rooms: number, buildings: number) => `${buildings} 栋楼共 ${rooms} 间教室没有预约`,
     at: (time: string) => `（${time}）`,
     walk: (minutes: number) => `步行约 ${minutes} 分钟`, counts: (free: number, busy: number) => `${free} 间空 · ${busy} 间在使用`,
-    map: "地图", freeUntil: (time: string) => `空到 ${time}`, restOfDay: "今天没有其他预约了", left: (text: string) => `还有 ${text}`,
+    map: "地图", freeUntil: (time: string) => `空到 ${time}`, restOfDay: "今天没有其他预约了", left: (text: string) => `· 还有 ${text}`,
     seats: (n: number) => `约 ${n} 座`, rare: "很少排课，可能上锁", department: "系里的教室，可能上锁",
     live: (rooms: number, ago: string) => `${rooms} 间公共教室已结合 UMD 25Live 的考试和活动预约（${ago}更新）。`, liveAgo: (minutes: number) => minutes < 1 ? "刚刚" : `${minutes} 分钟前`,
     pickNote: "选时间时按每周课表计算；考试和活动只知道今天的。",
@@ -96,6 +100,8 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
   const [position, setPosition] = useState<Position | null>(null);
   const [locating, setLocating] = useState(false);
   const [locationFailed, setLocationFailed] = useState(false);
+  // Turned off by the student: no sorting by the building of their class in My week.
+  const [nearClassOff, setNearClassOff] = useState(false);
   const [buildingsShown, setBuildingsShown] = useState(BUILDINGS_SHOWN);
   const [expanded, setExpanded] = useState<string[]>([]);
   const t = copy[language];
@@ -133,11 +139,17 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
   // On a break or holiday no class meets, so "now" lists every room as free (as the note above the list says).
   const holiday = mode === "now" && clock !== null && termDay(calendar, clock.date) === "noClasses";
   const minute = mode === "now" ? clock?.minute ?? 0 : pickMinute;
+  // Without the student's location, rooms near the class they are in, just left or are about to go to (My week).
+  const nearClass = useMemo(() => {
+    if (!clock || !myWeek || nearClassOff || position || !roomsForWeekTerm(myWeek.term, term) || day > 6) return null;
+    return classNearNow(classesOn(myWeek, WEEK_DAYS[day]!), minute, (code) => Boolean(buildings[code.toUpperCase()]));
+  }, [clock, myWeek, nearClassOff, position, term, day, minute, buildings]);
+  const sortFrom = position ?? (nearClass ? buildings[nearClass.at.building!.toUpperCase()] ?? null : null);
   const list = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const matching = needle ? rooms.filter((room) => room.building.toLowerCase().includes(needle) || (buildings[room.building]?.name ?? "").toLowerCase().includes(needle)) : rooms;
-    return buildingsAt(matching, holiday ? NO_CLASSES_DAY : day, minute, { minFree, position, buildings, bookings });
-  }, [rooms, buildings, query, day, holiday, minute, minFree, position, bookings]);
+    return buildingsAt(matching, holiday ? NO_CLASSES_DAY : day, minute, { minFree, position: sortFrom, buildings, bookings });
+  }, [rooms, buildings, query, day, holiday, minute, minFree, sortFrom, bookings]);
   // Today's next gap in My week (one still to come or under way), with rooms that stay free through it.
   const nextGap = useMemo(() => {
     if (!clock || !myWeek || !roomsForWeekTerm(myWeek.term, term) || clock.day > 6) return null;
@@ -149,7 +161,7 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
   const freeRooms = list.reduce((sum, entry) => sum + entry.free.length, 0);
 
   const duration = (minutes: number) => minutes < 60 ? t.minutes(minutes) : t.hours(Math.floor(minutes / 60), minutes % 60);
-  const status = (item: RoomStatus) => item.until === null ? t.restOfDay : `${t.freeUntil(clockLabel(item.until, language))} · ${t.left(duration(item.until - minute))}`;
+  const status = (item: RoomStatus) => item.until === null ? t.restOfDay : `${t.freeUntil(clockLabel(item.until, language))} ${t.left(duration(item.until - minute))}`;
   const notes = [
     holiday ? t.noClasses : null,
     mode === "now" && clock && ["beforeTerm", "afterTerm"].includes(termDay(calendar, clock.date)) ? t.outside : null,
@@ -170,12 +182,12 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
 
   return <main className="min-h-screen bg-[#f5f3ef] text-[#202728]">
     <header className="border-b border-[#dedbd3] bg-[#fbfaf8]"><div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-5 py-4 sm:px-8"><Link href="/" className="flex items-center gap-3 font-semibold"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#bd302f] font-serif text-lg text-white">T</span>TerpPlan</Link><div className="flex items-center gap-3"><Link href="/plan" className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-[#d9d6ce] bg-white px-3 py-1.5 text-xs font-semibold text-[#273c38] shadow-sm hover:border-[#536d64] hover:bg-[#edf3ef]"><span aria-hidden="true">←</span><span className="sm:hidden">{language === "en" ? "Planner" : "排课"}</span><span className="hidden sm:inline">{t.home}</span></Link><button type="button" onClick={() => { const next = language === "en" ? "zh" : "en"; setLanguage(next); writeSavedState({ language: next }); }} className="whitespace-nowrap rounded-lg border border-[#dcd9d0] px-3 py-2 text-xs">{language === "en" ? "中文" : "English"}</button></div></div></header>
-    <div className="mx-auto max-w-5xl px-5 pb-16 pt-10 sm:px-8">
+    <div className="mx-auto max-w-5xl px-5 pb-16 pt-7 sm:px-8 sm:pt-10">
       <p className="text-[11px] font-semibold uppercase tracking-[.17em] text-[#a34a39]">{t.eyebrow(formatTermName(term, language))}</p>
       <h1 className="mt-3 max-w-3xl font-serif text-4xl leading-tight sm:text-5xl">{t.title}</h1>
       <p className="mt-4 max-w-2xl text-sm leading-6 text-[#5d6561]">{t.intro}</p>
 
-      <section className="mt-8 space-y-3 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-4 sm:p-5">
+      <section className="mt-6 space-y-3 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-4 sm:mt-8 sm:p-5">
         <div className="flex flex-wrap items-center gap-3">
           <div role="radiogroup" className="inline-flex rounded-lg bg-[#efece6] p-1">
             <button type="button" role="radio" aria-checked={mode === "now"} onClick={() => setMode("now")} className={segment(mode === "now")}>{t.now}{clock && mode === "now" ? ` · ${clockLabel(clock.minute, language)}` : ""}</button>
@@ -186,10 +198,10 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
             <select aria-label={t.time} value={pickMinute} onChange={(event) => setPickMinute(Number(event.target.value))} className={control}>{PICK_TIMES.map((value) => <option key={value} value={value}>{clockLabel(value, language)}</option>)}</select>
           </>}
         </div>
-        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-          <input value={query} onChange={(event) => { setQuery(event.target.value); setBuildingsShown(BUILDINGS_SHOWN); }} aria-label={t.search} placeholder={t.search} className={control} />
-          <label className="flex items-center gap-2 text-xs text-[#5d6561]">{t.minFree}<select value={minFree} onChange={(event) => setMinFree(Number(event.target.value))} className={control}>{t.minFreeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-          <button type="button" onClick={locate} disabled={locating} aria-pressed={Boolean(position)} className={`rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-60 ${position ? "border-[#273c38] bg-[#273c38] text-white" : "border-[#536d64] bg-white text-[#273c38] hover:bg-[#edf3ef]"}`}>📍 {locating ? t.locating : position ? t.nearOn : t.near}</button>
+        <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:gap-3">
+          <input value={query} onChange={(event) => { setQuery(event.target.value); setBuildingsShown(BUILDINGS_SHOWN); }} aria-label={t.search} placeholder={t.search} className={`${control} w-full sm:w-auto sm:min-w-0 sm:flex-1`} />
+          <label className="flex shrink-0 items-center gap-2 text-xs text-[#5d6561]">{t.minFree}<select value={minFree} onChange={(event) => setMinFree(Number(event.target.value))} className={control}>{t.minFreeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <button type="button" onClick={locate} disabled={locating} aria-pressed={Boolean(position)} className={`min-w-0 flex-1 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-60 sm:flex-none ${position ? "border-[#273c38] bg-[#273c38] text-white" : "border-[#536d64] bg-white text-[#273c38] hover:bg-[#edf3ef]"}`}>📍 {locating ? t.locating : position ? t.nearOn : <><span className="sm:hidden">{t.nearShort}</span><span className="hidden sm:inline">{t.near}</span></>}</button>
         </div>
         {locationFailed && <p role="alert" className="text-xs text-[#8c352c]">{t.locationFailed}</p>}
       </section>
@@ -210,6 +222,8 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
         <p className="mt-5 text-xs text-[#646c68]" aria-live="polite">{t.summary(freeRooms, list.length)} {t.at(`${mode === "pick" ? t.days[pickDay] + " " : ""}${clockLabel(minute, language)}`)}</p>
         {bookings && live?.syncedAt ? <p className="mt-1 text-[11px] text-[#315c43]">{t.live(bookings.size, t.liveAgo(Math.max(0, Math.round((nowMs - Date.parse(live.syncedAt)) / 60_000))))}</p>
           : mode === "pick" && <p className="mt-1 text-[11px] text-[#646c68]">{t.pickNote}</p>}
+        {nearClass && <p className="mt-2 flex flex-wrap items-baseline gap-x-2 text-xs text-[#273c38]"><span className="font-semibold">📍 {t.nearClass(nearClass, clockLabel(nearClass.when === "after" ? nearClass.at.end : nearClass.at.start, language))}</span><button type="button" onClick={() => setNearClassOff(true)} className="text-[11px] font-medium text-[#a34a39] hover:underline">{t.nearClassOff}</button></p>}
+        {list.some((entry) => entry.free.some((item) => item.room.rare || item.room.liveId === null)) && <p className="mt-1 text-[11px] text-[#646c68]">🔒 {t.lockLegend}</p>}
         {list.length ? <ul className="mt-3 space-y-3">{list.slice(0, buildingsShown).map((entry) => {
           const building = buildings[entry.code]!;
           const open = expanded.includes(entry.code);
@@ -223,11 +237,15 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
                 <a href={mapsUrl(building)} target="_blank" rel="noreferrer" className="font-medium text-[#a34a39] hover:underline">{t.map} ↗</a>
               </p>
             </div>
-            <ul className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{shown.map((item) => <li key={item.room.room} className={`rounded-xl border px-3 py-2 ${item.room.rare ? "border-dashed border-[#d9d6ce] bg-[#fbfaf8]" : item.until === null || item.until - minute >= 60 ? "border-[#cddbd1] bg-[#f4f8f5]" : "border-[#ece9e2] bg-[#fbfaf8]"}`}>
-              <p className="flex items-baseline justify-between gap-2"><span className="font-semibold">{entry.code} {item.room.room}</span><span className="text-[11px] text-[#646c68]">{t.seats(item.room.size)}</span></p>
-              <p className="mt-0.5 text-xs text-[#315c43]">{status(item)}</p>
-              {item.room.rare ? <p className="mt-0.5 text-[11px] text-[#8a5a17]">{t.rare}</p> : item.room.liveId === null && <p className="mt-0.5 text-[11px] text-[#646c68]">{t.department}</p>}
-            </li>)}</ul>
+            {/* One line per room on phones; on wider screens a grid of two-line cells. 🔒 marks rooms that may be locked. */}
+            <ul className="mt-2 divide-y divide-[#f0ede6] sm:grid sm:grid-cols-2 sm:gap-2 sm:divide-y-0 lg:grid-cols-3">{shown.map((item) => {
+              const lock = item.room.rare ? t.rare : item.room.liveId === null ? t.department : null;
+              const long = item.until === null || item.until - minute >= 60;
+              return <li key={item.room.room} className="flex flex-wrap items-baseline justify-between gap-x-3 py-2 sm:flex-col sm:items-start sm:justify-start sm:rounded-lg sm:bg-[#f7f6f2] sm:px-3">
+                <span className="flex items-baseline gap-1.5"><span className="font-semibold tabular-nums">{entry.code} {item.room.room}</span><span className="text-[11px] text-[#646c68]">{t.seats(item.room.size)}</span>{lock && <span role="img" aria-label={lock} title={lock} className={`text-[11px] ${item.room.rare ? "text-[#8a5a17]" : ""}`}>🔒</span>}</span>
+                <span className={`text-xs ${long ? "font-medium text-[#315c43]" : "text-[#646c68]"}`}>{status(item)}</span>
+              </li>;
+            })}</ul>
             {entry.free.length > ROOMS_SHOWN && <button type="button" onClick={() => setExpanded((current) => open ? current.filter((code) => code !== entry.code) : [...current, entry.code])} className="mt-2 text-xs font-semibold text-[#273c38] hover:underline">{open ? t.fewerRooms : t.showRooms(entry.free.length)}</button>}
           </li>;
         })}</ul> : <p className="mt-4 rounded-xl border border-[#e0ddd5] bg-[#fbfaf8] px-4 py-3 text-sm text-[#5d6561]">{t.none}</p>}

@@ -77,3 +77,16 @@ test("at most two suggestions from one building", () => {
   const found = roomsForGap(rooms, gap, 2, positions);
   assert.deepEqual(found.map((item) => item.room.building), ["IRB", "IRB", "CSI"]);
 });
+
+test("where the student probably is: in class, just out of one, or on the way to one", async () => {
+  const { classNearNow } = await import("../lib/study-gaps.ts");
+  const known = (code) => code !== "ZZZ";
+  const where = (minute, classes = [cmsc, math, engl]) => { const found = classNearNow(classes, minute, known); return found && [found.when, found.at.courseId]; };
+  assert.deepEqual(where(620), ["in", "CMSC131"]);
+  assert.deepEqual(where(700), ["after", "CMSC131"], "between classes: where the last one was");
+  assert.deepEqual(where(560), ["before", "CMSC131"], "before the first class");
+  assert.deepEqual(where(470), null, "more than two hours before");
+  assert.deepEqual(where(1100), null, "more than two hours after the last class");
+  assert.deepEqual(where(620, [{ ...cmsc, building: "ZZZ" }, math]), ["before", "MATH141"], "a building not on the map is skipped");
+  assert.deepEqual(where(620, [{ ...cmsc, building: null }]), null);
+});
