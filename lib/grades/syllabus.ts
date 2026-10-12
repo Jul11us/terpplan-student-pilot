@@ -28,6 +28,45 @@ const HEADING_RE = new RegExp(
   "i",
 );
 
+// A heading that really introduces a grading scheme. Used only to rank candidates — HEADING_RE
+// above still governs the zone.
+const HEADING_STRONG_RE = new RegExp(
+  [
+    "grad(?:e|es|ing)\\s+(?:policy|policies|breakdown|structure|distribution|scheme|criteria|system|scale)",
+    "basis\\s+of\\s+grad(?:e|ing)",
+    "how\\s+(?:you\\s+)?(?:will\\s+be\\s+)?graded",
+    "assessment(?:s)?\\s+(?:and\\s+evaluation|breakdown|plan|overview)",
+    "evaluation\\s+(?:criteria|breakdown|methods)",
+    "course\\s+requirements\\s+and\\s+grading",
+    "points?\\s+distribution",
+    "breakdown\\s+of\\s+grades",
+  ].join("|"),
+  "i",
+);
+
+/**
+ * Rank a line as "the heading of the grading section". Higher is better; -Infinity means it is not
+ * a candidate at all. The decisive signals are that it names a grading artefact rather than merely
+ * containing the word "grade", and that the line after it carries weights.
+ */
+function scoreGradingHeading(line: string, next: string): number {
+  let score: number;
+  if (HEADING_STRONG_RE.test(line)) score = 4;
+  else if (HEADING_RE.test(line)) score = 1;
+  else return Number.NEGATIVE_INFINITY;
+
+  if (line.length <= 40) score += 1;
+  if (/^[A-Z]/.test(line)) score += 1;
+  // Prose that merely mentions grades: "Midterm grades posted", "Grades will be posted within…".
+  if (/\b(?:posted|will|you|your|must|should|are|is|was|were|unless|available)\b/i.test(line)) score -= 3;
+  if (/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/i.test(line)) score -= 2;
+  if (/\d{1,2}\s*[/-]\s*\d{1,2}/.test(line)) score -= 3;
+  if (/[.!?]$/.test(line)) score -= 2;
+  // A heading is normally followed by rows carrying weights.
+  if (/\d{1,3}(?:\.\d+)?\s*%/.test(next)) score += 3;
+  return score;
+}
+
 const SCALE_HEADING_RE = new RegExp(
   [
     "grad(?:ing|e)\\s*scale",
@@ -166,6 +205,10 @@ export type ScaleEntry = LetterCut;
 /**
  * Pull (letter, minimum-percent) pairs out of the text. Scans comma/semicolon/tab-separated segments
  * so one dense line — "A 93-100, A- 90-92, B+ 87-89" — yields three entries.
+ *
+ * Two shapes from the real UMD table shape these patterns: a third column holding the GPA
+ * ("93-100  A / A+  4.0"), and two letters covering one band. Both are tolerated as a trailing tail
+ * rather than being mistaken for "no scale stated", which is what a `$`-anchored pattern did.
  */
 export function extractLetterScale(text: unknown): { scale: ScaleEntry[]; evidence: Array<{ line: number; text: string }>; confident: boolean } {
   const lines = toLines(text);
@@ -175,15 +218,15 @@ export function extractLetterScale(text: unknown): { scale: ScaleEntry[]; eviden
 
   const patterns: Array<{ re: RegExp; min: (m: RegExpMatchArray) => number | null }> = [
     // A 93-100 / A: 93–96 / A 93 至 96 分
-    { re: /^([A-F][+-]?)\s*[:\-=]?\s*(\d{1,3}(?:\.\d+)?)\s*(?:-|–|—|to|through|~|至)\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*分?$/i, min: (m) => num(m[2]) },
+    { re: /^([A-F][+-]?)(?:\s*[/&]\s*[A-F][+-]?)*\s*[:\-=]?\s*(\d{1,3}(?:\.\d+)?)\s*(?:-|–|—|to|through|~|至)\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*分?(?:\s+\d(?:\.\d+)?)?$/i, min: (m) => num(m[2]) },
     // A 93% and above / A 93+
     { re: /^([A-F][+-]?)\s*[:\-=]?\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:\+|and\s+(?:above|up|higher|over)|or\s+(?:above|higher|better|more)|above|or\s+better).*$/i, min: (m) => num(m[2]) },
     // A (93%)
-    { re: /^([A-F][+-]?)\s*[\(\[]\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*[\)\]]\s*$/i, min: (m) => num(m[2]) },
+    { re: /^([A-F][+-]?)\s*[\(\[]\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*[\)\]](?:\s+\d(?:\.\d+)?)?$/i, min: (m) => num(m[2]) },
     // A = 93
-    { re: /^([A-F][+-]?)\s*[:\-=]\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*$/i, min: (m) => num(m[2]) },
+    { re: /^([A-F][+-]?)\s*[:\-=]\s*(\d{1,3}(?:\.\d+)?)\s*%?(?:\s+\d(?:\.\d+)?)?$/i, min: (m) => num(m[2]) },
     // 93-100 = A
-    { re: /^(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:-|–|—|to|through|~|至)\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*分?\s*[:\-=]?\s*([A-F][+-]?)$/i, min: (m) => num(m[1]) },
+    { re: /^(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:-|–|—|to|through|~|至)\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*分?\s*[:\-=]?\s*([A-F][+-]?)(?:\s*[/&]\s*[A-F][+-]?)*(?:\s+\d(?:\.\d+)?)?$/i, min: (m) => num(m[1]) },
     // 93 and above → A
     { re: /^(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:\+|and\s+(?:above|up|higher|over)|or\s+(?:above|higher|better))?\s*[:\-=]?\s*([A-F][+-]?)$/i, min: (m) => num(m[1]) },
     // F below 60
@@ -191,7 +234,7 @@ export function extractLetterScale(text: unknown): { scale: ScaleEntry[]; eviden
     // below 60 = F
     { re: /^(?:below|under|less\s+than)\s+(\d{1,3}(?:\.\d+)?)\s*%?\s*[:\-=]?\s*([A-F][+-]?)$/i, min: () => 0 },
     // A 93 (bare, last resort)
-    { re: /^([A-F][+-]?)\s+(\d{1,3}(?:\.\d+)?)\s*%?$/i, min: (m) => num(m[2]) },
+    { re: /^([A-F][+-]?)\s+(\d{1,3}(?:\.\d+)?)\s*%?(?:\s+\d(?:\.\d+)?)?$/i, min: (m) => num(m[2]) },
   ];
 
   const seen = new Set<string>();
@@ -467,11 +510,20 @@ export function extractGradingScheme(text: unknown, opts: { canonicalOf?: (s: un
 
   const lines = toLines(src).map(normaliseLine);
 
+  // HEADING_RE is deliberately loose: it decides which lines sit in the "grading zone" when scoring
+  // weight candidates, where a false positive costs nothing. Choosing the heading to *show the
+  // student* has to be stricter, because HEADING_RE's qualifier is optional and so it also matches
+  // "Midterm grades posted" — which is what pointed the excerpt at the schedule instead of the table.
   let gradingHeading: string | null = null;
   let headingIndex = -1;
+  let bestHeadingScore = Number.NEGATIVE_INFINITY;
   for (let i = 0; i < lines.length; i++) {
-    if (HEADING_RE.test(lines[i]!) && lines[i]!.length < 90) { gradingHeading = lines[i]!; headingIndex = i; break; }
+    const line = lines[i]!;
+    if (line.length >= 90) continue;
+    const score = scoreGradingHeading(line, lines[i + 1] ?? "");
+    if (score > bestHeadingScore) { bestHeadingScore = score; gradingHeading = line; headingIndex = i; }
   }
+  if (bestHeadingScore === Number.NEGATIVE_INFINITY) { gradingHeading = null; headingIndex = -1; }
   let scaleHeading: string | null = null;
   for (const l of lines) if (SCALE_HEADING_RE.test(l) && l.length < 90) { scaleHeading = l; break; }
 
@@ -560,8 +612,19 @@ export function extractGradingScheme(text: unknown, opts: { canonicalOf?: (s: un
     notes.push({ key: "parse.note.dropRules", params: { list }, text: `Drop policy detected: ${list}.` });
   }
 
-  const snippet = headingIndex >= 0
-    ? lines.slice(headingIndex, headingIndex + 24).join("\n")
+  // The excerpt has to contain everything the student is being asked to confirm, so it covers the
+  // grading section and, when the letter scale lives in its own section further down, that too.
+  const sections: string[] = [];
+  if (headingIndex >= 0) sections.push(lines.slice(headingIndex, headingIndex + 40).join("\n"));
+
+  if (scaleResult.confident) {
+    const scaleAt = lines.findIndex((l) => SCALE_HEADING_RE.test(l) && l.length < 90);
+    const coveredAbove = headingIndex >= 0 && scaleAt >= headingIndex && scaleAt < headingIndex + 40;
+    if (scaleAt >= 0 && !coveredAbove) sections.push(lines.slice(scaleAt, scaleAt + 16).join("\n"));
+  }
+
+  const snippet = sections.length
+    ? sections.join("\n…\n")
     : lines.filter((l) => /\d{1,3}(?:\.\d+)?\s*%/.test(l)).slice(0, 24).join("\n");
 
   return {
@@ -581,20 +644,37 @@ export function extractGradingScheme(text: unknown, opts: { canonicalOf?: (s: un
   };
 }
 
-/** Build a store-ready scheme from a parsed syllabus, pre-mapped onto Canvas groups. */
-export function schemeFromParsed(parsed: ParsedScheme, groups: Array<{ id: number; name: string }>): Scheme {
+/**
+ * Build a store-ready scheme from a parsed syllabus, pre-mapped onto Canvas groups.
+ * Pass `mapping` to use the student's own choices from the confirmation step instead of the
+ * automatic best-guess match.
+ */
+export function schemeFromParsed(
+  parsed: ParsedScheme,
+  groups: Array<{ id: number; name: string }>,
+  mapping?: Record<string, number[]>,
+): Scheme {
   const cats = parsed.categories.map((c) => ({
     id: c.id,
     name: c.name,
     weight: c.weight,
     dropLowest: c.dropLowest || 0,
+    canvasGroupIds: [] as number[],
     canvasGroupId: null as number | null,
     confidence: null as number | null,
   }));
-  const mapping = autoMapCategories(cats, groups.map((g) => ({ id: g.id, name: g.name })));
-  for (const c of cats) {
-    const m = mapping[c.id];
-    if (m) { c.canvasGroupId = m.groupId; c.confidence = m.confidence; }
+  if (mapping) {
+    for (const c of cats) {
+      const chosen = mapping[c.id] ?? [];
+      c.canvasGroupIds = chosen;
+      c.canvasGroupId = chosen[0] ?? null;
+    }
+  } else {
+    const auto = autoMapCategories(cats, groups.map((g) => ({ id: g.id, name: g.name })));
+    for (const c of cats) {
+      const m = auto[c.id];
+      if (m) { c.canvasGroupIds = [m.groupId]; c.canvasGroupId = m.groupId; c.confidence = m.confidence; }
+    }
   }
   return {
     source: "syllabus",

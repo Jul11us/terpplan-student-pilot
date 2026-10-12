@@ -31,9 +31,23 @@ export type SchemeCategory = {
   name: string;
   weight: number;
   dropLowest?: number;
+  /** The groups this category draws from. One category often spans several. */
+  canvasGroupIds?: number[];
+  /**
+   * Older single-group field, still written as the first selection so anything reading the previous
+   * shape keeps working. `canvasGroupIds` wins when it is present.
+   */
   canvasGroupId?: number | null;
   confidence?: number | null;
 };
+
+/** The Canvas groups a category draws from, tolerating the older single-group shape. */
+export function categoryGroupIds(cat: SchemeCategory): number[] {
+  if (Array.isArray(cat.canvasGroupIds)) {
+    return [...new Set(cat.canvasGroupIds.filter((n) => Number.isFinite(n)))];
+  }
+  return cat.canvasGroupId === null || cat.canvasGroupId === undefined ? [] : [cat.canvasGroupId];
+}
 
 export type Scheme = {
   source: "syllabus" | "canvas" | "manual";
@@ -287,7 +301,7 @@ export type CategoryResult = {
   name: string;
   weight: number;
   dropLowest: number;
-  canvasGroupId: number | null;
+  canvasGroupIds: number[];
   confidence: number | null;
   items: EngineItem[];
   droppedItems: EngineItem[];
@@ -334,12 +348,13 @@ export function resolveCategories(course: GradeCourse): { categories: SchemeCate
         name: g.name || `Group ${i + 1}`,
         weight: sum > 0 ? weights[i]! : Math.round((100 / groups.length) * 100) / 100,
         dropLowest: 0,
+        canvasGroupIds: [g.id],
         canvasGroupId: g.id,
         confidence: 1,
       })),
     };
   }
-  return { source: "none", categories: [{ id: "all", name: "All work", weight: 100, dropLowest: 0, canvasGroupId: null, confidence: 1 }] };
+  return { source: "none", categories: [{ id: "all", name: "All work", weight: 100, dropLowest: 0, canvasGroupIds: [], canvasGroupId: null, confidence: 1 }] };
 }
 
 export function computeCourseGrade(course: GradeCourse, settings: { ungradedFillPercent?: number } = {}): GradeResult {
@@ -354,7 +369,8 @@ export function computeCourseGrade(course: GradeCourse, settings: { ungradedFill
   const manualItems = (course.manualItems ?? []).map(manualItemToEngine);
   const groups = course.canvas?.groups ?? [];
 
-  const claimedGroups = new Set(rawCats.map((c) => c.canvasGroupId ?? null).filter((g): g is number => g !== null));
+  const claimedGroups = new Set<number>();
+  for (const c of rawCats) for (const gid of categoryGroupIds(c)) claimedGroups.add(gid);
   const unmappedGroups = groups.filter((g) => !claimedGroups.has(g.id));
   const looseItems = allCanvasItems.filter((it) => it.groupId === null || !claimedGroups.has(it.groupId));
 
@@ -362,10 +378,10 @@ export function computeCourseGrade(course: GradeCourse, settings: { ungradedFill
   // the category whose name it actually resembles, and anything unrecognised stays with the first.
   const claims = new Map<number, string[]>();
   for (const cat of rawCats) {
-    const gid = cat.canvasGroupId ?? null;
-    if (gid === null) continue;
-    if (!claims.has(gid)) claims.set(gid, []);
-    claims.get(gid)!.push(cat.id);
+    for (const gid of categoryGroupIds(cat)) {
+      if (!claims.has(gid)) claims.set(gid, []);
+      claims.get(gid)!.push(cat.id);
+    }
   }
   const firstClaimant = new Map<number, string>();
   for (const [gid, ids] of claims) firstClaimant.set(gid, ids[0]!);
@@ -392,10 +408,10 @@ export function computeCourseGrade(course: GradeCourse, settings: { ungradedFill
 
   const categories: CategoryResult[] = rawCats.map((cat) => {
     const weight = toNumber(cat.weight) ?? 0;
-    const gid = cat.canvasGroupId ?? null;
+    const gids = categoryGroupIds(cat);
 
     let items: EngineItem[] = [];
-    if (gid !== null) {
+    for (const gid of gids) {
       for (const it of allCanvasItems) {
         if (it.groupId !== gid) continue;
         const owner = itemOwner.get(it.id);
@@ -404,7 +420,7 @@ export function computeCourseGrade(course: GradeCourse, settings: { ungradedFill
       }
     }
     for (const it of manualItems) if (it.categoryId === cat.id) items.push(it);
-    if (gid === null && cat.id === "all") items.push(...looseItems);
+    if (gids.length === 0 && cat.id === "all") items.push(...looseItems);
 
     const dropLowest = Math.max(0, toNumber(cat.dropLowest) ?? 0);
     let droppedItems: EngineItem[] = [];
@@ -436,7 +452,7 @@ export function computeCourseGrade(course: GradeCourse, settings: { ungradedFill
       name: cat.name,
       weight,
       dropLowest,
-      canvasGroupId: gid,
+      canvasGroupIds: gids,
       confidence: cat.confidence ?? null,
       items,
       droppedItems,

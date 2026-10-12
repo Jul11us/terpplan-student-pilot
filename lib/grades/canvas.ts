@@ -15,6 +15,8 @@
 //
 // Nothing here touches TerpPlan's servers: the token lives in the browser and is sent only to Canvas.
 
+import { looksForCredit } from "@/lib/grades/credit";
+
 export const DEFAULT_BASE_URL = "https://umd.instructure.com";
 
 // Shapes as Canvas actually returns them: ids and numbers arrive as strings often enough that the
@@ -250,6 +252,8 @@ export type StoredCourse = {
   canvasUrl?: string | null;
   syllabusBody?: string | null;
   canvas?: { groups?: CanvasGroup[]; items?: CanvasItem[] };
+  /** Set on Canvas courses only; see lib/grades/credit.ts. */
+  forCredit?: boolean;
   manualItems?: unknown[];
   scheme?: unknown;
   overrides?: unknown;
@@ -279,6 +283,7 @@ export function mergeCanvasData(
       found.syllabusBody = c.syllabusBody || found.syllabusBody;
       found.canvas = canvas;
       found.source = "canvas";
+      found.forCredit = looksForCredit(c.code).forCredit;
       updated++;
     } else {
       courses.push({
@@ -294,6 +299,7 @@ export function mergeCanvasData(
         canvasUrl: c.htmlUrl,
         syllabusBody: c.syllabusBody,
         canvas,
+        forCredit: looksForCredit(c.code).forCredit,
         manualItems: [],
         scheme: null,
         overrides: {},

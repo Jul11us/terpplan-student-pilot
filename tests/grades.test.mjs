@@ -17,6 +17,7 @@ import {
 import {
   autoMapCategories,
   canonicalCategory,
+  categoryGroupIds,
   categorySimilarity,
   computeCourseGrade,
   labelsAreSameWork,
@@ -26,6 +27,7 @@ import {
 import { extractGradingScheme, schemeFromParsed } from "../lib/grades/syllabus.ts";
 import { docxXmlToText, fileKind, pdfPageLines, readZipEntry } from "../lib/grades/syllabus-file.ts";
 import { sampleTerm } from "../lib/grades/sample.ts";
+import { looksForCredit, partitionByCredit } from "../lib/grades/credit.ts";
 
 /* ------------------------------------------------------------------ GPA --- */
 
@@ -784,4 +786,219 @@ test("the sample term produces a GPA the summary can show", () => {
   assert.equal(cmsc.warnings.filter((w) => w.level !== "info").length, 0, "nothing to act on");
   assert.ok(cmsc.warnings.some((w) => w.key.startsWith("warn.sharedGroups")),
     "and it shows the two-midterms-one-group case");
+});
+
+/* -------------------------- a real UMD syllabus: schedule first, tables after --- */
+
+// The shape that broke the parser in the field: the word "grades" appears in a schedule line
+// long before the real heading, the weight table is a Word table, and the letter scale carries a
+// third GPA column plus two letters in one band ("A / A+").
+const BMGT_SYLLABUS = [
+  "BMGT110F - Introduction to the Business Value Chain",
+  "",
+  "12/11/17 & 1/26\tBusiness Ethics\tNMM Chapter 3\tProf. Mund",
+  "13/11/24 & 11/26\tOperations Management (11/24) and no class (11/26) - Thanksgiving\tNMM Chapter 8\tProf. Mund",
+  "15/12/8 & 12/10\tTeam Presentations (12/8) and Exam #2 (12/10)\t\tProf. Mund",
+  "",
+  "Connect SmartBook for each week is due Sunday at 11:59pm at the end of that week.",
+  "",
+  "Midterm grades posted",
+  "",
+  "Wednesday to Sunday, November 25-29",
+  "Thanksgiving recess, no classes. Our Thursday session is cancelled.",
+  "",
+  "Wednesday, December 2",
+  "Group final paper due, 11:59pm",
+  "",
+  "Grading Structure",
+  "Assignment\tPercentage %",
+  "Connect SmartBook Exercises\t15%",
+  "Discussion Posts & Class Participation\t10%",
+  "Group Project\t25%",
+  "Exam #1\t25%",
+  "Exam #2\t25%",
+  "Total\t100%",
+  "",
+  "MSGSE indicates a Major Scheduled Graded Event, which is subject to the University absence policy.",
+  "",
+  "Letter Grades",
+  "Grade average\tLetter\tGPA",
+  "93-100\tA / A+\t4.0",
+  "90-92.9\tA-\t3.7",
+  "87-89.9\tB+\t3.3",
+  "83-86.9\tB\t3.0",
+  "80-82.9\tB-\t2.7",
+  "77-79.9\tC+\t2.3",
+  "73-76.9\tC\t2.0",
+].join("\n");
+
+test("the grading heading is the real one, not a schedule line that merely says 'grades'", () => {
+  const parsed = extractGradingScheme(BMGT_SYLLABUS, { canonicalOf: canonicalCategory });
+  assert.equal(parsed.gradingHeading, "Grading Structure",
+    `picked ${JSON.stringify(parsed.gradingHeading)}`);
+  // And the excerpt shown to the student must contain the table they are being asked to confirm.
+  // The excerpt is normalised text (tabs already collapsed to single spaces), so assert the row
+  // survives as ONE line rather than as a tab.
+  assert.ok(/^Connect SmartBook Exercises 15%$/m.test(parsed.snippet),
+    `snippet was:\n${parsed.snippet}`);
+  assert.ok(!/Thanksgiving recess/.test(parsed.snippet),
+    "the schedule before the table must not be what gets shown");
+});
+
+test("the weights come out of the Word table", () => {
+  const parsed = extractGradingScheme(BMGT_SYLLABUS, { canonicalOf: canonicalCategory });
+  assert.equal(parsed.weightTotal, 100);
+  assert.deepEqual(parsed.categories.map((c) => `${c.name}=${c.weight}`), [
+    "Connect SmartBook Exercises=15",
+    "Discussion Posts & Class Participation=10",
+    "Group Project=25",
+    "Exam #1=25",
+    "Exam #2=25",
+  ]);
+});
+
+test("a letter scale with a GPA column and two letters per band is read", () => {
+  const parsed = extractGradingScheme(BMGT_SYLLABUS, { canonicalOf: canonicalCategory });
+  assert.equal(parsed.scaleConfident, true, `scale was ${JSON.stringify(parsed.letterScale)}`);
+  const min = (letter) => parsed.letterScale.find((s) => s.letter === letter)?.min;
+  assert.equal(min("A"), 93, "93-100 A / A+");
+  assert.equal(min("A-"), 90, "90-92.9 A- 3.7 — the trailing GPA must not defeat the match");
+  assert.equal(min("B+"), 87);
+  assert.equal(min("B"), 83);
+  assert.equal(min("B-"), 80);
+  assert.equal(min("C+"), 77);
+  assert.equal(min("C"), 73);
+  assert.equal(parsed.letterScale.length, 7);
+});
+
+/* ------------------------------------------- several Canvas groups, one category --- */
+
+test("one category can draw from several Canvas groups", () => {
+  const grade = computeCourseGrade({
+    code: "MULTI",
+    scheme: {
+      source: "syllabus",
+      confirmed: true,
+      categories: [
+        { id: "sb", name: "Connect SmartBook Exercises", weight: 40, canvasGroupIds: [1, 2] },
+        { id: "fin", name: "Final Exam", weight: 60, canvasGroupIds: [3] },
+      ],
+    },
+    canvas: {
+      groups: [{ id: 1, name: "SmartBook" }, { id: 2, name: "Exercises" }, { id: 3, name: "Final" }],
+      items: [
+        { id: 1, name: "SB1", assignment_group_id: 1, points_possible: 10, score: 9 },
+        { id: 2, name: "EX1", assignment_group_id: 2, points_possible: 10, score: 7 },
+        { id: 3, name: "Final", assignment_group_id: 3, points_possible: 100, score: 80 },
+      ],
+    },
+  });
+  assert.deepEqual(grade.categories[0].canvasGroupIds, [1, 2]);
+  assert.equal(grade.categories[0].totalCount, 2, "both groups feed the one category");
+  assert.equal(grade.categories[0].currentPct, 80, "(9 + 7) ÷ 20");
+  assert.equal(grade.current.pct, 80, "0.4×80 + 0.6×80");
+  assert.equal(grade.unmappedGroups.length, 0, "nothing is left unclaimed");
+  assert.equal(grade.warnings.filter((w) => w.key.startsWith("warn.unmappedGroups")).length, 0);
+});
+
+test("the older single-group field is still read", () => {
+  const legacy = {
+    code: "OLD",
+    scheme: {
+      source: "syllabus",
+      confirmed: true,
+      categories: [{ id: "hw", name: "Homework", weight: 100, canvasGroupId: 7 }],
+    },
+    canvas: {
+      groups: [{ id: 7, name: "Homework" }],
+      items: [{ id: 1, name: "HW1", assignment_group_id: 7, points_possible: 10, score: 8 }],
+    },
+  };
+  assert.deepEqual(categoryGroupIds(legacy.scheme.categories[0]), [7]);
+  assert.equal(computeCourseGrade(legacy).current.pct, 80);
+});
+
+test("deselecting every group leaves the category unmapped rather than falling back", () => {
+  // canvasGroupId is kept as the first selection for older readers, so an empty selection must not
+  // be resurrected by that field still holding the previous value.
+  const cat = { id: "x", name: "X", weight: 100, canvasGroupIds: [], canvasGroupId: 5 };
+  assert.deepEqual(categoryGroupIds(cat), []);
+});
+
+test("no Canvas group feeds two categories unless it really does", () => {
+  const grade = computeCourseGrade({
+    code: "SPLIT",
+    scheme: {
+      source: "syllabus",
+      confirmed: true,
+      categories: [
+        { id: "a", name: "Exam 1", weight: 50, canvasGroupIds: [1] },
+        { id: "b", name: "Exam 2", weight: 50, canvasGroupIds: [2] },
+      ],
+    },
+    canvas: {
+      groups: [{ id: 1, name: "Exams" }, { id: 2, name: "Exams" }],
+      items: [
+        { id: 1, name: "Exam 1", assignment_group_id: 1, points_possible: 100, score: 90 },
+        { id: 2, name: "Exam 2", assignment_group_id: 2, points_possible: 100, score: 70 },
+      ],
+    },
+  });
+  assert.equal(grade.categories[0].currentPct, 90);
+  assert.equal(grade.categories[1].currentPct, 70);
+  assert.equal(grade.warnings.filter((w) => w.key.startsWith("warn.sharedGroups")).length, 0,
+    "separate groups are not a shared group, even when they share a name");
+});
+
+/* ------------------------------------------------- non-credit Canvas shells --- */
+
+// The real enrolment list that prompted this: four graded courses among eight non-credit shells.
+const CANVAS_TERM = [
+  { code: "AI-info-literacy", want: false },
+  { code: "BMGT110F", want: true },
+  { code: "BMGT298J", want: true },
+  { code: "CMSC131", want: true },
+  { code: "ENGL101H", want: true },
+  { code: "Excel 2026/2027", want: false },
+  { code: "GEMS101", want: true },
+  { code: "GemsYear1", want: false },
+  { code: "SVPAAP_NCR_ISOF26", want: false },
+  { code: "micromobility-at-umd", want: false },
+  { code: "STTS26", want: false },
+  { code: "FERPA Tutorial", want: false },
+];
+
+test("for-credit UMD courses are told apart from non-credit Canvas shells", () => {
+  for (const { code, want } of CANVAS_TERM) {
+    assert.equal(looksForCredit(code).forCredit, want, `${code} → expected forCredit=${want}`);
+  }
+});
+
+test("the course-code rule holds for the awkward shapes", () => {
+  // Section suffixes and section lists must not defeat it.
+  assert.equal(looksForCredit("BMGT110F-0401,0501,0601").forCredit, true);
+  assert.equal(looksForCredit("CMSC131-0101").forCredit, true);
+  // Zero-level courses still count as courses; the GPA engine is what excludes them.
+  assert.equal(looksForCredit("MATH003").forCredit, true);
+  // Near misses that share letters with a real code.
+  assert.equal(looksForCredit("EXCEL2026").forCredit, false, "EXCEL is five letters");
+  assert.equal(looksForCredit("STTS26").forCredit, false, "only two digits");
+  assert.equal(looksForCredit("").forCredit, false);
+});
+
+test("non-credit courses are set aside, not deleted, and hand-added ones are untouched", () => {
+  const courses = [
+    { code: "CMSC131", source: "canvas", forCredit: true },
+    { code: "STTS26", source: "canvas", forCredit: false },
+    { code: "FERPA Tutorial", source: "canvas", forCredit: false },
+    { code: "MATH141", source: "manual" },
+    { code: "ENGL101", source: "sample" },
+  ];
+  const { forCredit, nonCredit } = partitionByCredit(courses);
+  assert.deepEqual(forCredit.map((c) => c.code), ["CMSC131", "MATH141", "ENGL101"],
+    "manual and sample courses are never judged");
+  assert.deepEqual(nonCredit.map((c) => c.code), ["STTS26", "FERPA Tutorial"]);
+
+  // The verdict is also applied at merge time, so a course synced without the flag still lands right.
+  assert.equal(looksForCredit("STTS26").forCredit, false);
 });

@@ -11,6 +11,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDocumentLanguage } from "@/lib/document-language";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
+import { partitionByCredit } from "@/lib/grades/credit";
 import {
   CanvasClient,
   DEFAULT_BASE_URL,
@@ -22,7 +23,9 @@ import {
   type StoredCourse,
 } from "@/lib/grades/canvas";
 import {
+  autoMapCategories,
   canonicalCategory,
+  categoryGroupIds,
   computeCourseGrade,
   requiredOnRemaining,
   type CanvasAssignment,
@@ -58,6 +61,8 @@ type Course = {
   syllabusBody?: string | null;
   syllabus?: { fileName: string; uploadedAt: string } | null;
   canvas?: { groups?: CanvasGroup[]; items?: CanvasAssignment[] };
+  /** Set by mergeCanvasData for Canvas courses; see lib/grades/credit.ts. */
+  forCredit?: boolean;
   scheme?: Scheme | null;
   manualItems?: ManualItem[];
   overrides?: { letter?: string | null; excludedFromGpa?: boolean; dropLower?: boolean };
@@ -80,6 +85,9 @@ const copy = {
     sampleBanner: "This is a sample term.",
     sampleBannerNote: "None of it is your data. Connect Canvas, or import an export from your browser, and your own courses replace it.",
     sampleClear: "Clear the sample", sampleBadge: "sample",
+    nonCreditHidden: (n: string) => `${n} Canvas course(s) set aside as non-credit`,
+    nonCreditNote: "Onboarding, compliance training and Non-Credit Programs shells carry no credits and are not graded, so they are hidden by default. Nothing was deleted.",
+    nonCreditShow: "Show them anyway", nonCreditHide: "Hide them again", nonCreditBadge: "non-credit",
     noToken: "No token? Export from your browser instead",
     noTokenWhy: "Many universities — UMD included — stop students creating their own Canvas API tokens, so the “+ New Access Token” button is greyed out with an ⓘ that you cannot dismiss. That block is on creating a token, not on using the Canvas API: the same endpoints Canvas's own pages call will answer a request from your signed-in Canvas tab. So you can export the data yourself, with no token and no password leaving your browser.",
     noTokenPolicy: "This is a policy, not a fault on your side — no browser setting, extension, or retry will change it.",
@@ -106,8 +114,9 @@ const copy = {
     qualityPoints: (c: number, p: number) => `${c} credits · ${p} quality points`, truncated: (e: string, g: string) => `Exact value ${e} — truncated to ${g}, not rounded.`,
 
     grading: "Grading structure", fromSyllabus: "From your syllabus", fromCanvas: "From Canvas assignment groups", noStructure: "No grading structure yet — upload the syllabus and the weighting is read out of it.",
-    category: "Category", weight: "Weight", drop: "Drop", group: "Canvas group", score: "Score", total: "Total", notMapped: "Not mapped",
+    category: "Category", weight: "Weight", drop: "Drop", group: "Canvas group", score: "Score", total: "Total", notMapped: "Not mapped", noGroups: "No Canvas groups",
     addCategory: "+ Add category", removeCategory: "Remove", confirm: "Use this structure", discard: "Discard",
+    mapHint: "A category can draw from more than one Canvas group — click a group to toggle it.",
     review: "Check what was read", reviewNote: "Nothing is calculated until you confirm.", from: (t: string) => `from: “${t}”`,
     scaleRead: "Letter-grade scale read", noScale: "No letter-grade scale stated, so a typical one is used. Every course sets its own.",
 
@@ -143,6 +152,9 @@ const copy = {
     sampleBanner: "这是示例学期。",
     sampleBannerNote: "里面没有你的任何真实数据。连接 Canvas，或从浏览器导出后导入，它就会被替换成你自己的课程。",
     sampleClear: "清除示例", sampleBadge: "示例",
+    nonCreditHidden: (n: string) => `已归置 ${n} 门非学分课程`,
+    nonCreditNote: "入学教育、合规培训和非学分项目（NCR）的课程不计学分也不评分，因此默认隐藏。它们没有被删除。",
+    nonCreditShow: "仍然显示", nonCreditHide: "再次隐藏", nonCreditBadge: "非学分",
     noToken: "拿不到令牌？改为从你自己的浏览器导出",
     noTokenWhy: "很多高校（包括 UMD）禁止学生自行创建 Canvas API 令牌，「+ 创建新访问许可证」按钮因此是灰的，并挂着一个关不掉的 ⓘ 说明。但被禁的是「创建令牌」，不是「使用 Canvas API」—— Canvas 自己页面调用的那些接口，从你已登录的 Canvas 标签页发请求同样会正常响应。所以你可以自己导出数据，全程不需要令牌，密码也不会离开你的浏览器。",
     noTokenPolicy: "这是学校策略，不是你这边的问题 —— 换浏览器、关扩展、反复重试都不会有变化。",
@@ -169,8 +181,9 @@ const copy = {
     qualityPoints: (c: number, p: number) => `${c} 学分 · ${p} 质量分`, truncated: (e: string, g: string) => `精确值 ${e} —— 截断为 ${g}，未四舍五入。`,
 
     grading: "评分结构", fromSyllabus: "来自你的课程大纲", fromCanvas: "来自 Canvas 作业分组", noStructure: "还没有评分结构 —— 上传课程大纲即可自动读出权重。",
-    category: "类别", weight: "权重", drop: "去最低", group: "Canvas 分组", score: "得分", total: "合计", notMapped: "未映射",
+    category: "类别", weight: "权重", drop: "去最低", group: "Canvas 分组", score: "得分", total: "合计", notMapped: "未映射", noGroups: "无 Canvas 分组",
     addCategory: "+ 添加类别", removeCategory: "删除", confirm: "采用这个结构", discard: "放弃",
+    mapHint: "一个类别可以同时对应多个 Canvas 分组 —— 点一下分组即可切换。",
     review: "核对读取结果", reviewNote: "在你确认之前，不会进行任何计算。", from: (t: string) => `原文：“${t}”`,
     scaleRead: "读到的字母等级表", noScale: "大纲没有给出等级表，将使用通用等级表。每门课的划分线都是自己定的。",
 
@@ -227,6 +240,7 @@ export default function GradesPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ kind: "ok" | "bad"; text: string } | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [showNonCredit, setShowNonCredit] = useState(false);
   const [pending, setPending] = useState<Record<string, ParsedScheme>>({});
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -263,6 +277,9 @@ export default function GradesPage() {
   }, [courses, level, fill, basis]);
 
   const note = (kind: "ok" | "bad", text: string) => setMessage({ kind, text });
+
+  const { forCredit, nonCredit } = useMemo(() => partitionByCredit(courses), [courses]);
+  const visible = showNonCredit ? courses : forCredit;
 
   const hasSample = courses.some((c) => c.source === "sample");
   const clearSample = () => setCourses((list) => list.filter((c) => c.source !== "sample"));
@@ -333,7 +350,7 @@ export default function GradesPage() {
 
   // ------------------------------------------------------------------ grades
   const rollup = useMemo(() => {
-    const rows = courses.map((c, i) => {
+    const rows = visible.map((c, i) => {
       const grade = computeCourseGrade(c as never, { ungradedFillPercent: fill });
       const scale = c.scheme?.letterScale?.length ? c.scheme.letterScale : undefined;
       const chosen = basis === "projected" ? grade.projected.pct : (grade.current.pct ?? grade.projected.pct);
@@ -349,7 +366,7 @@ export default function GradesPage() {
     });
     const gpaRows = rows.map((r) => r.gpaRow);
     return { rows, semester: computeGpa(gpaRows, { level }), terms: computeGpaTerms(gpaRows, { level }) };
-  }, [courses, fill, basis, level]);
+  }, [visible, fill, basis, level]);
 
   const provisionalCount = rollup.rows.filter((r) => r.provisional).length;
 
@@ -404,6 +421,25 @@ export default function GradesPage() {
             >
               {t.sampleClear}
             </button>
+          </div>
+        )}
+
+        {nonCredit.length > 0 && (
+          <div className="mt-4 rounded-xl border border-[#e0ddd5] bg-[#f6f4ef] px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-[#48534f]">
+                <strong className="text-[#273c38]">{t.nonCreditHidden(String(nonCredit.length))}</strong>{" "}
+                <span className="text-[#7a817d]">{nonCredit.map((c) => c.code).join(", ")}</span>
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowNonCredit((v) => !v)}
+                className="shrink-0 rounded-lg border border-[#dcd9d0] bg-white px-3 py-1.5 text-xs font-semibold text-[#273c38] hover:bg-[#f1efe9]"
+              >
+                {showNonCredit ? t.nonCreditHide : t.nonCreditShow}
+              </button>
+            </div>
+            <p className="mt-1 text-[11px] text-[#7a817d]">{t.nonCreditNote}</p>
           </div>
         )}
 
@@ -565,6 +601,11 @@ export default function GradesPage() {
                   <div className="min-w-0">
                     <p className="font-serif text-lg text-[#273c38]">
                       {course.code}
+                      {course.forCredit === false && (
+                        <span className="ml-2 rounded-full border border-[#dcd9d0] bg-[#f6f4ef] px-2 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-[.1em] text-[#7a817d]">
+                          {t.nonCreditBadge}
+                        </span>
+                      )}
                       {course.source === "sample" && (
                         <span className="ml-2 rounded-full border border-[#ead8b5] bg-[#fffaf0] px-2 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-[.1em] text-[#8a5a17]">
                           {t.sampleBadge}
@@ -633,13 +674,22 @@ function CourseDetail({
 }) {
   const [target, setTarget] = useState(93);
   const [manual, setManual] = useState({ name: "", earned: "", possible: "", categoryId: "" });
+  // The student's own group choices in the confirmation step, on top of the automatic match.
+  const [mapEdits, setMapEdits] = useState<Record<string, number[]>>({});
   const [text, setText] = useState("");
 
-  const groups = course.canvas?.groups ?? [];
+  const groups = useMemo(() => course.canvas?.groups ?? [], [course]);
   const categories = course.scheme?.categories ?? [];
   const need = requiredOnRemaining(course as never, target, { ungradedFillPercent: fill });
 
   const setScheme = (change: Partial<Scheme>) => onPatch({ scheme: { ...(course.scheme as Scheme), ...change } });
+
+  const autoMap = useMemo(
+    () => (parsed ? autoMapCategories(parsed.categories.map((c) => ({ id: c.id, name: c.name })), groups) : {}),
+    [parsed, groups],
+  );
+  const mappingFor = (id: string): number[] =>
+    mapEdits[id] ?? (autoMap[id] ? [autoMap[id]!.groupId] : []);
 
   return (
     <div className="space-y-5 border-t border-[#e0ddd5] p-5">
@@ -653,7 +703,7 @@ function CourseDetail({
         </ul>
       )}
 
-      {/* confirm a freshly parsed syllabus before it is used */}
+      {/* confirm a freshly parsed syllabus before it is used; the group mapping is decided here */}
       {parsed && (
         <div className="rounded-xl border-l-[3px] border-[#a34a39] bg-[#fff5f1] p-4">
           <p className="font-semibold text-[#273c38]">{t.review}</p>
@@ -661,8 +711,20 @@ function CourseDetail({
           <ul className="mt-3 space-y-2">
             {parsed.categories.map((c) => (
               <li key={c.id} className="rounded-lg bg-white p-2 text-xs">
-                <span className="font-semibold text-[#273c38]">{c.name}</span> · {c.weight}%
-                <span className="block text-[11px] text-[#7a817d]">{t.from(c.evidence.text.slice(0, 80))}</span>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span><span className="font-semibold text-[#273c38]">{c.name}</span> · {c.weight}%</span>
+                  {groups.length > 0 && (
+                    <GroupPicker
+                      groups={groups}
+                      selected={mappingFor(c.id)}
+                      emptyLabel={t.notMapped}
+                      noGroupsLabel={t.noGroups}
+                      compact
+                      onChange={(next) => setMapEdits((prev) => ({ ...prev, [c.id]: next }))}
+                    />
+                  )}
+                </div>
+                <span className="mt-1 block text-[11px] text-[#7a817d]">{t.from(c.evidence.text.slice(0, 80))}</span>
               </li>
             ))}
           </ul>
@@ -676,7 +738,8 @@ function CourseDetail({
               type="button"
               className="rounded-lg bg-[#273c38] px-3 py-1.5 text-xs font-semibold text-white"
               onClick={() => {
-                onPatch({ scheme: schemeFromParsed(parsed, groups.map((g) => ({ id: g.id, name: g.name }))) });
+                const mapping = Object.fromEntries(parsed.categories.map((c) => [c.id, mappingFor(c.id)]));
+                onPatch({ scheme: schemeFromParsed(parsed, groups.map((g) => ({ id: g.id, name: g.name })), mapping) });
                 onParsed(undefined);
               }}
             >
@@ -714,16 +777,17 @@ function CourseDetail({
                       <td className="py-1.5 pr-2 text-right">{c.weight}%</td>
                       <td className="py-1.5 pr-2 text-right">{c.dropLowest || 0}</td>
                       <td className="py-1.5 pr-2">
-                        <select
-                          value={c.canvasGroupId ?? ""}
-                          onChange={(e) => setScheme({
-                            categories: categories.map((x) => x.id === c.id ? { ...x, canvasGroupId: e.target.value === "" ? null : Number(e.target.value) } : x),
+                        <GroupPicker
+                          groups={groups}
+                          selected={categoryGroupIds(c)}
+                          emptyLabel={t.notMapped}
+                          noGroupsLabel={t.noGroups}
+                          onChange={(next) => setScheme({
+                            categories: categories.map((x) => x.id === c.id
+                              ? { ...x, canvasGroupIds: next, canvasGroupId: next[0] ?? null }
+                              : x),
                           })}
-                          className="rounded border border-[#dcd9d0] px-1 py-0.5 text-xs"
-                        >
-                          <option value="">{t.notMapped}</option>
-                          {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-                        </select>
+                        />
                       </td>
                       <td className="py-1.5 text-right">
                         {computed ? `${pct(computed.currentPct)} (${computed.gradedCount}/${computed.totalCount})` : "—"}
@@ -741,6 +805,9 @@ function CourseDetail({
               </tfoot>
             </table>
           </div>
+        )}
+        {categories.length > 0 && groups.length > 0 && (
+          <p className="mt-2 text-[11px] text-[#7a817d]">{t.mapHint}</p>
         )}
       </div>
 
@@ -914,6 +981,52 @@ function CourseDetail({
         </button>
         <p className="text-[11px] text-[#7a817d]">{t.removeBody}</p>
       </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------- group picker --- */
+
+/**
+ * Which Canvas groups a syllabus category draws from.
+ *
+ * More than one is normal and is why this is not a dropdown: a syllabus line like "Connect
+ * SmartBook Exercises 15%" often spans several Canvas assignment groups, and the engine reads the
+ * items out of all of them.
+ */
+function GroupPicker({
+  groups, selected, onChange, emptyLabel, noGroupsLabel, compact = false,
+}: {
+  groups: Array<{ id: number; name: string }>;
+  selected: number[];
+  onChange: (next: number[]) => void;
+  emptyLabel: string;
+  noGroupsLabel: string;
+  compact?: boolean;
+}) {
+  if (groups.length === 0) return <span className="text-[11px] text-[#9aa8a1]">{noGroupsLabel}</span>;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {groups.map((g) => {
+        const on = selected.includes(g.id);
+        return (
+          <button
+            key={g.id}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onChange(on ? selected.filter((x) => x !== g.id) : [...selected, g.id])}
+            className={`rounded-full border text-[11px] transition-colors ${compact ? "px-1.5 py-0.5" : "px-2 py-0.5"} ${
+              on
+                ? "border-[#536d64] bg-[#edf3ef] font-semibold text-[#315c43]"
+                : "border-[#dcd9d0] bg-white text-[#7a817d] hover:border-[#b9c5be] hover:bg-[#f6f4ef]"
+            }`}
+          >
+            {g.name}
+          </button>
+        );
+      })}
+      {selected.length === 0 && <span className="text-[11px] text-[#9aa8a1]">{emptyLabel}</span>}
     </div>
   );
 }
