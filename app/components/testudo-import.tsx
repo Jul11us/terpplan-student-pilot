@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { parsePastedSchedule } from "@/lib/testudo-import";
 import { readTaken, writeTaken } from "@/lib/taken-courses";
+import { weekFromSections, writeMyWeek } from "@/lib/my-week";
+import type { UmdMeeting } from "@/lib/umd";
 
 export type ImportedCourse = { courseId: string; courseTitle: string; pinnedSectionId: string };
-type Found = { courseId: string; section: string; title: string | null; problem: "course" | "section" | null };
-type CourseReply = { course?: { name?: unknown }; sections?: Array<{ section_id?: string; number?: string }> };
+type Found = { courseId: string; section: string; title: string | null; problem: "course" | "section" | null; meetings: UmdMeeting[] };
+type CourseReply = { course?: { name?: unknown }; sections?: Array<{ section_id?: string; number?: string; meetings?: UmdMeeting[] }> };
 
 const copy = {
   en: {
@@ -30,7 +32,14 @@ const copy = {
     takenDone: "Added to courses you've taken, so prerequisites for {term} are checked against them.",
     tooMany: "A plan can hold 10 courses; only the first {n} were loaded.",
     cancel: "Cancel",
+    close: "Done",
     failed: "Sections could not be looked up. Try again.",
+    week: "Save as my week",
+    weekSaved: "Saved as my week",
+    weekOpen: "Open My week →",
+    weekHint: "My week shows each day's classes with map links, works offline, and suggests empty rooms to sit in between classes.",
+    weekFailed: "This browser could not save it (storage is blocked).",
+    takenMarked: "Counted as courses you're taking",
   },
   zh: {
     open: "从 Testudo 导入课表 →",
@@ -53,14 +62,21 @@ const copy = {
     takenDone: "已加入“修过的课程”，排 {term} 时会用它们检查先修课。",
     tooMany: "每个方案最多 10 门课，只导入了前 {n} 门。",
     cancel: "取消",
+    close: "完成",
     failed: "班次查找失败，请再试一次。",
+    week: "存到我的一周",
+    weekSaved: "已存到我的一周",
+    weekOpen: "打开“我的一周” →",
+    weekHint: "“我的一周”按天列出每节课和楼的地图链接，没网也能看，还会推荐课间可以去坐的空教室。",
+    weekFailed: "这个浏览器存不了（存储被禁用）。",
+    takenMarked: "已算作正在修的课程",
   },
 } as const;
 
 export default function TestudoImport({ term, terms, termName, planCount, language, onImport }: {
   term: string;
   terms: string[];
-  termName: (term: string) => string;
+  termName: (term: string, language?: "en" | "zh") => string;
   planCount: number;
   language: "en" | "zh";
   onImport: (courses: ImportedCourse[], replace: boolean, term: string) => void;
@@ -71,11 +87,13 @@ export default function TestudoImport({ term, terms, termName, planCount, langua
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [result, setResult] = useState<{ term: string; found: Found[]; codes: string[] } | null>(null);
+  // What was already done with this result: saved as My week, counted as taken.
+  const [done, setDone] = useState<{ week?: boolean; taken?: boolean }>({});
 
-  const close = () => { setOpen(false); setText(""); setResult(null); setNote(""); };
+  const close = () => { setOpen(false); setText(""); setResult(null); setNote(""); setDone({}); };
 
   const read = async () => {
-    setNote(""); setResult(null);
+    setNote(""); setResult(null); setDone({});
     const pasted = parsePastedSchedule(text);
     if (!pasted.sections.length) { setNote(t.nothing); return; }
     const importTerm = pasted.term ?? term;
@@ -88,12 +106,12 @@ export default function TestudoImport({ term, terms, termName, planCount, langua
         const url = `/api/course?id=${encodeURIComponent(courseId)}&term=${encodeURIComponent(importTerm)}`;
         let response = await fetch(url);
         if (response.status >= 500) { await new Promise((done) => setTimeout(done, 1500)); response = await fetch(url); }
-        if (response.status === 404) { found.push({ courseId, section, title: null, problem: "course" }); continue; }
+        if (response.status === 404) { found.push({ courseId, section, title: null, problem: "course", meetings: [] }); continue; }
         if (!response.ok) throw new Error("lookup");
         const reply = await response.json() as CourseReply;
         const id = `${courseId}-${section}`;
-        const listed = (reply.sections ?? []).some((item) => (item.section_id ?? `${courseId}-${item.number ?? ""}`).toUpperCase() === id);
-        found.push({ courseId, section, title: typeof reply.course?.name === "string" ? reply.course.name : courseId, problem: listed ? null : "section" });
+        const listed = (reply.sections ?? []).find((item) => (item.section_id ?? `${courseId}-${item.number ?? ""}`).toUpperCase() === id);
+        found.push({ courseId, section, title: typeof reply.course?.name === "string" ? reply.course.name : courseId, problem: listed ? null : "section", meetings: listed?.meetings ?? [] });
       }
       setResult({ term: importTerm, found, codes: pasted.sections.map((item) => item.courseId) });
     } catch {
@@ -118,8 +136,15 @@ export default function TestudoImport({ term, terms, termName, planCount, langua
     const current = readTaken();
     const inProgress = [...new Set([...(current?.inProgress ?? []), ...result.codes])].filter((code) => !current?.completed.includes(code));
     writeTaken({ completed: current?.completed ?? [], inProgress, ...(current?.credits === undefined ? {} : { credits: current.credits }), source: "manual" });
-    close();
-    setNote(t.takenDone.replace("{term}", termName(term)));
+    setDone((now) => ({ ...now, taken: true }));
+  };
+
+  // The registered sections' times and rooms as My week (which /week and /rooms use for between-class rooms).
+  const saveWeek = () => {
+    if (!result) return;
+    const sections = result.found.filter((item) => !item.problem).map((item) => ({ course_id: item.courseId, course_title: item.title ?? item.courseId, section_id: `${item.courseId}-${item.section}`, meetings: item.meetings }));
+    if (writeMyWeek(weekFromSections(sections, result.term, termName(result.term, "en")))) setDone((now) => ({ ...now, week: true }));
+    else setNote(t.weekFailed);
   };
 
   if (!open) return <div className="text-xs">
@@ -140,18 +165,22 @@ export default function TestudoImport({ term, terms, termName, planCount, langua
         {item.problem ? "✕" : "✓"} {item.courseId} {item.section}{item.problem ? ` · ${item.problem === "course" ? t.noCourse : t.noSection.replace("{section}", item.section)}` : item.title && item.title !== item.courseId ? ` · ${item.title}` : ""}
       </li>)}</ul>
       {result.term !== term && <p className="mt-2 leading-5">{t.otherTerm.replace("{pasted}", termName(result.term)).replace("{term}", termName(term))}</p>}
+      {okCount > 0 && !done.week && <p className="mt-2 text-[11px] leading-5 text-[#646c68]">{t.weekHint}</p>}
+      {done.week && <p className="mt-2 font-semibold text-[#315c43]">✓ {t.weekSaved} · <a href="/week" className="text-[#a34a39] hover:underline">{t.weekOpen}</a></p>}
+      {done.taken && <p className="mt-1 leading-5 text-[#315c43]">✓ {t.takenDone.replace("{term}", termName(term))}</p>}
     </div>}
     <div className="mt-2 flex flex-wrap gap-2">
+      {result && okCount > 0 && <button type="button" onClick={saveWeek} disabled={done.week} className={`${button} ${result.term === term ? "border border-[#536d64] bg-white text-[#273c38]" : "bg-[#273c38] text-white hover:bg-[#1d302c]"} disabled:opacity-60`}>{done.week ? "✓ " + t.weekSaved : t.week}</button>}
       {!result && <button type="button" onClick={() => void read()} disabled={busy || !text.trim()} className={`${button} bg-[#273c38] text-white hover:bg-[#1d302c] disabled:opacity-50`}>{busy ? t.reading : t.read}</button>}
       {result && result.term === term && okCount > 0 && (planCount ? <>
         <button type="button" onClick={() => load(true)} className={`${button} bg-[#273c38] text-white hover:bg-[#1d302c]`}>{t.replace}</button>
         <button type="button" onClick={() => load(false)} className={`${button} border border-[#536d64] bg-white text-[#273c38]`}>{t.add}</button>
       </> : <button type="button" onClick={() => load(true)} className={`${button} bg-[#273c38] text-white hover:bg-[#1d302c]`}>{t.load}</button>)}
       {result && result.term !== term && <>
-        {result.term < term && <button type="button" onClick={markTaken} className={`${button} bg-[#273c38] text-white hover:bg-[#1d302c]`}>{t.asTaken}</button>}
+        {result.term < term && <button type="button" onClick={markTaken} disabled={done.taken} className={`${button} border border-[#536d64] bg-white text-[#273c38] disabled:opacity-60`}>{done.taken ? "✓ " + t.takenMarked : t.asTaken}</button>}
         {okCount > 0 && <button type="button" onClick={() => load(true)} className={`${button} border border-[#536d64] bg-white text-[#273c38]`}>{t.switchLoad.replace("{term}", termName(result.term))}</button>}
       </>}
-      <button type="button" onClick={close} className={`${button} border border-[#d9d6ce] bg-white text-[#48534f]`}>{t.cancel}</button>
+      <button type="button" onClick={close} className={`${button} border border-[#d9d6ce] bg-white text-[#48534f]`}>{done.week || done.taken ? t.close : t.cancel}</button>
     </div>
   </div>;
 }

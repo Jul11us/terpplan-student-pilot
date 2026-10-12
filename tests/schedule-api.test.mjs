@@ -7,7 +7,7 @@ const makeSection = (course, number, start, end) => ({ section_id: `${course}-${
 
 test("the API rejects malformed constraints before loading course data", async () => {
   assert.equal((await POST(request(null))).status, 400);
-  const base = { term: "202608", courseIds: ["CMSC131"] };
+  const base = { term: "202601", courseIds: ["CMSC131"] };
   for (const preferences of [{ busyBlocks: [{ id: "x", days: [], start: "12:00", end: "13:00" }] }, { bufferMinutes: -1 }, { bufferMinutes: 1.5 }, { bufferMinutes: "15" }]) assert.equal((await POST(request({ ...base, preferences }))).status, 400);
   assert.equal((await POST(request({ ...base, mode: "alternatives", selectedSectionIds: [] }))).status, 400);
 });
@@ -26,7 +26,7 @@ test("the API integrates diagnostics, anonymous constraints, persisted pins and 
     return Response.json(match[2] ? courses[id] ?? [] : courses[id] ? [{ course_id: id, name: id, credits: "3" }] : []);
   };
   try {
-    const base = { term: "202608", courseIds: ["CMSC131", "MATH140"] };
+    const base = { term: "202601", courseIds: ["CMSC131", "MATH140"] };
     const blocked = await (await POST(request({ ...base, preferences: { excludedDays: ["Mon"] } }))).json();
     assert.ok(blocked.diagnostics.some((d) => d.code === "excludedDay"));
     assert.ok(blocked.repairs.some((r) => r.kind === "allowDay"));

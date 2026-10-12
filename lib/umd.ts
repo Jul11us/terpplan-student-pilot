@@ -3,10 +3,12 @@ import { parseGenEdGroups } from "@/lib/gened-categories";
 const UMDIO = "https://api.umd.io/v1";
 const TESTUDO = "https://app.testudo.umd.edu/soc";
 const TESTUDO_TERM = "202701";
-const TESTUDO_TERMS = [TESTUDO_TERM];
+// The term in progress is read from Testudo too: umd.io keeps sections' rooms from before they were moved
+// (Fall 2026 UMEI005 0201 and 0301 had their rooms swapped there), and My week needs the real rooms.
+const TESTUDO_TERMS = [TESTUDO_TERM, "202608"];
 const DEFAULT_TERM = TESTUDO_TERM;
 
-// Terms read from Testudo pages; other terms come from umd.io.
+// Terms read from Testudo pages; other (older) terms come from umd.io.
 export function isTestudoTerm(term: string) {
   return TESTUDO_TERMS.includes(term);
 }
@@ -279,7 +281,7 @@ async function getTestudoCourse(courseId: string, term: string) {
 }
 
 export async function getCourseSectionsSnapshot(courseId: string, term: string) {
-  if (term === TESTUDO_TERM) {
+  if (isTestudoTerm(term)) {
     const detail = await getTestudoCourse(courseId, term);
     return { sections: detail?.sections ?? [], seatCheckedAt: detail?.seatCheckedAt ?? null };
   }
@@ -292,7 +294,7 @@ export async function getCourseSections(courseId: string, term: string) {
 }
 
 export async function getCourse(courseId: string, term: string) {
-  if (term === TESTUDO_TERM) return getTestudoCourse(courseId, term);
+  if (isTestudoTerm(term)) return getTestudoCourse(courseId, term);
   const [coursePayload, sectionSnapshot] = await Promise.all([
     umdJson<unknown>(`/courses/${encodeURIComponent(courseId)}?semester=${encodeURIComponent(term)}`),
     getCourseSectionsSnapshot(courseId, term),
