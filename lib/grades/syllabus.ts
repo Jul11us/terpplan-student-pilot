@@ -216,6 +216,8 @@ function isPlausibleLabel(label: string): boolean {
   // "Roughly 30% of students earned an A last spring." — the label is a sentence opener, not a
   // category. Kept narrow so "Homework is worth 30% of your final grade" still reads as Homework.
   if (PROSE_OPENER_RE.test(l)) return false;
+  // A label that is nothing but letter grades ("D/F", "A") is a grade-distribution row, not work.
+  if (/^[a-f](?:[+-])?(?:\s+(?:and\s+)?[a-f](?:[+-])?)*$/.test(l)) return false;
   if (SCALE_HEADING_RE.test(l)) return false;
   if (/^(?:sub)?total\b/.test(l)) return false;
   if (SENTENCE_CUES.test(l)) return false;
@@ -243,7 +245,32 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Letter grades from best to worst. */
+const LETTER_ORDER = ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F"];
+
+/**
+ * A real cut-off table descends: the top letter has the highest floor, and no better letter sits
+ * below a worse one. "A 35%, B 40%, C 20%" fails on both counts, which is what keeps a sentence
+ * about last term's grade distribution out of the letter grader.
+ */
+function isMonotonicScale(entries: Array<LetterCut & { line?: number }>): boolean {
+  if (!entries.length) return false;
+  const sorted = [...entries].sort((a, b) => b.min - a.min);
+  if (sorted[0]!.min < 50) return false;
+  let lastIndex = -1;
+  for (const e of sorted) {
+    const idx = LETTER_ORDER.indexOf(e.letter);
+    if (idx === -1) return false;
+    if (idx < lastIndex) return false;
+    lastIndex = idx;
+  }
+  return true;
+}
+
 export type ScaleEntry = LetterCut;
+
+/** A cut-off plus the line it came from, so a scale heading can outrank a stray pair. */
+type FoundCut = LetterCut & { line?: number };
 
 /**
  * Pull (letter, minimum-percent) pairs out of the text. Scans comma/semicolon/tab-separated segments
@@ -255,7 +282,7 @@ export type ScaleEntry = LetterCut;
  */
 export function extractLetterScale(text: unknown): { scale: ScaleEntry[]; evidence: Array<{ line: number; text: string }>; confident: boolean } {
   const lines = toLines(text);
-  const found: ScaleEntry[] = [];
+  const found: FoundCut[] = [];
   const evidence: Array<{ line: number; text: string }> = [];
   const SEG_SPLIT = /\s*[,;|]\s*|\s{3,}/;
 
@@ -280,7 +307,16 @@ export function extractLetterScale(text: unknown): { scale: ScaleEntry[]; eviden
     { re: /^([A-F][+-]?)\s+(\d{1,3}(?:\.\d+)?)\s*%?(?:\s+\d(?:\.\d+)?)?$/i, min: (m) => num(m[2]) },
   ];
 
-  const seen = new Set<string>();
+  const scaleZone: boolean[] = [];
+  {
+    let inScale = false;
+    for (const raw of lines) {
+      const line = normaliseLine(raw);
+      if (SCALE_HEADING_RE.test(line) && line.length < 90) inScale = true;
+      else if (inScale && line.length > 0 && /^[A-Z][A-Za-z ]{3,60}$/.test(line) && !/\d/.test(line)) inScale = false;
+      scaleZone.push(inScale);
+    }
+  }
 
   lines.forEach((raw, lineIndex) => {
     const line = normaliseLine(raw);
@@ -297,9 +333,7 @@ export function extractLetterScale(text: unknown): { scale: ScaleEntry[]; eviden
           const letter = normaliseLetterToken(m[1]);
           const min = num(m[2]);
           if (!letter || min === null || min < 0 || min > 100) continue;
-          if (seen.has(letter)) continue;
-          seen.add(letter);
-          found.push({ letter, min });
+          found.push({ letter, min, line: lineIndex });
           evidence.push({ line: lineIndex, text: line });
         }
       }
@@ -323,9 +357,7 @@ export function extractLetterScale(text: unknown): { scale: ScaleEntry[]; eviden
         if (!letter) continue;
         const min = p.min(m);
         if (min === null || min < 0 || min > 100) continue;
-        if (seen.has(letter)) break;
-        seen.add(letter);
-        found.push({ letter, min });
+        found.push({ letter, min, line: lineIndex });
         evidence.push({ line: lineIndex, text: line });
         break;
       }
@@ -333,9 +365,26 @@ export function extractLetterScale(text: unknown): { scale: ScaleEntry[]; eviden
   });
 
   // A real scale has a spread of letters; reject fragments like a lone "A 90".
-  const looksReal = found.length >= 4 && new Set(found.map((f) => f.letter)).size >= 4;
-  if (!looksReal) return { scale: [], evidence: [], confident: false };
-  return { scale: found.sort((a, b) => b.min - a.min), evidence: evidence.slice(0, 16), confident: true };
+  const spread = (list: LetterCut[]) => list.length >= 4 && new Set(list.map((f) => f.letter)).size >= 4;
+  if (!spread(found)) return { scale: [], evidence: [], confident: false };
+
+  // Entries read under a scale heading win over pairs picked up elsewhere, which is how a
+  // distribution sentence ("…was A 35%, B 40%, C 20%") stops displacing the real table sitting
+  // below it — the pair scan runs first and `seen` would otherwise keep the stray value.
+  const inZone = (f: FoundCut) => f.line !== undefined && scaleZone[f.line] === true;
+  const byLetter = new Map<string, FoundCut>();
+  for (const f of found) {
+    const existing = byLetter.get(f.letter);
+    if (!existing || (inZone(f) && !inZone(existing))) byLetter.set(f.letter, f);
+  }
+  const deduped = [...byLetter.values()];
+  const underHeading = deduped.filter(inZone);
+  const chosen = spread(underHeading) ? underHeading : deduped;
+
+  // And the result has to descend: A's floor is the highest and the letters run down to F. A
+  // distribution sentence does not survive this, so a stray line cannot reach the letter grader.
+  if (!isMonotonicScale(chosen)) return { scale: [], evidence: [], confident: false };
+  return { scale: chosen.sort((a, b) => b.min - a.min) as ScaleEntry[], evidence: evidence.slice(0, 16), confident: true };
 }
 
 type Candidate = {
@@ -394,14 +443,28 @@ function extractWeightCandidates(text: unknown): Candidate[] {
 
   /** "Exams (3 x 15%)" — how many of a thing, and what each is worth. */
   const MULTIPLIER_RE = /\(\s*(\d{1,2})\s*[x×]\s*(\d{1,3}(?:\.\d+)?)\s*%\s*\)/i;
-  /** "Exams (70% total):" is a subtotal heading, not a category of its own. */
-  const SUBTOTAL_RE = /\(\s*\d{1,3}(?:\.\d+)?\s*%?\s*(?:sub)?total\s*\)|\b(?:sub)?total\s*[:=]?\s*$/i;
+  /**
+   * "Exams (70% total):" is a subtotal heading, not a category of its own.
+   *
+   * The bare "…total" form has to exclude weights phrased against the course total — "Homework 20%
+   * of total" is a row like any other, and matching it dropped every line of a scheme written that
+   * way, leaving the parser reporting no breakdown at all.
+   */
+  const SUBTOTAL_RE = /\(\s*\d{1,3}(?:\.\d+)?\s*%?\s*(?:sub)?total\s*\)/i;
+  const isSubtotalRow = (text: string): boolean => {
+    if (SUBTOTAL_RE.test(text)) return true;
+    if (!/\b(?:sub)?total\s*[:=]?\s*$/i.test(text)) return false;
+    return !/\bof\s+(?:the\s+|course\s+)?total\b/i.test(text);
+  };
+
+  /** Lines that already read as a complete row on their own. */
+  const producedOnLine = new Set<number>();
 
   const push = (s: string, lineIndex: number, fromProse: boolean) => {
     if (!s || s.length > 200) return;
 
     // A subtotal row restates what its components already said; counting it adds them twice.
-    if (SUBTOTAL_RE.test(s)) return;
+    if (isSubtotalRow(s)) return;
 
     // "…papers, which together are worth 45%, and a final 55%" — the relative clause describes the
     // thing before the comma, so it has to be read before the comma-split separates them.
@@ -459,6 +522,7 @@ function extractWeightCandidates(text: unknown): Candidate[] {
         if (p.unit === "pct" && value > 100) break;
         if (!isPlausibleLabel(label)) break;
         candidates.push({ name: label, value, unit: p.unit, line: lineIndex, inGradingZone: gradingZone[lineIndex] ?? false, fromProse, raw: s });
+        producedOnLine.add(lineIndex);
         break;
       }
     }
@@ -491,6 +555,14 @@ function extractWeightCandidates(text: unknown): Candidate[] {
   if (cur.length) blocks.push({ lines: cur, start: curStart });
 
   for (const b of blocks) {
+    // A block of short lines that each already read as their own row is a table, not a wrapped
+    // sentence. Joining it is what fused a heading onto the row beneath it ("Grading 25% Lab
+    // assignments") and carried a bracketed detail into the next row ("October 15) Final Exam
+    // 50%"). The word count matters: a line of real prose is long, and those still get joined.
+    const rows = b.lines.filter((_, i) => producedOnLine.has(b.start + i));
+    const allShort = rows.every((l) => l.split(/\s+/).filter(Boolean).length <= 6);
+    if (rows.length >= 2 && allShort) continue;
+
     const joined = b.lines.join(` ${SENTINEL} `);
     if (joined.length > 1600) continue;
     for (const sentence of joined.replace(/([.;!?])\s+/g, "$1\u0000").split("\u0000")) {

@@ -1447,3 +1447,68 @@ test("a relative clause gives its weight to the thing before the comma", () => {
   assert.deepEqual(counts.categories.map((c) => `${c.name}=${c.weight}`), ["Attendance and participation=10", "exams=90"]);
   assert.equal(counts.weightTotal, 100);
 });
+
+test("'20% of total' is a weight, not a subtotal", () => {
+  // The bare "…total" subtotal check matched every one of these and the scheme read as nothing.
+  const r = parse(`
+    Grading
+    Homework 20% of total
+    Quizzes 10% of total
+    Midterm 30% of total
+    Final 40% of total
+  `);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.categories.map((c) => `${c.name}=${c.weight}`),
+    ["Homework=20", "Quizzes=10", "Midterm=30", "Final=40"]);
+  assert.equal(r.weightTotal, 100);
+
+  // The parenthesised subtotal still is one.
+  const sub = parse("Exams (70% total):\nMidterm 1: 20%\nMidterm 2: 20%\nFinal: 30%");
+  assert.equal(sub.weightTotal, 70, "the subtotal row itself is still skipped");
+});
+
+test("a grade-distribution sentence is not read as the letter scale", () => {
+  const r = parse(`
+    Grading
+    Homework 30%
+    Midterm 30%
+    Final 40%
+
+    Last spring the grade distribution was A 35%, B 40%, C 20%, D/F 5%.
+
+    Grading Scale
+    A 90-100
+    B 80-89
+    C 70-79
+    D 60-69
+    F below 60
+  `);
+  assert.equal(r.scaleConfident, true);
+  const min = (letter) => r.letterScale.find((s) => s.letter === letter)?.min;
+  assert.equal(min("A"), 90, "the real table wins over the distribution sentence");
+  assert.equal(min("B"), 80);
+  assert.equal(min("D"), 60);
+  assert.ok(!r.letterScale.some((s) => s.letter === "A" && s.min === 35));
+
+  // "D/F 5%" must not become a category either.
+  assert.equal(r.weightTotal, 100, "the distribution sentence adds nothing");
+  assert.ok(!r.categories.some((c) => /^[a-f](\/[a-f])?$/i.test(c.name)), "no letter-grade category");
+  assert.deepEqual(r.categories.map((c) => c.name), ["Homework", "Midterm", "Final"]);
+});
+
+test("a table of short rows is not run together into one category", () => {
+  // "Exams — 60% total" was rejoined with the rows beneath it and read as a 60% category.
+  const dash = parse("Exams — 60% total\n  Midterm 20%\n  Final 40%");
+  assert.deepEqual(dash.categories.map((c) => `${c.name}=${c.weight}`), ["Midterm=20", "Final=40"]);
+  assert.equal(dash.weightTotal, 60);
+
+  // A heading directly above a percent-first row used to fuse onto it: "Grading 25%".
+  const heading = parse("Grading\n25% Lab assignments\nFinal 75%");
+  assert.deepEqual(heading.categories.map((c) => `${c.name}=${c.weight}`), ["Lab assignments=25", "Final=75"]);
+  assert.equal(heading.weightTotal, 100);
+
+  // A bracketed detail used to carry into the next row: "October 15) Final Exam 50%".
+  const bracket = parse("Midterm: 30% (in class, October 15)\nFinal Exam: 50%\nHomework 20%");
+  assert.deepEqual(bracket.categories.map((c) => `${c.name}=${c.weight}`), ["Midterm=30", "Final Exam=50", "Homework=20"]);
+  assert.equal(bracket.weightTotal, 100);
+});
