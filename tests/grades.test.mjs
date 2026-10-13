@@ -1297,3 +1297,153 @@ test("a bonus counts even without drop-lowest", () => {
   assert.equal(c.currentPct, 100, "the bonus offsets the two missed points exactly");
   assert.equal(c.droppedItems.length, 0);
 });
+
+test("an unweighted course matches Canvas mid-term, when not everything is graded", () => {
+  // Exam 1 scored 90/100, Exam 2 ungraded; Homework 10/100 and 10/100. Canvas counts the graded
+  // work only: 110/300 = 36.67%. Weighting each group by its total points gives 50% instead,
+  // because Exam 2's points inflate the Exam group even though it has no score yet.
+  const course = {
+    code: "UNWEIGHTED-MIDTERM",
+    weighted: false,
+    canvas: {
+      groups: [{ id: 1, name: "Exams", weight: null }, { id: 2, name: "Homework", weight: null }],
+      items: [
+        { id: 1, name: "Exam 1", assignment_group_id: 1, points_possible: 100, score: 90 },
+        { id: 2, name: "Exam 2", assignment_group_id: 1, points_possible: 100, score: null },
+        { id: 3, name: "HW 1", assignment_group_id: 2, points_possible: 100, score: 10 },
+        { id: 4, name: "HW 2", assignment_group_id: 2, points_possible: 100, score: 10 },
+      ],
+    },
+  };
+  const g = computeCourseGrade(course);
+  assert.equal(Math.round(g.current.pct * 100) / 100, 36.67, "matches Canvas's current score");
+  // Ceiling with everything ungraded at 100%: (110 + 100) / 400 = 52.5%
+  assert.equal(Math.round(g.projected.pct * 100) / 100, 52.5);
+
+  // Point weights are not percentages, so the "weights add up to 400%" warning must not fire.
+  assert.equal(g.warnings.some((w) => w.key === "warn.weightsNot100"), false,
+    "point totals are not a percentage scheme");
+  assert.ok(g.warnings.some((w) => w.key === "info.canvasNoWeights"), "but it does say Canvas is unweighted");
+});
+
+test("an unweighted course with everything graded still matches Canvas", () => {
+  const course = {
+    code: "UNWEIGHTED-FULL",
+    weighted: false,
+    canvas: {
+      groups: [{ id: 1, name: "Exams", weight: null }, { id: 2, name: "Homework", weight: null }],
+      items: [
+        { id: 1, name: "Exam", assignment_group_id: 1, points_possible: 100, score: 90 },
+        { id: 2, name: "HW 1", assignment_group_id: 2, points_possible: 100, score: 10 },
+        { id: 3, name: "HW 2", assignment_group_id: 2, points_possible: 100, score: 10 },
+      ],
+    },
+  };
+  const g = computeCourseGrade(course);
+  assert.equal(Math.round(g.current.pct * 100) / 100, 36.67);
+  assert.equal(g.warnings.some((w) => w.key === "warn.weightsNot100"), false);
+});
+
+/* ------------------------------------------------ review round 2: parsing --- */
+
+const parse = (text) => extractGradingScheme(text, { canonicalOf: canonicalCategory });
+
+test("roman numerals are ordinals, so exam I and exam II stay separate", () => {
+  const r = parse("Midterm exam I 20%\nMidterm exam II 20%\nFinal exam 60%");
+  assert.deepEqual(r.categories.map((c) => c.name),
+    ["Midterm exam I", "Midterm exam II", "Final exam"]);
+  assert.equal(r.weightTotal, 100, "the first midterm is no longer swallowed");
+});
+
+test("a letter scale opening with a heading still yields its first entry", () => {
+  const r = parse("Letter grades: A 93-100, A- 90-92, B+ 87-89, B 83-86, C 73-76");
+  assert.equal(r.scaleConfident, true);
+  const min = (letter) => r.letterScale.find((s) => s.letter === letter)?.min;
+  assert.equal(min("A"), 93, "A was lost behind the 'Letter grades:' heading");
+  assert.equal(min("A-"), 90);
+  assert.equal(min("B+"), 87);
+});
+
+test("a cut-off table collapsed onto one line is still read", () => {
+  // What pdfPageLines reconstructs from a 3x5 grid: one long run of LETTER PERCENT pairs.
+  const r = parse("A+ 97.00% B+ 87.00% C+ 77.00% D+ 67.00% F 0.00%");
+  assert.equal(r.scaleConfident, true);
+  const min = (letter) => r.letterScale.find((s) => s.letter === letter)?.min;
+  assert.equal(min("A+"), 97);
+  assert.equal(min("B+"), 87);
+  assert.equal(min("C+"), 77);
+  assert.equal(min("F"), 0);
+});
+
+test("a bracket inside a label is kept", () => {
+  const r = parse("Homework (5) 30%\nIn-class participation (Top Hat) 10%\nFinal exam 60%");
+  assert.deepEqual(r.categories.map((c) => c.name),
+    ["Homework (5)", "In-class participation (Top Hat)", "Final exam"]);
+  assert.equal(r.weightTotal, 100);
+});
+
+test("a label wholly wrapped in brackets still loses them", () => {
+  const r = parse("(Homework) 30%\n[Quizzes] 20%\nFinal exam 50%");
+  assert.deepEqual(r.categories.map((c) => c.name), ["Homework", "Quizzes", "Final exam"]);
+});
+
+test("a multiplier is expanded, and a stated total wins over it", () => {
+  const stated = parse("Exams (3 x 15%) 45%\nHomework 55%");
+  assert.deepEqual(stated.categories.map((c) => `${c.name}=${c.weight}`), ["Exams=45", "Homework=55"]);
+  assert.equal(stated.weightTotal, 100);
+
+  const each = parse("two midterm exams worth 20% each\nFinal 60%");
+  assert.deepEqual(each.categories.map((c) => `${c.name}=${c.weight}`), ["midterm exams=40", "Final=60"]);
+  assert.equal(each.weightTotal, 100);
+});
+
+test("a subtotal row is not counted on top of its parts", () => {
+  const r = parse("Exams (70% total):\nMidterm 1: 20%\nMidterm 2: 20%\nFinal: 30%");
+  assert.deepEqual(r.categories.map((c) => c.name), ["Midterm 1", "Midterm 2", "Final"]);
+  assert.equal(r.weightTotal, 70, "the subtotal is not added to its own components");
+});
+
+test("a sentence about a proportion is not read as a category", () => {
+  const r = parse(`
+    Roughly 30% of students earned an A last spring.
+    Grades are not curved.
+    Homework 40%
+    Final 60%
+  `);
+  assert.deepEqual(r.categories.map((c) => c.name), ["Homework", "Final"]);
+  assert.equal(r.weightTotal, 100);
+  // And a percentage stated in a sentence that names real work still reads.
+  const wrapped = parse(`
+    Assessment Overview
+    Homework is worth 30% of your final grade. The midterm exam is worth
+    30%, and the final exam is worth 40% of your final grade.
+  `);
+  assert.equal(wrapped.weightTotal, 100);
+  assert.ok(wrapped.categories.some((c) => c.name === "Homework"));
+});
+
+test("a parenthetical with extra detail keeps its label and weight", () => {
+  const r = parse("Grading\nProjects (40%, 400 pts)\nQuizzes (5%, 50 pts)\nFinal (55%, 550 pts)");
+  assert.deepEqual(r.categories.map((c) => `${c.name}=${c.weight}`), ["Projects=40", "Quizzes=5", "Final=55"]);
+  assert.equal(r.weightTotal, 100);
+});
+
+test("a drop rule on the same line attaches to that category", () => {
+  const best = parse("Homework (best 10 of 12) 20%\nFinal 80%");
+  assert.equal(best.categories[0].dropLowest, 2, "12 homework, best 10 kept, so 2 drop");
+  assert.equal(best.categories[1].dropLowest, 0);
+
+  const lowest = parse("Homework: 20% (lowest one dropped)\nFinal 80%");
+  assert.equal(lowest.categories[0].dropLowest, 1);
+  assert.equal(lowest.categories[1].dropLowest, 0);
+});
+
+test("a relative clause gives its weight to the thing before the comma", () => {
+  const together = parse("There are three short papers, which together are worth 45%, and a final 55%");
+  assert.deepEqual(together.categories.map((c) => `${c.name}=${c.weight}`), ["three short papers=45", "final=55"]);
+  assert.equal(together.weightTotal, 100);
+
+  const counts = parse("Attendance and participation, which counts for 10%, plus exams 90%");
+  assert.deepEqual(counts.categories.map((c) => `${c.name}=${c.weight}`), ["Attendance and participation=10", "exams=90"]);
+  assert.equal(counts.weightTotal, 100);
+});

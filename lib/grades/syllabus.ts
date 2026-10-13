@@ -141,21 +141,61 @@ function normaliseLine(line: string): string {
     .trim();
 }
 
+/**
+ * Remove brackets that are noise, and only those.
+ *
+ * A label wholly wrapped in brackets is noise — "(Homework)" is "Homework". A bracket inside the
+ * label is not: stripping the trailing ")" from "Homework (5)" left "Homework (5", and
+ * "In-class participation (Top Hat)" lost its closing bracket the same way.
+ */
+function stripUnbalanced(text: string, open: string, close: string): string {
+  let s = text.trim();
+  const count = (ch: string) => s.split(ch).length - 1;
+
+  // Wholly wrapped, so the brackets are decoration.
+  while (s.length > 2 && s.startsWith(open) && s.endsWith(close)) {
+    let depth = 0;
+    let wraps = true;
+    for (let i = 0; i < s.length; i++) {
+      if (s[i] === open) depth += 1;
+      else if (s[i] === close) {
+        depth -= 1;
+        if (depth === 0 && i < s.length - 1) { wraps = false; break; }
+      }
+    }
+    if (!wraps) break;
+    s = s.slice(1, -1).trim();
+  }
+
+  // A stray bracket with no partner is noise too, but a matched pair is part of the name.
+  while (s.startsWith(open) && count(open) > count(close)) s = s.slice(1).trim();
+  while (s.endsWith(close) && count(close) > count(open)) s = s.slice(0, -1).trim();
+  // "Projects (40%, 400 pts)" leaves a dangling "(" once the weight is taken out of it.
+  while (s.endsWith(open) && count(open) > count(close)) s = s.slice(0, -1).trim();
+  return s;
+}
+
 function stripLabel(label: string): string {
   let s = String(label ?? "");
   s = s.replace(LIST_PREFIX_RE, "");
   s = s.replace(/^[\s:;,.\-–—]+/, "");
   s = s.replace(/[\s:;,.\-–—]+$/, "");
-  s = s.replace(/^\(+/, "").replace(/\)+$/, "");
-  s = s.replace(/^\[+/, "").replace(/\]+$/, "");
+  s = stripUnbalanced(s, "(", ")");
+  s = stripUnbalanced(s, "[", "]");
   s = s.replace(TRAILING_NOISE_RE, "");
   s = s.replace(/\s+/g, " ").trim();
-  // A leading article is prose, not part of the category name.
+  // A leading article or conjunction is prose, not part of the category name.
+  s = s.replace(/^(?:and|or|plus|also)\s+/i, "");
   s = s.replace(/^(?:the|a|an|your|my|our)\s+/i, "");
-  // A trailing parenthetical that only restates the weight is noise.
-  s = s.replace(/\s*\((?:about\s+)?\d{1,3}(?:\.\d+)?\s*%?\)\s*$/i, "").trim();
+  // A trailing parenthetical that restates the weight is noise — but only when it says so. A bare
+  // number is more often a count ("Homework (5)" is five assignments), and truncating the label
+  // loses information the student needs to check the parse.
+  s = s.replace(/\s*\((?:about\s+)?\d{1,3}(?:\.\d+)?\s*%\)\s*$/i, "").trim();
   return s;
 }
+
+/** Openers that begin a sentence about a proportion, never a category name. */
+const PROSE_OPENER_RE = /^(?:roughly|about|approximately|approx|nearly|almost|around|only|just|over|under|more|less|most|many|some|few|at\s+least|at\s+most|up\s+to|no\s+more\s+than|no\s+less\s+than)\b/;
 
 function isPlausibleLabel(label: string): boolean {
   if (!label) return false;
@@ -173,6 +213,9 @@ function isPlausibleLabel(label: string): boolean {
   if (hasCJK(l) && l.replace(/[^\u3400-\u4dbf\u4e00-\u9fff]/g, "").length > 12) return false;
   if (NON_CATEGORY_LABELS.has(l)) return false;
   if (HEADING_LABEL_RE.test(l)) return false;
+  // "Roughly 30% of students earned an A last spring." — the label is a sentence opener, not a
+  // category. Kept narrow so "Homework is worth 30% of your final grade" still reads as Homework.
+  if (PROSE_OPENER_RE.test(l)) return false;
   if (SCALE_HEADING_RE.test(l)) return false;
   if (/^(?:sub)?total\b/.test(l)) return false;
   if (SENTENCE_CUES.test(l)) return false;
@@ -242,7 +285,35 @@ export function extractLetterScale(text: unknown): { scale: ScaleEntry[]; eviden
   lines.forEach((raw, lineIndex) => {
     const line = normaliseLine(raw);
     if (!line || line.length > 220) return;
-    for (const segment of line.split(SEG_SPLIT)) {
+
+    // A cut-off table whose columns normalising has already collapsed into one line:
+    // "A+ 97.00% B+ 87.00% C+ 77.00% …". Splitting cannot recover it, so the pairs are picked out
+    // directly. Three pairs across at least two letters is not something prose does by accident.
+    {
+      const pairs = [...line.matchAll(/\b([A-F][+-]?)\s*[:=]?\s*(\d{1,3}(?:\.\d+)?)\s*%/gi)];
+      const letters = new Set(pairs.map((m) => m[1]!.toUpperCase()));
+      if (pairs.length >= 3 && letters.size >= 2) {
+        for (const m of pairs) {
+          const letter = normaliseLetterToken(m[1]);
+          const min = num(m[2]);
+          if (!letter || min === null || min < 0 || min > 100) continue;
+          if (seen.has(letter)) continue;
+          seen.add(letter);
+          found.push({ letter, min });
+          evidence.push({ line: lineIndex, text: line });
+        }
+      }
+    }
+
+    // The segments of a line, plus the tail of any "heading: rest" opening — the letter-first
+    // patterns are anchored, so "Letter grades: A 93-100" used to lose its A and leave 95%
+    // matching A- instead.
+    const segments = line.split(SEG_SPLIT).flatMap((part) => {
+      const colon = part.lastIndexOf(":");
+      return colon >= 0 ? [part, part.slice(colon + 1)] : [part];
+    });
+
+    for (const segment of segments) {
       const s = segment.trim();
       if (!s || s.length > 40) continue;
       for (const p of patterns) {
@@ -292,11 +363,18 @@ function extractWeightCandidates(text: unknown): Candidate[] {
     gradingZone.push(inZone);
   });
 
-  const weightPatterns: Array<{ re: RegExp; unit: "pct" | "pts"; swap?: boolean }> = [
-    // Homework (20%)
-    { re: /^(.{2,64}?)\s*\(\s*(\d{1,3}(?:\.\d+)?)\s*(?:%|percent\b)\s*\)/i, unit: "pct" },
+  const weightPatterns: Array<{ re: RegExp; unit: "pct" | "pts"; swap?: boolean; each?: boolean }> = [
+    // Homework (20%)   /   Projects (40%, 400 pts)
+    // The bracket may carry more than the percentage, so it is closed only after any trailing
+    // detail — "(40%, 400 pts)" used to match nothing at all, and the row was lost.
+    { re: /^(.{2,64}?)\s*[\(\[]\s*(\d{1,3}(?:\.\d+)?)\s*(?:%|percent\b)[^)\]]*[)\)\]]/i, unit: "pct" },
     // Homework: 20%   /   Homework – 20 %
     { re: /^(.{2,64}?)\s*[:=–—]\s*(\d{1,3}(?:\.\d+)?)\s*(?:%|percent\b)/i, unit: "pct" },
+    // two midterm exams worth 20% each — the count is in the label, so the total is the product.
+    { re: /^(.{2,64}?)\s+worth\s+(\d{1,3}(?:\.\d+)?)\s*(?:%|percent\b)\s*each\b/i, unit: "pct", each: true },
+    // Papers, which together are worth 45%   /   participation, which counts for 10%
+    // The weight belongs to the thing before the comma, not to "which together".
+    { re: /^(.{2,64}?),?\s+which\s+(?:together\s+)?(?:are\s+|is\s+|counts?\s+|count\s+)?(?:worth|for)\s+(\d{1,3}(?:\.\d+)?)\s*(?:%|percent\b)/i, unit: "pct" },
     // Homework is worth 20%
     { re: /^(.{2,64}?)\s+(?:is\s+|are\s+)?worth\s+(\d{1,3}(?:\.\d+)?)\s*(?:%|percent\b)/i, unit: "pct" },
     // Homework 20%
@@ -305,8 +383,8 @@ function extractWeightCandidates(text: unknown): Candidate[] {
     // making it non-capturing silently shifts the label to m[2] and drops every leading-percentage
     // line. Caught by tests/grades.test.mjs — do not "tidy" it.
     { re: /^(\d{1,3}(?:\.\d+)?)\s*(%|percent)\s*[-–—:]?\s*(.{2,64})$/i, unit: "pct", swap: true },
-    // Homework (200 points)
-    { re: /^(.{2,64}?)\s*[\(\[]?\s*(\d{1,4})\s*(?:pts?|points?)\s*[\)\]]?/i, unit: "pts" },
+    // Homework (200 points)   /   Projects (400 pts total)
+    { re: /^(.{2,64}?)\s*[\(\[]?\s*(\d{1,4})\s*(?:pts?|points?)\b[^)\]]*[)\)\]]?/i, unit: "pts" },
     // Homework: 200 points
     { re: /^(.{2,64}?)\s*[:=–—]\s*(\d{1,4})\s*(?:pts?|points?)\b/i, unit: "pts" },
     // 作业20% — Chinese types no space before the figure. Last, so it only takes lines the patterns
@@ -314,22 +392,70 @@ function extractWeightCandidates(text: unknown): Candidate[] {
     { re: /^([^\d]{2,30}?)\s*(\d{1,3}(?:\.\d+)?)\s*(?:%|percent\b|分)/, unit: "pct" },
   ];
 
+  /** "Exams (3 x 15%)" — how many of a thing, and what each is worth. */
+  const MULTIPLIER_RE = /\(\s*(\d{1,2})\s*[x×]\s*(\d{1,3}(?:\.\d+)?)\s*%\s*\)/i;
+  /** "Exams (70% total):" is a subtotal heading, not a category of its own. */
+  const SUBTOTAL_RE = /\(\s*\d{1,3}(?:\.\d+)?\s*%?\s*(?:sub)?total\s*\)|\b(?:sub)?total\s*[:=]?\s*$/i;
+
   const push = (s: string, lineIndex: number, fromProse: boolean) => {
     if (!s || s.length > 200) return;
-    const hits = (s.match(/%|percent/gi) ?? []).length;
-    const pieces = hits > 1 ? s.split(/\s*(?:,|;|\band\b)\s*/i) : [s];
+
+    // A subtotal row restates what its components already said; counting it adds them twice.
+    if (SUBTOTAL_RE.test(s)) return;
+
+    // "…papers, which together are worth 45%, and a final 55%" — the relative clause describes the
+    // thing before the comma, so it has to be read before the comma-split separates them.
+    let work = s;
+    const relative = work.match(/^(.{2,64}?),\s+which\s+(?:together\s+)?(?:are\s+|is\s+|counts?\s+|count\s+)?(?:worth|for)\s+(\d{1,3}(?:\.\d+)?)\s*(?:%|percent\b)/i);
+    if (relative) {
+      const label = stripLabel(relative[1]!.replace(/^(?:there\s+(?:are|is)|this\s+course\s+has|the\s+course\s+has)\s+/i, ""));
+      const value = num(relative[2]);
+      if (label && value !== null && value > 0 && value <= 100 && isPlausibleLabel(label)) {
+        candidates.push({ name: label, value, unit: "pct", line: lineIndex, inGradingZone: gradingZone[lineIndex] ?? false, fromProse, raw: s });
+      }
+      work = work.slice(relative[0].length).replace(/^\s*(?:,|;|\band\b|\bplus\b)\s*/i, " ");
+    }
+
+    const hits = (work.match(/%|percent/gi) ?? []).length;
+    const pieces = hits > 1 ? work.split(/\s*(?:,|;|\band\b|\bplus\b)\s*/i) : [work];
 
     for (const piece of pieces) {
       const seg = piece.trim();
       if (!seg || seg.length > 120) continue;
+
+      // "Exams (3 x 15%) 45%" states the multiplier and then the total; the total wins. When no
+      // total is given — "two midterm exams worth 20% each" — the multiplier is the total.
+      const mult = seg.match(MULTIPLIER_RE);
+      if (mult) {
+        const count = num(mult[1]);
+        const each = num(mult[2]);
+        const after = seg.slice((mult.index ?? 0) + mult[0].length);
+        const totalPct = after.match(/(\d{1,3}(?:\.\d+)?)\s*(?:%|percent\b)/i);
+        const name = stripLabel(seg.slice(0, mult.index ?? 0));
+        const value = totalPct ? num(totalPct[1]) : count !== null && each !== null ? count * each : null;
+        if (name && value !== null && value > 0 && value <= 100 && isPlausibleLabel(name)) {
+          candidates.push({ name, value, unit: "pct", line: lineIndex, inGradingZone: gradingZone[lineIndex] ?? false, fromProse, raw: seg });
+          break;
+        }
+      }
+
       for (const p of weightPatterns) {
         const m = seg.match(p.re);
         if (!m) continue;
         const rawLabel = p.swap ? m[3]! : m[1]!;
         const rawValue = p.swap ? m[1]! : m[2]!;
-        const label = stripLabel(rawLabel);
-        const value = num(rawValue);
+        let label = stripLabel(rawLabel);
+        let value = num(rawValue);
         if (value === null || value <= 0) break;
+        if (p.each) {
+          // "two midterm exams worth 20% each" is 40% of the grade in total.
+          const lead = label.match(/^(one|two|three|four|five|six|\d{1,2})\b/i);
+          const n = lead ? (WORD_COUNTS[lead[1]!.toLowerCase()] ?? parseInt(lead[1]!, 10)) : null;
+          if (n && Number.isFinite(n) && n > 1) {
+            value *= n;
+            label = stripLabel(label.slice(lead![0].length));
+          }
+        }
         if (p.unit === "pct" && value > 100) break;
         if (!isPlausibleLabel(label)) break;
         candidates.push({ name: label, value, unit: p.unit, line: lineIndex, inGradingZone: gradingZone[lineIndex] ?? false, fromProse, raw: s });
@@ -463,6 +589,30 @@ export function extractDropRules(text: unknown): DropRule[] {
   return rules;
 }
 
+/**
+ * A drop phrase sitting on the same line as a category belongs to that category.
+ *
+ * "Homework (best 10 of 12) 20%" and "Homework: 20% (lowest one dropped)" both state their rule
+ * inline, where the document-wide scan cannot attribute it — the first has no "drop" verb at all,
+ * and the second's captured subject comes out as "one".
+ */
+export function dropCountFromLine(line: string): number {
+  const text = String(line ?? "");
+  const best = text.match(/\bbest\s+(\d{1,3})\s+of\s+(\d{1,3})\b/i);
+  if (best) {
+    const keep = parseInt(best[1]!, 10);
+    const total = parseInt(best[2]!, 10);
+    if (total > keep && keep >= 1) return Math.min(5, total - keep);
+  }
+  const lowest = text.match(/\b(?:lowest|low|worst|smallest)\s+(one|two|three|four|five|\d{1,2})\b/i);
+  if (lowest && /drop|discard|exclud/i.test(text)) {
+    const w = lowest[1]!.toLowerCase();
+    const n = WORD_COUNTS[w] ?? parseInt(w, 10);
+    if (Number.isFinite(n) && n > 0) return Math.min(5, n);
+  }
+  return 0;
+}
+
 export function dropRuleForCategory(catName: string, rules: DropRule[]): number {
   const bucket = canonicalCategory(catName);
   const words = String(catName).toLowerCase();
@@ -577,7 +727,7 @@ export function extractGradingScheme(text: unknown, opts: { canonicalOf?: (s: un
       weight,
       unit: "pct",
       bucket,
-      dropLowest: dropRuleForCategory(c.name, dropRules),
+      dropLowest: dropRuleForCategory(c.name, dropRules) || dropCountFromLine(c.raw),
       confidence: Math.round(Math.max(0.2, Math.min(0.98, confidence)) * 100) / 100,
       evidence: { line: c.line, text: c.raw },
       derivedFromPoints: c.derivedFromPoints ?? null,

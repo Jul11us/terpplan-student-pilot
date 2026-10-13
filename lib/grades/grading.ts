@@ -219,14 +219,35 @@ export function categorySimilarity(a: unknown, b: unknown): number {
  * Deliberately stricter than categorySimilarity and blind to the synonym buckets: "Midterm Exam 1"
  * and "Midterm Exam 2" are both 15%, both in the `exam` bucket, and are emphatically not one row.
  */
+/** Roman numerals as far as an exam numbering realistically goes. */
+const ROMAN_VALUES: Record<string, number> = {
+  i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9, x: 10,
+  xi: 11, xii: 12,
+};
+
+/**
+ * The ordinal markers in a label: digits anywhere, plus a trailing roman numeral.
+ *
+ * "Midterm exam I" and "Midterm exam II" differ only by that numeral, and without it the
+ * containment check below sees "midterm exam ii".includes("midterm exam i") and merges the two —
+ * which silently deletes one midterm and leaves the scheme at 80%. Only a *trailing* roman counts,
+ * so a word that merely contains i/v/x letters is not mistaken for an ordinal.
+ */
+function ordinals(label: string): string {
+  const digits = label.match(/\d+/g) ?? [];
+  const roman = label.match(/\b([ivx]{1,4})\b[\s.,:;)\]]*$/);
+  const value = roman ? ROMAN_VALUES[roman[1]!] : undefined;
+  return [...digits, ...(value !== undefined ? [String(value)] : [])].join(",");
+}
+
 export function labelsAreSameWork(a: unknown, b: unknown): boolean {
   const na = normaliseLabel(a);
   const nb = normaliseLabel(b);
   if (!na || !nb) return false;
   if (na === nb) return true;
 
-  // Differing numbers always mean different work ("Quiz 1" vs "Quiz 2").
-  if ((na.match(/\d+/g) ?? []).join(",") !== (nb.match(/\d+/g) ?? []).join(",")) return false;
+  // Differing ordinals always mean different work ("Quiz 1" vs "Quiz 2", "Exam I" vs "Exam II").
+  if (ordinals(na) !== ordinals(nb)) return false;
   if (na.includes(nb) || nb.includes(na)) return true;
 
   const ta = new Set(tokens(a));
@@ -365,12 +386,12 @@ export type GradeResult = {
 };
 
 /** A confirmed syllabus scheme wins; otherwise fall back to Canvas's own assignment groups. */
-export function resolveCategories(course: GradeCourse): { categories: SchemeCategory[]; source: "syllabus" | "canvas" | "none" } {
+export function resolveCategories(course: GradeCourse): { categories: SchemeCategory[]; source: "syllabus" | "canvas" | "none"; pointsMode: boolean } {
   const scheme = course.scheme;
   // A hand-entered scheme and one read from a syllabus are the same thing here: confirmed weights
   // the student owns. Only "did these come from Canvas or from you?" matters downstream.
   if (scheme?.categories?.length) {
-    return { categories: scheme.categories, source: scheme.source === "canvas" ? "canvas" : "syllabus" };
+    return { categories: scheme.categories, source: scheme.source === "canvas" ? "canvas" : "syllabus", pointsMode: false };
   }
 
   const groups = course.canvas?.groups ?? [];
@@ -401,6 +422,7 @@ export function resolveCategories(course: GradeCourse): { categories: SchemeCate
     const byPoints = usePoints && pointsSum > 0;
     return {
       source: "canvas",
+      pointsMode: byPoints,
       categories: groups.map((g, i) => ({
         id: `grp-${g.id}`,
         name: g.name || `Group ${i + 1}`,
@@ -416,7 +438,7 @@ export function resolveCategories(course: GradeCourse): { categories: SchemeCate
       })),
     };
   }
-  return { source: "none", categories: [{ id: "all", name: "All work", weight: 100, dropLowest: 0, canvasGroupIds: [], canvasGroupId: null, confidence: 1 }] };
+  return { source: "none", pointsMode: false, categories: [{ id: "all", name: "All work", weight: 100, dropLowest: 0, canvasGroupIds: [], canvasGroupId: null, confidence: 1 }] };
 }
 
 export function computeCourseGrade(course: GradeCourse, settings: { ungradedFillPercent?: number } = {}): GradeResult {
@@ -425,7 +447,7 @@ export function computeCourseGrade(course: GradeCourse, settings: { ungradedFill
     : DEFAULT_FILL_PERCENT;
 
   const warnings: GradeWarning[] = [];
-  const { categories: rawCats, source } = resolveCategories(course);
+  const { categories: rawCats, source, pointsMode } = resolveCategories(course);
 
   const allCanvasItems = (course.canvas?.items ?? []).map(canvasItemToEngine);
   const manualItems = (course.manualItems ?? []).map(manualItemToEngine);
@@ -559,13 +581,44 @@ export function computeCourseGrade(course: GradeCourse, settings: { ungradedFill
     return den > 0 ? num / den : null;
   };
 
-  const currentRaw = weighted((c) => c.currentPct);
-  const projectedRaw = weighted((c) => c.projectedPct);
+  // In points mode the weighted aggregation is simply wrong, and so is the 100% check that goes
+  // with it. Weighting groups by their total points only reproduces Canvas once everything is
+  // graded: with Exam 1 at 90/100 and Exam 2 ungraded, Canvas counts 300 points possible across
+  // the graded work (110/300 = 36.67%), while 200-point Exam and Homework groups each scoring
+  // their own graded items give 50%. Canvas has no notion of a group percentage here at all, so
+  // neither do we — the totals are computed straight off the items.
+  const pointsTotals = (() => {
+    if (!pointsMode) return null;
+    let earned = 0;
+    let gradedPossible = 0;
+    let ungradedPossible = 0;
+    for (const it of [...allCanvasItems, ...manualItems]) {
+      const possible = it.possible ?? 0;
+      if (it.earned === null) {
+        if (possible > 0) ungradedPossible += possible;
+        continue;
+      }
+      earned += it.earned;
+      if (possible > 0) gradedPossible += possible;
+    }
+    return { earned, gradedPossible, ungradedPossible };
+  })();
+
+  const currentRaw = pointsTotals
+    ? (pointsTotals.gradedPossible > 0 ? (pointsTotals.earned / pointsTotals.gradedPossible) * 100 : null)
+    : weighted((c) => c.currentPct);
+  const projectedRaw = pointsTotals
+    ? (() => {
+        const total = pointsTotals.gradedPossible + pointsTotals.ungradedPossible;
+        if (total <= 0) return null;
+        return ((pointsTotals.earned + (fill * pointsTotals.ungradedPossible) / 100) / total) * 100;
+      })()
+    : weighted((c) => c.projectedPct);
   const currentCovered = categories.reduce((s, c) => (c.currentPct !== null ? s + c.weight : s), 0);
   const round2 = (x: number | null) => (x === null ? null : Math.round(x * 100) / 100);
 
   // Each warning carries a stable key for translation plus ready-made English text.
-  if (weightTotal > 0 && Math.abs(weightTotal - 100) > 0.51) {
+  if (!pointsMode && weightTotal > 0 && Math.abs(weightTotal - 100) > 0.51) {
     warnings.push({
       level: "warn",
       key: "warn.weightsNot100",

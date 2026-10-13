@@ -98,11 +98,12 @@ const copy = {
     disclaimerBody: "The percentages and GPA here are estimates, worked out from the syllabus weights and Canvas scores you supply. They cannot be guaranteed to match your final result. Your official UMD transcript on Testudo is what counts.",
     disclaimerCompact: "For self-assessment only, and not guaranteed to match your final result — your official UMD transcript is authoritative.",
     remap: "Match to Canvas again", remapHint: "Re-run the automatic matching after renaming a category.",
+    totalHint: "A total other than 100% usually means something was missed — check it against the syllabus before confirming.",
     noToken: "Map Canvas in one click",
     noTokenWhy: "This is the route that works at UMD. Many universities — UMD included — stop students creating their own Canvas API tokens, so the “+ New Access Token” button is greyed out with an ⓘ you cannot dismiss. That block is on creating a token, not on using the Canvas API: the same endpoints Canvas's own pages call will answer a request from your signed-in Canvas tab. So the bookmark reads your data directly, with no token and no password leaving your browser.",
     noTokenPolicy: "This is a policy, not a fault on your side — no browser setting, extension, or retry will change it.",
     step1: "Drag this button to your bookmarks bar — one time only.",
-    dragInstead: "That button is a bookmark, not a link: drag it to your bookmarks bar, then use it while you are on Canvas.", dragHint: "If the bar is hidden, press ⌥⌘B (Chrome) or ⇧⌘B (Safari). On a phone or tablet, use the console method below.",
+    dragInstead: "That button is a bookmark, not a link: drag it to your bookmarks bar, then use it while you are on Canvas.", dragHint: "If the bar is hidden, press ⌥⌘B (Chrome) or ⇧⌘B (Safari). This needs a desktop browser — phones and tablets have no bookmarks bar and no DevTools console, so add courses by hand there instead.",
     step2: "Open umd.instructure.com, sign in as usual, then click the bookmark. TerpPlan opens in a new tab with your courses already mapped. No file to download, no token, nothing to type.",
     fileSummary: "Bookmark blocked? Use a file instead",
     fileWhy: "A strict Content-Security-Policy can block bookmarklets. This route always works: the same script saves a file, and you import it by hand.",
@@ -181,11 +182,12 @@ const copy = {
     disclaimerBody: "这里的百分比与 GPA 是按你提供的大纲权重和 Canvas 分数推算出的估计值，无法保证与最终结果完全一致。请以 UMD 官方成绩单（Testudo）为准。",
     disclaimerCompact: "仅供自我评估参考，无法保证与最终结果完全一致 —— 请以 UMD 官方成绩单为准。",
     remap: "重新自动匹配", remapHint: "改过类别名之后，可重新跑一次自动匹配。",
+    totalHint: "合计不等于 100% 通常意味着漏读了内容 —— 确认前请对照大纲核对一下。",
     noToken: "一键映射 Canvas",
     noTokenWhy: "这是 UMD 下真正可行的路子。很多高校（包括 UMD）禁止学生自行创建 Canvas API 令牌，「+ 创建新访问许可证」按钮因此是灰的，并挂着一个关不掉的 ⓘ 说明。但被禁的是「创建令牌」，不是「使用 Canvas API」—— Canvas 自己页面调用的那些接口，从你已登录的 Canvas 标签页发请求同样会正常响应。所以书签可以直接读取你的数据，全程不需要令牌，密码也不会离开你的浏览器。",
     noTokenPolicy: "这是学校策略，不是你这边的问题 —— 换浏览器、关扩展、反复重试都不会有变化。",
     step1: "把这个按钮拖到你的书签栏 —— 只需做这一次。",
-    dragInstead: "这个按钮是书签而不是链接：把它拖到书签栏，然后在 Canvas 页面上使用。", dragHint: "书签栏没显示就按 ⌥⌘B（Chrome）或 ⇧⌘B（Safari）。手机或平板请改用下面的控制台方式。",
+    dragInstead: "这个按钮是书签而不是链接：把它拖到书签栏，然后在 Canvas 页面上使用。", dragHint: "书签栏没显示就按 ⌥⌘B（Chrome）或 ⇧⌘B（Safari）。这一步需要桌面浏览器 —— 手机和平板既没有书签栏也没有开发者工具控制台，在那些设备上请改用手动添加课程。",
     step2: "打开 umd.instructure.com，照常登录，然后点一下书签 —— TerpPlan 会在新标签页里打开，课程已经映射好了。不用下载文件、不用令牌、什么都不用输。",
     fileSummary: "书签被拦住了？改用文件",
     fileWhy: "严格的 Content-Security-Policy 会屏蔽书签小工具。这条路径永远可用：同一个脚本保存一个文件，你手动导入。",
@@ -891,6 +893,33 @@ function CourseDetail({
               </li>
             ))}
           </ul>
+
+          {/* Shown before the student confirms: a scheme that does not add up is the cheapest
+              possible signal that the parser misread something, and most misreads do not add up.
+              Afterwards it is buried in the course, if they open it at all. */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className={`rounded-lg px-2 py-1 text-xs font-semibold ${
+              Math.abs(parsed.weightTotal - 100) > 1
+                ? "bg-[#fff5f1] text-[#8f3f30]"
+                : "bg-[#edf3ef] text-[#315c43]"
+            }`}>
+              {t.total}: {parsed.weightTotal}%
+            </span>
+            {parsed.categories.length > 0 && (
+              <span className="text-[11px] text-[#7a817d]">{t.totalHint}</span>
+            )}
+          </div>
+
+          {parsed.warnings.filter((w) => w.level !== "info").length > 0 && (
+            <ul className="mt-2 space-y-1">
+              {parsed.warnings.filter((w) => w.level !== "info").map((w, i) => (
+                <li key={i} className="rounded-lg border border-[#e3c4bb] bg-white px-2 py-1.5 text-[11px] text-[#8f3f30]">
+                  {w.text}
+                </li>
+              ))}
+            </ul>
+          )}
+
           {parsed.letterScale.length > 0 ? (
             <p className="mt-2 text-xs text-[#48534f]">{t.scaleRead}: {parsed.letterScale.map((s) => `${s.letter}≥${s.min}`).join(", ")}</p>
           ) : (
