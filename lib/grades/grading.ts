@@ -90,7 +90,14 @@ export type EngineItem = {
 // Synonym buckets. A Canvas group called "Problem Sets" and a syllabus row called "Homework" are
 // the same thing; so are 作业 and 习题.
 export const CATEGORY_SYNONYMS: Readonly<Record<string, readonly string[]>> = {
-  homework: ["homework", "hw", "problem set", "problem sets", "problemset", "pset", "psets", "assignment", "assignments", "exercises", "exercise", "written work", "webassign", "mymathlab", "achieve",
+  // Textbook and submission platforms belong here rather than in a bucket of their own: when a
+  // syllabus says "Connect SmartBook Exercises 15%" or "ALEKS Homework 10%", the work being
+  // described is homework, and the platform name is often the only word the Canvas group shares
+  // with it. Leaving them out is what made real UMD courses fail to map automatically.
+  homework: ["homework", "hw", "problem set", "problem sets", "problemset", "pset", "psets", "assignment", "assignments", "exercises", "exercise", "written work", "submissions", "coursework", "course work",
+    "connect", "connect math", "smartbook", "connect smartbook", "learnsmart", "mcgraw-hill", "mcgraw hill", "mcgraw-hill connect", "aleks", "mymathlab", "mylab", "mylab math", "mastering", "pearson", "revel", "mathxl",
+    "zybooks", "zybook", "zyante", "webassign", "webwork", "lon-capa", "loncapa", "edfinity", "sapling", "achieve", "cengage", "mindtap", "aplia", "owlv2", "wiley", "wileyplus", "wiley plus", "launchpad", "macmillan",
+    "gradescope", "crowdmark", "codio", "prairielearn", "prairie learn", "respondus",
     "作业", "习题", "平时作业", "课后作业", "练习"],
   quiz: ["quiz", "quizzes", "weekly quiz", "reading quiz", "pop quiz", "checkpoint", "checkpoints",
     "小测", "随堂测验", "测验", "课堂测验"],
@@ -98,18 +105,19 @@ export const CATEGORY_SYNONYMS: Readonly<Record<string, readonly string[]>> = {
     "期中", "期中考试", "月考", "考试", "阶段测验"],
   final: ["final", "finals", "final exam", "cumulative final",
     "期末", "期末考试", "期末考"],
-  project: ["project", "projects", "term project", "group project", "capstone", "design project",
-    "项目", "课程项目", "大作业", "课程设计"],
+  project: ["project", "projects", "term project", "group project", "capstone", "design project", "group work", "groupwork", "team project", "teamwork", "group assignment",
+    "项目", "课程项目", "大作业", "课程设计", "小组作业"],
   paper: ["paper", "papers", "essay", "essays", "writing", "written assignment", "composition", "report", "reports", "term paper",
     "论文", "报告", "小论文", "写作", "读书报告"],
   lab: ["lab", "labs", "laboratory", "lab report", "lab reports", "practical", "experiment", "experiments",
     "实验", "实验报告", "上机", "实践"],
   prelab: ["prelab", "pre-lab", "pre lab", "preparation", "预习", "实验预习"],
   participation: ["participation", "attendance", "engagement", "in-class", "in class", "discussion", "discussions", "section", "seminar", "classwork", "studio", "effort",
+    "top hat", "tophat", "packback", "yellowdig", "piazza", "campuswire", "iclicker", "clicker",
     "参与", "出勤", "课堂参与", "平时表现", "讨论", "课堂讨论", "考勤"],
   presentation: ["presentation", "presentations", "oral", "oral exam", "speech", "demo", "demonstration",
     "演示", "汇报", "口头报告", "答辩"],
-  reading: ["reading", "readings", "response", "responses", "reflection", "journal",
+  reading: ["reading", "readings", "response", "responses", "reflection", "journal", "annotations", "annotation", "perusall",
     "阅读", "读书笔记", "反思"],
   portfolio: ["portfolio", "eportfolio", "作品集", "档案袋"],
 };
@@ -233,10 +241,16 @@ export function labelsAreSameWork(a: unknown, b: unknown): boolean {
  * category: a syllabus listing "Midterm Exam 1 15%" and "Midterm Exam 2 15%" against a single Canvas
  * "Midterms" group is normal, and the two are separated at the item level in computeCourseGrade.
  */
+/**
+ * Group names that carry no information about *what* the work is — Canvas's default "Assignments",
+ * and the handful of catch-all names instructors use instead.
+ */
+const GENERIC_GROUP_RE = /^(?:assignment|assignments|coursework|course work|all work|all assignments|course total|gradebook|grades|general|other|misc|miscellaneous|unassigned)$/i;
+
 export function autoMapCategories(
   categories: Array<{ id: string; name: string }>,
   groups: CanvasGroup[],
-): Record<string, { groupId: number; confidence: number }> {
+): Record<string, { groupId: number; confidence: number; generic?: boolean }> {
   const pairs: Array<{ catId: string; groupId: number; score: number }> = [];
   for (const c of categories) {
     for (const g of groups) pairs.push({ catId: c.id, groupId: g.id, score: categorySimilarity(c.name, g.name) });
@@ -244,12 +258,29 @@ export function autoMapCategories(
   pairs.sort((a, b) => b.score - a.score);
 
   const claimed = new Set<string>();
-  const out: Record<string, { groupId: number; confidence: number }> = {};
+  const out: Record<string, { groupId: number; confidence: number; generic?: boolean }> = {};
   for (const p of pairs) {
     if (claimed.has(p.catId) || p.score < 0.34) continue;
     claimed.add(p.catId);
     out[p.catId] = { groupId: p.groupId, confidence: Math.round(p.score * 100) / 100 };
   }
+
+  // Nothing matched by name. Canvas's default grouping is a single "Assignments" group holding
+  // every piece of work in the course, and in that case the categories really are all in it — the
+  // engine then splits it at the item level by assignment name. Point the leftovers there rather
+  // than leaving them unmapped, but at low confidence so the UI asks the student to check.
+  //
+  // Groups are deliberately never claimed here: two categories sharing one Canvas group is the
+  // normal "two midterms, one Midterms group" case, and the item-level split handles it.
+  const fallback =
+    groups.find((g) => GENERIC_GROUP_RE.test(String(g.name || "").trim())) ||
+    (groups.length === 1 ? groups[0] : null);
+  if (fallback) {
+    for (const c of categories) {
+      if (!out[c.id]) out[c.id] = { groupId: fallback.id, confidence: 0.3, generic: true };
+    }
+  }
+
   return out;
 }
 

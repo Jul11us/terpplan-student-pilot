@@ -1002,3 +1002,84 @@ test("non-credit courses are set aside, not deleted, and hand-added ones are unt
   // The verdict is also applied at merge time, so a course synced without the flag still lands right.
   assert.equal(looksForCredit("STTS26").forCredit, false);
 });
+
+/* ------------------------------------------- automatic mapping onto groups --- */
+
+test("real UMD labels match their Canvas groups, platform names included", () => {
+  // Textbook and submission platforms are the usual reason a pair fails: the platform name is the
+  // only word the two share. Every one of these used to score below the 0.34 threshold.
+  const pairs = [
+    ["Connect SmartBook Exercises", "SmartBook"],
+    ["Connect SmartBook Exercises", "Connect"],
+    ["Connect SmartBook Exercises", "McGraw-Hill Connect"],
+    ["WebAssign Homework", "Homework"],
+    ["Discussion Posts & Class Participation", "Discussions"],
+    ["Discussion Posts & Class Participation", "Discussion Board Participation"],
+    ["Group Project", "Projects"],
+    ["Exam #1", "Exams"],
+    ["Midterm Exam 1", "Midterms"],
+    ["Lab Reports", "Labs"],
+    ["Weekly Quizzes", "Quizzes"],
+    ["Term Paper", "Papers"],
+    ["Attendance", "Participation"],
+    ["Reading Responses", "Readings"],
+    ["Problem Sets", "Assignments"],
+    ["Homework", "Assignments"],
+    ["ALEKS Homework", "ALEKS"],
+    ["Pearson Mastering", "Mastering"],
+    ["zyBooks Labs", "zyBooks"],
+    ["Gradescope Submissions", "Assignments"],
+    ["Case Studies", "Case Study"],
+    ["In-Class Activities", "Participation"],
+    ["Group Work", "Group Project"],
+    ["Written Assignments", "Writing"],
+    ["Perusall Annotations", "Readings"],
+    ["Top Hat Questions", "Participation"],
+    ["Reflections", "Journals"],
+  ];
+  const failed = pairs.filter(([a, b]) => categorySimilarity(a, b) < 0.34);
+  assert.deepEqual(failed, [], "these pairs must all clear the threshold");
+});
+
+test("a lone generic Canvas group catches every category", () => {
+  const cats = [
+    { id: "c1", name: "Connect SmartBook Exercises" },
+    { id: "c2", name: "Discussion Posts & Class Participation" },
+    { id: "c3", name: "Group Project" },
+    { id: "c4", name: "Exam #1" },
+    { id: "c5", name: "Exam #2" },
+  ];
+  const one = autoMapCategories(cats, [{ id: 1, name: "Assignments" }]);
+  assert.equal(Object.keys(one).length, 5, "every category lands somewhere");
+  assert.equal(one.c1.confidence, 0.82, "the by-name match keeps its confidence");
+  assert.equal(one.c2.confidence, 0.3, "the leftovers are flagged low-confidence");
+  assert.equal(one.c5.generic, true, "and marked as a fallback");
+  assert.equal(one.c1.generic, undefined, "a named match is not marked");
+});
+
+test("a specific group beats the generic fallback", () => {
+  const cats = [
+    { id: "c1", name: "Connect SmartBook Exercises" },
+    { id: "c2", name: "Discussion Posts & Class Participation" },
+    { id: "c3", name: "Group Project" },
+    { id: "c4", name: "Exam #1" },
+  ];
+  const many = autoMapCategories(cats, [
+    { id: 1, name: "Assignments" }, { id: 2, name: "Exams" }, { id: 3, name: "Projects" },
+  ]);
+  assert.equal(many.c4.groupId, 2, "exam goes to Exams, not the fallback");
+  assert.equal(many.c3.groupId, 3, "project goes to Projects");
+  assert.equal(many.c2.groupId, 1, "participation falls back to Assignments");
+  assert.equal(many.c2.generic, true);
+  assert.equal(many.c4.generic, undefined);
+});
+
+test("two midterms may share one Canvas group", () => {
+  // The item-level split exists for exactly this, so the mapper must not claim groups exclusively.
+  const two = autoMapCategories(
+    [{ id: "m1", name: "Midterm Exam 1" }, { id: "m2", name: "Midterm Exam 2" }],
+    [{ id: 7, name: "Midterms" }],
+  );
+  assert.equal(two.m1.groupId, 7);
+  assert.equal(two.m2.groupId, 7);
+});

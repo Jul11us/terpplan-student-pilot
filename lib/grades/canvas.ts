@@ -345,6 +345,7 @@ export const EXPORT_SOURCE = `(async function () {
     return;
   }
   var BASE = location.origin;
+  var TARGET = "__TERPPLAN_TARGET__";
   var log = function (m) { console.log("[TerpPlan] " + m); };
   function qs(p) {
     var parts = [];
@@ -405,8 +406,41 @@ export const EXPORT_SOURCE = `(async function () {
         payload.detail[c.id] = { groups: [], items: [], error: String(err.message || err) };
       }
     }
+    var json = JSON.stringify(payload, null, 2);
+
+    // Hand the data straight to TerpPlan through the URL fragment when we can. A fragment is
+    // never sent to a server, so nothing is uploaded, and the student skips saving a file,
+    // finding the tab again and re-picking that file. Gzip keeps the URL to a sane length: the
+    // courses are the bulk of it and they compress by roughly fifteen to one.
+    if (typeof CompressionStream === "function" && typeof TextEncoder === "function") {
+      try {
+        var gz = new Blob([new TextEncoder().encode(json)]).stream()
+          .pipeThrough(new CompressionStream("gzip"));
+        var packed = new Uint8Array(await new Response(gz).arrayBuffer());
+        var bin = "";
+        for (var i = 0; i < packed.length; i++) bin += String.fromCharCode(packed[i]);
+        var b64 = btoa(bin).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/, "");
+        var url = TARGET + "#canvas-import=" + b64;
+        if (url.length < 1000000) {
+          // Open before alerting: an alert can cost us the user-gesture context that makes a
+          // popup allowed in the first place.
+          var win = window.open(url, "_blank");
+          if (win) {
+            log("done — " + payload.courses.length + " course(s) handed to TerpPlan (" + url.length + " chars).");
+            alert("导出完成：" + payload.courses.length + " 门课程。\\n\\nTerpPlan 会在刚打开的新标签页里自动读取。\\n\\nExported " + payload.courses.length + " course(s). The tab that just opened will pick them up.");
+            return;
+          }
+          log("the popup was blocked — downloading a file instead.");
+        } else {
+          log("too long for a link (" + url.length + " chars) — downloading a file instead.");
+        }
+      } catch (err) {
+        log("could not build a link (" + err.message + ") — downloading a file instead.");
+      }
+    }
+
     var a2 = document.createElement("a");
-    a2.href = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
+    a2.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
     a2.download = "terpplan-canvas-export.json";
     document.body.appendChild(a2);
     a2.click();
@@ -419,6 +453,68 @@ export const EXPORT_SOURCE = `(async function () {
   }
 })();`;
 
-export function bookmarkletHref(): string {
-  return `javascript:${encodeURIComponent(EXPORT_SOURCE)}`;
+/** Where the bookmarklet should send the student back to: this very page. */
+export function defaultTarget(): string {
+  if (typeof location === "undefined") return "";
+  return location.origin + location.pathname;
+}
+
+/** The exporter with the return address filled in. */
+export function exportSource(target?: string): string {
+  return EXPORT_SOURCE.split("__TERPPLAN_TARGET__").join(target || defaultTarget() || "__TERPPLAN_TARGET__");
+}
+
+export function bookmarkletHref(target?: string): string {
+  return `javascript:${encodeURIComponent(exportSource(target))}`;
+}
+
+/** The fragment key the bookmarklet appends its payload under. */
+export const IMPORT_HASH_KEY = "canvas-import";
+
+function b64urlToBytes(b64: string): Uint8Array<ArrayBuffer> {
+  const padded = b64.replace(/-/g, "+").replace(/_/g, "/");
+  const bin = atob(padded + "=".repeat((4 - (padded.length % 4)) % 4));
+  const bytes = new Uint8Array(new ArrayBuffer(bin.length));
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * Decode a `#canvas-import=…` fragment the bookmarklet produced: base64url over gzipped JSON.
+ * Returns the parsed payload, or null when the fragment is absent or unreadable.
+ *
+ * The data travelled in the fragment rather than the query string precisely so it never reaches
+ * a server — a student's grades stay between their Canvas tab and this one.
+ */
+export async function readImportFragment(hash: string): Promise<CanvasPayload | null> {
+  const raw = String(hash || "");
+  const marker = `${IMPORT_HASH_KEY}=`;
+  const at = raw.indexOf(marker);
+  if (at === -1) return null;
+
+  const encoded = raw.slice(at + marker.length);
+  if (!encoded) return null;
+
+  let json: string;
+  try {
+    if (typeof DecompressionStream !== "function") return null;
+    // Same shape as readZipEntry in syllabus-file.ts: drive the stream with a writer rather than
+    // wrapping bytes in a Blob, which keeps the typed-array generics out of it.
+    const stream = new DecompressionStream("gzip");
+    const writer = stream.writable.getWriter();
+    writer.write(b64urlToBytes(encoded));
+    writer.close();
+    json = await new Response(stream.readable).text();
+  } catch {
+    return null;
+  }
+
+  try {
+    const data = JSON.parse(json) as { format?: unknown; courses?: unknown };
+    if (!data || data.format !== "terpplan.canvas-export") return null;
+    if (!Array.isArray(data.courses)) return null;
+    return data as CanvasPayload;
+  } catch {
+    return null;
+  }
 }

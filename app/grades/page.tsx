@@ -15,10 +15,12 @@ import { partitionByCredit } from "@/lib/grades/credit";
 import {
   CanvasClient,
   DEFAULT_BASE_URL,
-  EXPORT_SOURCE,
   bookmarkletHref,
+  exportSource,
   mergeCanvasData,
   readCanvasExport,
+  readImportFragment,
+  IMPORT_HASH_KEY,
   type CanvasPayload,
   type StoredCourse,
 } from "@/lib/grades/canvas";
@@ -77,24 +79,33 @@ const copy = {
     title: "Where you actually stand, in every course.",
     intro: "Pull your Canvas courses and scores, drop in each syllabus so the real weighting is used, and see the percentage you are carrying now — plus the GPA it adds up to.",
     home: "Back to planner",
-    privacy: "Courses, scores, syllabi and the Canvas token stay in this browser. Syllabus files are read on your device and never uploaded. Nothing here is sent to TerpPlan's servers.",
-    connect: "Connect Canvas", hide: "Hide connection", connectBody: "TerpPlan reads your courses and scores from Canvas with an access token you create and can revoke at any time. Your Directory ID and password are never requested and never stored.",
+    privacyTitle: "Where your data lives",
+    privacy: "Courses, scores and syllabi stay in this browser, and syllabus files are read on your device and never uploaded. When the bookmark hands your data over it travels in the URL fragment — the part after the # — which browsers never send to a server. Nothing here is sent to TerpPlan's servers.",
+    connect: "Map Canvas", hide: "Hide", connectBody: "Bring your courses, scores and assignment groups across from Canvas and map them onto this term.",
+    tokenHeading: "Or map with an access token",
     tokenLabel: "Canvas access token", tokenHint: "Stored in this browser's local storage. Clear it any time with Disconnect.",
     sync: "Connect and sync", syncing: "Working…", disconnect: "Disconnect", connectedAs: (n: string) => `Connected as ${n}`,
     demo: "Reload the sample term", demoNote: "Sample data, nothing is synced.",
     sampleBanner: "This is a sample term.",
-    sampleBannerNote: "None of it is your data. Connect Canvas, or import an export from your browser, and your own courses replace it.",
+    sampleBannerNote: "None of it is your data. Map Canvas, or import an export from your browser, and your own courses replace it.",
     sampleClear: "Clear the sample", sampleBadge: "sample",
     nonCreditHidden: (n: string) => `${n} Canvas course(s) set aside as non-credit`,
     nonCreditNote: "Onboarding, compliance training and Non-Credit Programs shells carry no credits and are not graded, so they are hidden by default. Nothing was deleted.",
     nonCreditShow: "Show them anyway", nonCreditHide: "Hide them again", nonCreditBadge: "non-credit",
-    noToken: "No token? Export from your browser instead",
-    noTokenWhy: "Many universities — UMD included — stop students creating their own Canvas API tokens, so the “+ New Access Token” button is greyed out with an ⓘ that you cannot dismiss. That block is on creating a token, not on using the Canvas API: the same endpoints Canvas's own pages call will answer a request from your signed-in Canvas tab. So you can export the data yourself, with no token and no password leaving your browser.",
+    disclaimerTitle: "For self-assessment only",
+    disclaimerBody: "The percentages and GPA here are estimates, worked out from the syllabus weights and Canvas scores you supply. They cannot be guaranteed to match your final result. Your official UMD transcript on Testudo is what counts.",
+    disclaimerCompact: "For self-assessment only, and not guaranteed to match your final result — your official UMD transcript is authoritative.",
+    remap: "Match to Canvas again", remapHint: "Re-run the automatic matching after renaming a category.",
+    noToken: "Map Canvas in one click",
+    noTokenWhy: "This is the route that works at UMD. Many universities — UMD included — stop students creating their own Canvas API tokens, so the “+ New Access Token” button is greyed out with an ⓘ you cannot dismiss. That block is on creating a token, not on using the Canvas API: the same endpoints Canvas's own pages call will answer a request from your signed-in Canvas tab. So the bookmark reads your data directly, with no token and no password leaving your browser.",
     noTokenPolicy: "This is a policy, not a fault on your side — no browser setting, extension, or retry will change it.",
-    step1: "Drag this button to your bookmarks bar.", dragHint: "If the bar is hidden, press ⌥⌘B (Chrome) or ⇧⌘B (Safari). On a phone or tablet, use the console method below.",
-    step2: "Open umd.instructure.com and sign in. Stay on that page.", step3: "Click the bookmark. It reads your courses and scores, then downloads terpplan-canvas-export.json.",
-    step4: "Come back here and import that file.",
-    bookmarklet: "⬇ Export Canvas data", console: "Bookmark didn't work? Use the console instead",
+    step1: "Drag this button to your bookmarks bar — one time only.", dragHint: "If the bar is hidden, press ⌥⌘B (Chrome) or ⇧⌘B (Safari). On a phone or tablet, use the console method below.",
+    step2: "Open umd.instructure.com, sign in as usual, then click the bookmark. TerpPlan opens in a new tab with your courses already mapped. No file to download, no token, nothing to type.",
+    fileSummary: "Bookmark blocked? Use a file instead",
+    fileWhy: "A strict Content-Security-Policy can block bookmarklets. This route always works: the same script saves a file, and you import it by hand.",
+    step3: "Click the bookmark. It reads your courses and scores, then saves terpplan-canvas-export.json.",
+    step4: "Come back here and choose that file.",
+    bookmarklet: "⬇ Send Canvas to TerpPlan", console: "Bookmark didn't work? Use the console instead",
     consoleWhy: "Some pages set a Content-Security-Policy that blocks bookmarklets. The DevTools console is not affected, so this method always works.",
     consoleHow: "On umd.instructure.com press ⌥⌘I (Chrome) or ⌥⌘C (Safari), open the Console tab, paste the code below and press Enter. Chrome may first ask you to type “allow pasting”. Read the code before running it.",
     showCode: "Show the code", copy: "Copy", copied: "Copied.",
@@ -147,24 +158,33 @@ const copy = {
     title: "每门课，你现在到底处在什么位置。",
     intro: "从 UMD Canvas 同步你的课程和分数，上传每门课的课程大纲以套用真实权重，看清当前折算出的百分制成绩，以及它对应的 GPA。",
     home: "返回排课",
-    privacy: "课程、分数、大纲和 Canvas 令牌都保存在本浏览器中。大纲文件在你的设备上解析，绝不上传。这里的内容不会发送到 TerpPlan 的服务器。",
-    connect: "连接 Canvas", hide: "收起连接设置", connectBody: "TerpPlan 通过你自己创建的访问令牌读取 Canvas 上的课程与分数，你可以随时撤销它。我们不会索取也不会保存你的 Directory ID 和密码。",
+    privacyTitle: "你的数据存在哪里",
+    privacy: "课程、分数和大纲都保存在本浏览器中，大纲文件在你的设备上解析，绝不外传。书签把数据交给 TerpPlan 时走的是网址的 # 片段 —— 浏览器不会把这一段发送给服务器。这里的内容也不会发送到 TerpPlan 的服务器。",
+    connect: "映射 Canvas", hide: "收起", connectBody: "把 Canvas 上的课程、分数和作业分组映射到本学期。",
+    tokenHeading: "或者：用访问令牌映射",
     tokenLabel: "Canvas 访问令牌", tokenHint: "保存在本浏览器的本地存储中。随时可以点「断开连接」清除。",
     sync: "连接并同步", syncing: "处理中…", disconnect: "断开连接", connectedAs: (n: string) => `已连接：${n}`,
     demo: "重新载入示例学期", demoNote: "示例数据，未同步任何内容。",
     sampleBanner: "这是示例学期。",
-    sampleBannerNote: "里面没有你的任何真实数据。连接 Canvas，或从浏览器导出后导入，它就会被替换成你自己的课程。",
+    sampleBannerNote: "里面没有你的任何真实数据。映射 Canvas，或从浏览器导出后导入，它就会被替换成你自己的课程。",
     sampleClear: "清除示例", sampleBadge: "示例",
     nonCreditHidden: (n: string) => `已归置 ${n} 门非学分课程`,
     nonCreditNote: "入学教育、合规培训和非学分项目（NCR）的课程不计学分也不评分，因此默认隐藏。它们没有被删除。",
     nonCreditShow: "仍然显示", nonCreditHide: "再次隐藏", nonCreditBadge: "非学分",
-    noToken: "拿不到令牌？改为从你自己的浏览器导出",
-    noTokenWhy: "很多高校（包括 UMD）禁止学生自行创建 Canvas API 令牌，「+ 创建新访问许可证」按钮因此是灰的，并挂着一个关不掉的 ⓘ 说明。但被禁的是「创建令牌」，不是「使用 Canvas API」—— Canvas 自己页面调用的那些接口，从你已登录的 Canvas 标签页发请求同样会正常响应。所以你可以自己导出数据，全程不需要令牌，密码也不会离开你的浏览器。",
+    disclaimerTitle: "仅供自我评估参考",
+    disclaimerBody: "这里的百分比与 GPA 是按你提供的大纲权重和 Canvas 分数推算出的估计值，无法保证与最终结果完全一致。请以 UMD 官方成绩单（Testudo）为准。",
+    disclaimerCompact: "仅供自我评估参考，无法保证与最终结果完全一致 —— 请以 UMD 官方成绩单为准。",
+    remap: "重新自动匹配", remapHint: "改过类别名之后，可重新跑一次自动匹配。",
+    noToken: "一键映射 Canvas",
+    noTokenWhy: "这是 UMD 下真正可行的路子。很多高校（包括 UMD）禁止学生自行创建 Canvas API 令牌，「+ 创建新访问许可证」按钮因此是灰的，并挂着一个关不掉的 ⓘ 说明。但被禁的是「创建令牌」，不是「使用 Canvas API」—— Canvas 自己页面调用的那些接口，从你已登录的 Canvas 标签页发请求同样会正常响应。所以书签可以直接读取你的数据，全程不需要令牌，密码也不会离开你的浏览器。",
     noTokenPolicy: "这是学校策略，不是你这边的问题 —— 换浏览器、关扩展、反复重试都不会有变化。",
-    step1: "把这个按钮拖到你的书签栏。", dragHint: "书签栏没显示就按 ⌥⌘B（Chrome）或 ⇧⌘B（Safari）。手机或平板请改用下面的控制台方式。",
-    step2: "打开 umd.instructure.com 并登录，停在这个页面上。", step3: "点击书签栏上的那个按钮。它会读取你的课程和分数，然后下载 terpplan-canvas-export.json。",
-    step4: "回到这里导入该文件。",
-    bookmarklet: "⬇ 导出 Canvas 数据", console: "书签没反应？改用控制台",
+    step1: "把这个按钮拖到你的书签栏 —— 只需做这一次。", dragHint: "书签栏没显示就按 ⌥⌘B（Chrome）或 ⇧⌘B（Safari）。手机或平板请改用下面的控制台方式。",
+    step2: "打开 umd.instructure.com，照常登录，然后点一下书签 —— TerpPlan 会在新标签页里打开，课程已经映射好了。不用下载文件、不用令牌、什么都不用输。",
+    fileSummary: "书签被拦住了？改用文件",
+    fileWhy: "严格的 Content-Security-Policy 会屏蔽书签小工具。这条路径永远可用：同一个脚本保存一个文件，你手动导入。",
+    step3: "点一下书签。它会读取你的课程和分数，然后保存 terpplan-canvas-export.json。",
+    step4: "回到这里，选择那个文件。",
+    bookmarklet: "⬇ 把 Canvas 送到 TerpPlan", console: "书签没反应？改用控制台",
     consoleWhy: "部分页面会设置 Content-Security-Policy，这会拦掉书签小工具；而开发者工具的控制台不受它限制。这个方式一定可用。",
     consoleHow: "在 umd.instructure.com 页面按 ⌥⌘I（Chrome）或 ⌥⌘C（Safari），切到 Console 标签，粘贴下面的代码并回车。Chrome 首次可能要求你先输入「allow pasting」。运行前请先读一遍代码。",
     showCode: "显示代码", copy: "复制", copied: "已复制。",
@@ -250,11 +270,34 @@ export default function GradesPage() {
   const [pending, setPending] = useState<Record<string, ParsedScheme>>({});
   const fileRef = useRef<HTMLInputElement | null>(null);
 
+  const note = (kind: "ok" | "bad", text: string) => setMessage({ kind, text });
+  // The fragment handler in the mount effect needs the localised word for "course", but the effect
+  // must run exactly once — adding `t` to its dependencies would re-read storage and clobber edits.
+  const tRef = useRef(t);
+  useEffect(() => { tRef.current = t; }, [t]);
+
   // ---------------------------------------------------------------- storage
   useEffect(() => {
     const saved = readSavedState() as { language?: Language };
     /* eslint-disable react-hooks/set-state-in-effect */
     if (saved.language === "en" || saved.language === "zh") setLanguage(saved.language);
+
+    // A bookmarklet hand-off wins over everything. The student just clicked "send to TerpPlan" on
+    // Canvas, so neither the sample term nor a previously stored list should get in its way.
+    const hash = typeof window === "undefined" ? "" : window.location.hash;
+    if (hash.includes(`${IMPORT_HASH_KEY}=`)) {
+      // Clear it first, so a reload does not import twice.
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+      void readImportFragment(hash).then((payload) => {
+        if (!payload) return;
+        const merged = mergeCanvasData([], payload, () => `c${Math.random().toString(36).slice(2, 10)}`);
+        setCourses(merged.courses as Course[]);
+        if (merged.userName) setUserName(merged.userName);
+        note("ok", `${merged.added + merged.updated} ${tRef.current.course}`);
+      });
+      return;
+    }
+
     let restored = false;
     try {
       const raw = localStorage.getItem(STORAGE);
@@ -282,8 +325,6 @@ export default function GradesPage() {
     } catch { /* ignore */ }
   }, [courses, level, fill, basis]);
 
-  const note = (kind: "ok" | "bad", text: string) => setMessage({ kind, text });
-
   const { forCredit, nonCredit } = useMemo(() => partitionByCredit(courses), [courses]);
   const visible = showNonCredit ? courses : forCredit;
 
@@ -309,7 +350,7 @@ export default function GradesPage() {
       const payload = await client.syncAll((m) => setBusy(m));
       const merged = await applyPayload(payload);
       setShowConnect(false);
-      note("ok", `${merged.added + merged.updated} ${t.course}`);
+      note("ok", `${merged.added + merged.updated} ${tRef.current.course}`);
     } catch (err) {
       note("bad", `${t.syncFailed} ${(err as Error).message} ${t.unchanged}`);
     } finally {
@@ -327,7 +368,7 @@ export default function GradesPage() {
     try {
       const merged = await applyPayload(result.payload);
       setShowConnect(false);
-      note("ok", `${merged.added + merged.updated} ${t.course}`);
+      note("ok", `${merged.added + merged.updated} ${tRef.current.course}`);
     } finally {
       setBusy(null);
     }
@@ -458,83 +499,103 @@ export default function GradesPage() {
 
         {showConnect && (
           <section className="mt-6 grid gap-4 rounded-2xl border border-[#e0ddd5] bg-white p-5">
+            {/* The one-click route leads. At UMD the token button is disabled for students, so a
+                panel that opens with "paste a token" walks most people into a dead end. */}
             <div>
-              <h2 className="font-serif text-xl text-[#273c38]">{t.connect}</h2>
-              <p className="mt-2 text-sm text-[#48534f]">{t.connectBody}</p>
-            </div>
-            <label className="block">
-              <span className="mb-1 block text-xs font-semibold uppercase tracking-[.1em] text-[#5d6561]">{t.tokenLabel}</span>
-              <input
-                type="password" value={token} autoComplete="off" spellCheck={false}
-                onChange={(e) => setToken(e.target.value)}
-                className="w-full rounded-lg border border-[#dcd9d0] px-3 py-2 font-mono text-xs"
-              />
-              <span className="mt-1 block text-xs text-[#7a817d]">{t.tokenHint}</span>
-            </label>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={connect} disabled={!!busy} className="rounded-lg bg-[#273c38] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:opacity-50">
-                {busy ? t.syncing : t.sync}
-              </button>
-              {userName && (
-                <button type="button" onClick={() => { setToken(""); setUserName(null); }} className="rounded-lg border border-[#dcd9d0] px-4 py-2 text-xs font-semibold text-[#273c38]">
-                  {t.disconnect}
-                </button>
-              )}
-              {userName && <span className="self-center text-xs text-[#7a817d]">{t.connectedAs(userName)}</span>}
-            </div>
-
-            <div className="rounded-xl border border-[#ead8b5] bg-[#fffaf0] p-4">
-              <h3 className="font-semibold text-[#273c38]">{t.noToken}</h3>
-              <p className="mt-1 text-xs text-[#48534f]">{t.noTokenPolicy}</p>
+              <h2 className="font-serif text-xl text-[#273c38]">{t.noToken}</h2>
+              <p className="mt-1 text-xs text-[#7a817d]">{t.noTokenPolicy}</p>
               <p className="mt-3 text-sm text-[#48534f]">{t.noTokenWhy}</p>
-              <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-[#48534f]">
-                <li>
-                  {t.step1}{" "}
-                  <a
-                    href={bookmarkletHref()}
-                    draggable
-                    onClick={(e) => { e.preventDefault(); note("bad", t.step2); }}
-                    className="ml-1 inline-block rounded-lg bg-[#a34a39] px-3 py-1.5 text-xs font-semibold text-white"
-                  >
-                    {t.bookmarklet}
-                  </a>
-                  <span className="mt-1 block text-xs text-[#7a817d]">{t.dragHint}</span>
-                </li>
-                <li>{t.step2}</li>
-                <li>{t.step3}</li>
-                <li>
-                  {t.step4}
-                  <span className="mt-2 block">
-                    <label className="inline-flex cursor-pointer items-center rounded-lg border border-[#dcd9d0] bg-white px-3 py-1.5 text-xs font-semibold text-[#273c38]">
-                      {t.choose}
-                      <input
-                        ref={fileRef} type="file" accept=".json,application/json" className="hidden"
-                        onChange={(e) => { const f = e.target.files?.[0]; if (f) void importFile(f); e.target.value = ""; }}
-                      />
-                    </label>
-                    <span className="ml-2 text-xs text-[#7a817d]">{t.importHint}</span>
-                  </span>
-                </li>
-              </ol>
+            </div>
 
-              <details className="mt-4 rounded-lg border border-[#e0ddd5] bg-white">
-                <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-[#273c38]">{t.console}</summary>
-                <div className="px-3 pb-3">
-                  <p className="text-xs text-[#48534f]">{t.consoleWhy}</p>
-                  <p className="mt-2 text-xs text-[#48534f]">{t.consoleHow}</p>
-                  <button
-                    type="button"
-                    onClick={() => { void navigator.clipboard?.writeText(EXPORT_SOURCE).then(() => note("ok", t.copied)); }}
-                    className="mt-2 rounded-lg border border-[#dcd9d0] px-3 py-1.5 text-xs font-semibold text-[#273c38]"
-                  >
-                    {t.copy}
+            <ol className="list-decimal space-y-3 pl-5 text-sm text-[#48534f]">
+              <li>
+                {t.step1}{" "}
+                <a
+                  href={bookmarkletHref()}
+                  draggable
+                  onClick={(e) => { e.preventDefault(); note("bad", t.noTokenPolicy); }}
+                  className="ml-1 inline-block rounded-lg bg-[#a34a39] px-3 py-1.5 text-xs font-semibold text-white"
+                >
+                  {t.bookmarklet}
+                </a>
+                <span className="mt-1 block text-xs text-[#7a817d]">{t.dragHint}</span>
+              </li>
+              <li>{t.step2}</li>
+            </ol>
+
+            <details className="rounded-lg border border-[#e0ddd5] bg-[#faf9f6]">
+              <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-[#273c38]">{t.fileSummary}</summary>
+              <div className="px-3 pb-3">
+                <p className="text-xs text-[#48534f]">{t.fileWhy}</p>
+                <ol className="mt-2 list-decimal space-y-2 pl-5 text-xs text-[#48534f]">
+                  <li>{t.step3}</li>
+                  <li>
+                    {t.step4}
+                    <span className="mt-2 block">
+                      <label className="inline-flex cursor-pointer items-center rounded-lg border border-[#dcd9d0] bg-white px-3 py-1.5 text-xs font-semibold text-[#273c38]">
+                        {t.choose}
+                        <input
+                          ref={fileRef} type="file" accept=".json,application/json" className="hidden"
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) void importFile(f); e.target.value = ""; }}
+                        />
+                      </label>
+                      <span className="ml-2 text-xs text-[#7a817d]">{t.importHint}</span>
+                    </span>
+                  </li>
+                </ol>
+              </div>
+            </details>
+
+            <details className="rounded-lg border border-[#e0ddd5] bg-[#faf9f6]">
+              <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-[#273c38]">{t.console}</summary>
+              <div className="px-3 pb-3">
+                <p className="text-xs text-[#48534f]">{t.consoleWhy}</p>
+                <p className="mt-2 text-xs text-[#48534f]">{t.consoleHow}</p>
+                <button
+                  type="button"
+                  onClick={() => { void navigator.clipboard?.writeText(exportSource()); note("ok", t.copied); }}
+                  className="mt-2 rounded-lg border border-[#dcd9d0] bg-white px-3 py-1.5 text-xs font-semibold text-[#273c38]"
+                >
+                  {t.copy}
+                </button>
+                <pre className="mt-2 max-h-60 overflow-auto rounded-lg bg-[#273c38] p-3 text-[11px] leading-relaxed text-[#e8e6e0]">{exportSource()}</pre>
+              </div>
+            </details>
+
+            {/* The token route stays available for anyone whose institution still issues them. */}
+            <details className="rounded-lg border border-[#e0ddd5] bg-[#faf9f6]">
+              <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-[#273c38]">{t.tokenHeading}</summary>
+              <div className="grid gap-3 px-3 pb-3">
+                <p className="text-xs text-[#48534f]">{t.connectBody}</p>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-[.1em] text-[#5d6561]">{t.tokenLabel}</span>
+                  <input
+                    type="password" value={token} autoComplete="off" spellCheck={false}
+                    onChange={(e) => setToken(e.target.value)}
+                    className="w-full rounded-lg border border-[#dcd9d0] px-3 py-2 font-mono text-xs"
+                  />
+                  <span className="mt-1 block text-xs text-[#7a817d]">{t.tokenHint}</span>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={connect} disabled={!!busy} className="rounded-lg bg-[#273c38] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:opacity-50">
+                    {busy ? t.syncing : t.sync}
                   </button>
-                  <pre className="mt-2 max-h-56 overflow-auto rounded-lg bg-[#f6f4ef] p-3 text-[11px] leading-relaxed text-[#48534f]">{EXPORT_SOURCE}</pre>
+                  {userName && (
+                    <button type="button" onClick={() => { setToken(""); setUserName(null); }} className="rounded-lg border border-[#dcd9d0] px-4 py-2 text-xs font-semibold text-[#273c38]">
+                      {t.disconnect}
+                    </button>
+                  )}
+                  {userName && <span className="self-center text-xs text-[#7a817d]">{t.connectedAs(userName)}</span>}
                 </div>
-              </details>
+              </div>
+            </details>
 
-              <p className="mt-3 text-xs text-[#7a817d]">{t.manualFallback}</p>
-              <p className="mt-2 text-xs text-[#7a817d]">{t.ask}</p>
+            <p className="text-xs text-[#7a817d]">{t.manualFallback}</p>
+
+            {/* What happens to the data, stated where the permission is asked for. */}
+            <div className="rounded-xl border-l-[3px] border-[#536d64] bg-[#f4f7f5] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[.1em] text-[#315c43]">{t.privacyTitle}</p>
+              <p className="mt-1 text-xs leading-relaxed text-[#48534f]">{t.privacy}</p>
             </div>
           </section>
         )}
@@ -591,6 +652,8 @@ export default function GradesPage() {
               <strong className="text-[#273c38]">{t.projection}.</strong> {t.projectionBody(provisionalCount)}
             </p>
           )}
+          {/* Directly beneath the figures: this is the number a student would screenshot. */}
+          <Disclaimer t={t} />
         </section>
 
         {/* --------------------------------------------------------- courses */}
@@ -819,6 +882,33 @@ function CourseDetail({
         {categories.length > 0 && groups.length > 0 && (
           <p className="mt-2 text-[11px] text-[#7a817d]">{t.mapHint}</p>
         )}
+        {categories.length > 0 && groups.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {/* The match is made when a syllabus is confirmed, so renaming a category afterwards
+                would otherwise leave the mapping pointing at the old name. */}
+            <button
+              type="button"
+              onClick={() => {
+                const map = autoMapCategories(
+                  categories.map((c) => ({ id: c.id, name: c.name })),
+                  groups.map((g) => ({ id: g.id, name: g.name })),
+                );
+                setScheme({
+                  categories: categories.map((c) => {
+                    const hit = map[c.id];
+                    return hit
+                      ? { ...c, canvasGroupIds: [hit.groupId], canvasGroupId: hit.groupId, confidence: hit.confidence }
+                      : { ...c, canvasGroupIds: [], canvasGroupId: null, confidence: null };
+                  }),
+                });
+              }}
+              className="rounded-lg border border-[#dcd9d0] bg-white px-3 py-1.5 text-xs font-semibold text-[#273c38] hover:bg-[#f6f4ef]"
+            >
+              {t.remap}
+            </button>
+            <span className="text-[11px] text-[#7a817d]">{t.remapHint}</span>
+          </div>
+        )}
       </div>
 
       {/* syllabus */}
@@ -991,6 +1081,9 @@ function CourseDetail({
         </button>
         <p className="text-[11px] text-[#7a817d]">{t.removeBody}</p>
       </div>
+
+      {/* The per-course percentage carries the same caveat as the GPA figure. */}
+      <Disclaimer t={t} />
     </div>
   );
 }
@@ -1004,6 +1097,32 @@ function CourseDetail({
  * SmartBook Exercises 15%" often spans several Canvas assignment groups, and the engine reads the
  * items out of all of them.
  */
+/* ---------------------------------------------------------- disclaimer --- */
+
+/**
+ * The standing caveat, shown wherever a number could be mistaken for an official one.
+ *
+ * Repeated on each of those screens rather than stated once in a footer, because a student who
+ * screenshots the GPA figure or a course percentage is looking at exactly that element — the
+ * footer is not in the picture, and "I have a 3.6" is precisely the claim that must not travel
+ * without its qualification.
+ */
+function Disclaimer({ compact = false, t }: { compact?: boolean; t: Copy }) {
+  if (compact) {
+    return (
+      <p className="mt-4 rounded-lg border-l-[3px] border-[#a34a39] bg-[#fdfaf6] px-4 py-2 text-xs leading-relaxed text-[#5b5049]">
+        {t.disclaimerCompact}
+      </p>
+    );
+  }
+  return (
+    <div className="mt-4 rounded-lg border border-[#e6ddd0] border-l-[3px] border-l-[#a34a39] bg-[#fdfaf6] px-4 py-3 text-xs leading-relaxed text-[#5b5049]">
+      <strong className="text-[#8f3f30]">{t.disclaimerTitle}</strong>{" "}
+      <span>{t.disclaimerBody}</span>
+    </div>
+  );
+}
+
 function GroupPicker({
   groups, selected, onChange, emptyLabel, noGroupsLabel, compact = false,
 }: {
