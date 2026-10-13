@@ -70,6 +70,8 @@ export type GradeCourse = {
   id?: string;
   code: string;
   title?: string;
+  /** Canvas's apply_assignment_group_weights; false means it grades by total points. */
+  weighted?: boolean | null;
   canvas?: { groups?: CanvasGroup[]; items?: CanvasAssignment[] };
   scheme?: Scheme | null;
   manualItems?: ManualItem[];
@@ -340,7 +342,10 @@ export type CategoryResult = {
   ungradedCount: number;
   totalCount: number;
   earned: number;
+  /** Total points possible across the graded items. */
   possible: number;
+  /** Total points possible across the items that have no score yet. */
+  ungradedPossible: number;
   currentPct: number | null;
   projectedPct: number | null;
 };
@@ -372,12 +377,38 @@ export function resolveCategories(course: GradeCourse): { categories: SchemeCate
   if (groups.length) {
     const weights = groups.map((g) => toNumber(g.weight) ?? 0);
     const sum = weights.reduce((a, b) => a + b, 0);
+
+    // Canvas only applies group weights when the course says so. Otherwise it grades by total
+    // points across every assignment, and equal-weighting the groups (what this used to do with
+    // no weight to divide by) does not match it: with Exams 90/100 and Homework 10/100 + 10/100,
+    // Canvas shows 36.67% and equal weights show 50%.
+    //
+    // Weighting each group by its own total points reproduces Canvas exactly, because the engine
+    // aggregates as Σ(w·pct)/Σ(w) and pct is that group's earned/possible — so the total points
+    // cancel and the result is Σearned/Σpossible.
+    const usePoints = course.weighted === false || sum <= 0;
+    const pointsByGroup = new Map<number, number>();
+    if (usePoints) {
+      for (const it of course.canvas?.items ?? []) {
+        const gid = it.assignment_group_id ?? null;
+        if (gid === null) continue;
+        const possible = toNumber(it.points_possible) ?? 0;
+        if (possible > 0) pointsByGroup.set(gid, (pointsByGroup.get(gid) ?? 0) + possible);
+      }
+    }
+    const pointsSum = [...pointsByGroup.values()].reduce((a, b) => a + b, 0);
+
+    const byPoints = usePoints && pointsSum > 0;
     return {
       source: "canvas",
       categories: groups.map((g, i) => ({
         id: `grp-${g.id}`,
         name: g.name || `Group ${i + 1}`,
-        weight: sum > 0 ? weights[i]! : Math.round((100 / groups.length) * 100) / 100,
+        weight: byPoints
+          ? pointsByGroup.get(g.id) ?? 0
+          : sum > 0
+            ? weights[i]!
+            : Math.round((100 / groups.length) * 100) / 100,
         dropLowest: 0,
         canvasGroupIds: [g.id],
         canvasGroupId: g.id,
@@ -455,19 +486,35 @@ export function computeCourseGrade(course: GradeCourse, settings: { ungradedFill
 
     const dropLowest = Math.max(0, toNumber(cat.dropLowest) ?? 0);
     let droppedItems: EngineItem[] = [];
-    if (dropLowest > 0 && items.length > dropLowest) {
+    if (dropLowest > 0) {
+      // Only items with a percentage can be dropped. An ungraded item has no standing to lose, and
+      // an extra-credit item — a score on a zero-point assignment — used to fall through
+      // `itemPercent` as null and be coerced to 0%, so it ranked worst and was dropped first,
+      // throwing the bonus away. At least one graded item always survives.
       const ranked = items
-        .map((it, i) => ({ i, pct: itemPercent(it) ?? (it.earned === null ? Number.POSITIVE_INFINITY : 0) }))
+        .map((it, i) => ({ i, pct: itemPercent(it) }))
+        .filter((r): r is { i: number; pct: number } => r.pct !== null)
         .sort((a, b) => a.pct - b.pct);
-      const drop = new Set(ranked.slice(0, dropLowest).map((r) => r.i));
-      droppedItems = items.filter((_, i) => drop.has(i));
-      items = items.filter((_, i) => !drop.has(i));
+      const toDrop = Math.min(dropLowest, Math.max(0, ranked.length - 1));
+      const drop = new Set(ranked.slice(0, toDrop).map((r) => r.i));
+      if (drop.size > 0) {
+        droppedItems = items.filter((_, i) => drop.has(i));
+        items = items.filter((_, i) => !drop.has(i));
+      }
     }
 
-    const gradedItems = items.filter((it) => it.earned !== null && it.possible !== null && it.possible > 0);
-    const earned = gradedItems.reduce((s, it) => s + (it.earned ?? 0), 0);
-    const possible = gradedItems.reduce((s, it) => s + (it.possible ?? 0), 0);
+    // Extra credit adds to what was earned without adding to what was possible, which is what
+    // Canvas does: a bonus worth 5 on a zero-point assignment lifts the total by 5 and leaves the
+    // denominator alone. Filtering on `possible > 0` used to drop those points entirely.
+    const scoredItems = items.filter((it) => it.earned !== null);
+    const earned = scoredItems.reduce((s, it) => s + (it.earned ?? 0), 0);
+    const possible = scoredItems
+      .filter((it) => it.possible !== null && it.possible > 0)
+      .reduce((s, it) => s + (it.possible ?? 0), 0);
     const currentPct = possible > 0 ? (earned / possible) * 100 : null;
+    const ungradedPossible = items
+      .filter((it) => it.earned === null && it.possible !== null && it.possible > 0)
+      .reduce((s, it) => s + (it.possible ?? 0), 0);
 
     let projEarned = 0;
     let projPossible = 0;
@@ -487,11 +534,12 @@ export function computeCourseGrade(course: GradeCourse, settings: { ungradedFill
       confidence: cat.confidence ?? null,
       items,
       droppedItems,
-      gradedCount: gradedItems.length,
+      gradedCount: scoredItems.length,
       ungradedCount: items.filter((it) => it.earned === null).length,
       totalCount: items.length,
       earned,
       possible,
+      ungradedPossible,
       currentPct,
       projectedPct,
     };
@@ -561,11 +609,11 @@ export function computeCourseGrade(course: GradeCourse, settings: { ungradedFill
       text: "No grading scheme yet. Everything is treated as one flat category until you upload a syllabus.",
     });
   }
-  if ((course.canvas?.items ?? []).length && source === "canvas" && !groups.length) {
+  if (source === "canvas" && groups.length && course.weighted === false) {
     warnings.push({
       level: "info",
       key: "info.canvasNoWeights",
-      text: "Canvas has no weighted assignment groups for this course, so all groups are weighted equally.",
+      text: "Canvas is not weighting assignment groups for this course, so everything is graded by total points — the same way Canvas itself does it.",
     });
   }
 
@@ -591,12 +639,20 @@ export function requiredOnRemaining(course: GradeCourse, targetPct: number, sett
   let remainingWeight = 0;
   for (const c of g.categories) {
     if (!(c.weight > 0)) continue;
-    if (c.currentPct === null) {
+
+    // Everything this category can still contribute, graded or not. The graded share is banked at
+    // the points *actually earned* rather than at the category's running percentage: that
+    // percentage is computed over the graded items alone, so using it for the whole category
+    // counts the ungraded half twice — once as though already earned, and again as weight still
+    // to come. With "100 points graded at 50%, 100 points ungraded, target 90%" that reported
+    // 80% needed when the best reachable result is 75%.
+    const total = c.possible + c.ungradedPossible;
+    if (c.currentPct === null || total <= 0) {
       remainingWeight += c.weight;
       continue;
     }
-    banked += (c.weight * c.currentPct) / 100;
-    remainingWeight += (c.weight * (c.totalCount > 0 ? c.ungradedCount / c.totalCount : 0) * 100) / 100;
+    banked += (c.weight * c.earned) / total;
+    remainingWeight += (c.weight * c.ungradedPossible) / total;
   }
 
   if (remainingWeight <= 0) return { possible: false, final: g.current.pct, needed: null, remainingWeight: 0, alreadySecured: false };

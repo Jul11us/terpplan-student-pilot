@@ -26,6 +26,7 @@ import {
 
 import { extractGradingScheme, schemeFromParsed } from "../lib/grades/syllabus.ts";
 import { docxXmlToText, fileKind, pdfPageLines, readZipEntry } from "../lib/grades/syllabus-file.ts";
+import { mergeCanvasData } from "../lib/grades/canvas.ts";
 import { sampleTerm } from "../lib/grades/sample.ts";
 import { looksForCredit, partitionByCredit } from "../lib/grades/credit.ts";
 
@@ -1082,4 +1083,217 @@ test("two midterms may share one Canvas group", () => {
   );
   assert.equal(two.m1.groupId, 7);
   assert.equal(two.m2.groupId, 7);
+});
+
+/* ------------------------------------------------ what do I need for X%? --- */
+
+test("an unreachable target is reported as unreachable, not as 80% needed", () => {
+  // One category, half of it graded at 50%. The best possible outcome is 75%, so 90% cannot be
+  // reached — but the category's running percentage (50%) used to be banked as though the whole
+  // category were graded, and the ungraded half was then counted again as weight still to come.
+  const course = {
+    code: "PART",
+    scheme: {
+      source: "syllabus",
+      confirmed: true,
+      categories: [{ id: "all", name: "Everything", weight: 100, canvasGroupIds: [1] }],
+    },
+    canvas: {
+      groups: [{ id: 1, name: "Assignments" }],
+      items: [
+        { id: 1, name: "Graded", assignment_group_id: 1, points_possible: 100, score: 50 },
+        { id: 2, name: "Ungraded", assignment_group_id: 1, points_possible: 100, score: null },
+      ],
+    },
+  };
+
+  const g = computeCourseGrade(course);
+  assert.equal(g.categories[0].earned, 50);
+  assert.equal(g.categories[0].possible, 100, "possible covers the graded items only");
+  assert.equal(g.categories[0].ungradedPossible, 100);
+
+  const need = requiredOnRemaining(course, 90);
+  assert.equal(need.possible, false, "90% is out of reach");
+  assert.ok(need.needed > 100, `needed should exceed 100, got ${need.needed}`);
+  assert.equal(need.banked, 25, "half the points banked at half the category");
+  assert.equal(need.remainingWeight, 50);
+
+  // And the ceiling really is 75%.
+  assert.equal(g.projected.pct, 75);
+});
+
+test("a partly graded category asks for what is genuinely still needed", () => {
+  // Homework fully graded at 100%; Exams half graded at 60%. 50 banked + 15 banked = 65, with 25
+  // left to play for, so 90% overall needs the remaining exam to be perfect.
+  const course = {
+    code: "MIX",
+    scheme: {
+      source: "syllabus",
+      confirmed: true,
+      categories: [
+        { id: "hw", name: "Homework", weight: 50, canvasGroupIds: [1] },
+        { id: "ex", name: "Exams", weight: 50, canvasGroupIds: [2] },
+      ],
+    },
+    canvas: {
+      groups: [{ id: 1, name: "Homework" }, { id: 2, name: "Exams" }],
+      items: [
+        { id: 1, name: "HW", assignment_group_id: 1, points_possible: 100, score: 100 },
+        { id: 2, name: "Exam 1", assignment_group_id: 2, points_possible: 100, score: 60 },
+        { id: 3, name: "Exam 2", assignment_group_id: 2, points_possible: 100, score: null },
+      ],
+    },
+  };
+
+  const need = requiredOnRemaining(course, 90);
+  assert.equal(need.banked, 65);
+  assert.equal(need.remainingWeight, 25);
+  assert.equal(need.needed, 100, "the remaining exam must be perfect");
+
+  // 65% is already secured; 40% is not.
+  assert.equal(requiredOnRemaining(course, 60).alreadySecured, true);
+  assert.equal(requiredOnRemaining(course, 80).alreadySecured, false);
+});
+
+/* ------------------------------------------------------ re-importing --- */
+
+test("a second import merges, keeping the student's own work and the course id", () => {
+  // The first import brings a course across.
+  const payload = {
+    format: "terpplan.canvas-export",
+    me: { name: "Dayou He" },
+    courses: [{
+      canvasId: 555001, code: "BMGT110F", title: "Intro to the Business Value Chain",
+      term: "Fall 2026", canvasCurrentScore: 91, canvasCurrentGrade: "A-",
+      canvasUrl: "https://umd.instructure.com/courses/555001", syllabusBody: null,
+    }],
+    detail: { 555001: { groups: [{ id: 1, name: "Assignments", weight: null, position: 1 }], items: [] } },
+  };
+
+  let courses = [];
+  const first = mergeCanvasData(courses, payload, () => "course-generated-1");
+  assert.equal(first.added, 1);
+  courses = first.courses;
+  const idAfterFirst = courses[0].id;
+
+  // The student then fills in what Canvas cannot supply.
+  Object.assign(courses[0], {
+    credits: 3,
+    overrides: { letter: "A" },
+    manualItems: [{ id: "m1", name: "Participation", categoryId: "c", earned: 10, possible: 10 }],
+    scheme: { source: "syllabus", confirmed: true, categories: [{ id: "c", name: "Everything", weight: 100, canvasGroupIds: [1] }] },
+  });
+
+  // A mid-term refresh re-imports the same course.
+  const second = mergeCanvasData(courses, payload, () => "course-generated-2");
+  assert.equal(second.updated, 1, "the second import updates rather than adds");
+  assert.equal(second.added, 0);
+  courses = second.courses;
+  assert.equal(courses.length, 1, "no duplicate course");
+
+  const kept = courses[0];
+  assert.equal(kept.id, idAfterFirst, "the course id is stable across imports");
+  assert.equal(kept.credits, 3, "credit hours survive a re-import");
+  assert.deepEqual(kept.overrides, { letter: "A" }, "the letter override survives");
+  assert.equal(kept.manualItems.length, 1, "hand-typed scores survive");
+  assert.equal(kept.scheme.categories.length, 1, "the grading scheme survives");
+  assert.equal(kept.canvasCurrentScore, 91, "the Canvas half is refreshed");
+});
+
+/* --------------------------------------------- Canvas in unweighted mode --- */
+
+test("an unweighted Canvas course matches Canvas, which grades by total points", () => {
+  // Exams 90/100 and Homework 10/100 + 10/100. Canvas has apply_assignment_group_weights = false,
+  // so it computes 110/300 = 36.67%. Equal-weighting the two groups gives 50% instead.
+  const course = {
+    code: "UNWEIGHTED",
+    weighted: false,
+    canvas: {
+      groups: [{ id: 1, name: "Exams", weight: null }, { id: 2, name: "Homework", weight: null }],
+      items: [
+        { id: 1, name: "Exam", assignment_group_id: 1, points_possible: 100, score: 90 },
+        { id: 2, name: "HW 1", assignment_group_id: 2, points_possible: 100, score: 10 },
+        { id: 3, name: "HW 2", assignment_group_id: 2, points_possible: 100, score: 10 },
+      ],
+    },
+  };
+  const g = computeCourseGrade(course);
+  assert.equal(g.categories.length, 2);
+  assert.equal(g.categories[0].currentPct, 90);
+  assert.equal(g.categories[1].currentPct, 10);
+  // Weighted by group totals: 100 points of exams, 200 of homework.
+  assert.deepEqual(g.categories.map((c) => c.weight), [100, 200]);
+  assert.equal(Math.round(g.current.pct * 100) / 100, 36.67, "matches Canvas");
+  assert.ok(g.warnings.some((w) => w.key === "info.canvasNoWeights"), "and says so");
+});
+
+test("a weighted Canvas course still uses group weights", () => {
+  const course = {
+    code: "WEIGHTED",
+    weighted: true,
+    canvas: {
+      groups: [{ id: 1, name: "Exams", weight: 70 }, { id: 2, name: "Homework", weight: 30 }],
+      items: [
+        { id: 1, name: "Exam", assignment_group_id: 1, points_possible: 100, score: 90 },
+        { id: 2, name: "HW", assignment_group_id: 2, points_possible: 100, score: 10 },
+      ],
+    },
+  };
+  const g = computeCourseGrade(course);
+  assert.deepEqual(g.categories.map((c) => c.weight), [70, 30]);
+  assert.equal(Math.round(g.current.pct * 100) / 100, 66, "0.7x90 + 0.3x10");
+  assert.equal(g.warnings.some((w) => w.key === "info.canvasNoWeights"), false);
+});
+
+/* --------------------------------------------------------- extra credit --- */
+
+test("a bonus on a zero-point assignment lifts the score instead of being dropped", () => {
+  // Quiz 6/10, Quiz 8/10, Bonus 5/0, drop the lowest one.
+  const course = {
+    code: "EC",
+    scheme: {
+      source: "syllabus",
+      confirmed: true,
+      categories: [{ id: "q", name: "Quizzes", weight: 100, dropLowest: 1, canvasGroupIds: [1] }],
+    },
+    canvas: {
+      groups: [{ id: 1, name: "Quizzes" }],
+      items: [
+        { id: 1, name: "Quiz 1", assignment_group_id: 1, points_possible: 10, score: 6 },
+        { id: 2, name: "Quiz 2", assignment_group_id: 1, points_possible: 10, score: 8 },
+        { id: 3, name: "Bonus", assignment_group_id: 1, points_possible: 0, score: 5 },
+      ],
+    },
+  };
+
+  const g = computeCourseGrade(course);
+  const c = g.categories[0];
+
+  assert.deepEqual(c.droppedItems.map((i) => i.name), ["Quiz 1"], "the worst quiz is dropped");
+  assert.equal(c.earned, 13, "the surviving quiz plus the bonus");
+  assert.equal(c.possible, 10, "the bonus adds nothing to the denominator");
+  assert.equal(c.currentPct, 130, "8 + 5 out of 10");
+});
+
+test("a bonus counts even without drop-lowest", () => {
+  const course = {
+    code: "EC2",
+    scheme: {
+      source: "syllabus",
+      confirmed: true,
+      categories: [{ id: "q", name: "Quizzes", weight: 100, canvasGroupIds: [1] }],
+    },
+    canvas: {
+      groups: [{ id: 1, name: "Quizzes" }],
+      items: [
+        { id: 1, name: "Quiz 1", assignment_group_id: 1, points_possible: 10, score: 8 },
+        { id: 2, name: "Bonus", assignment_group_id: 1, points_possible: 0, score: 2 },
+      ],
+    },
+  };
+  const c = computeCourseGrade(course).categories[0];
+  assert.equal(c.earned, 10);
+  assert.equal(c.possible, 10);
+  assert.equal(c.currentPct, 100, "the bonus offsets the two missed points exactly");
+  assert.equal(c.droppedItems.length, 0);
 });

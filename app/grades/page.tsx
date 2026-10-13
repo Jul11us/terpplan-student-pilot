@@ -13,8 +13,6 @@ import { useDocumentLanguage } from "@/lib/document-language";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { partitionByCredit } from "@/lib/grades/credit";
 import {
-  CanvasClient,
-  DEFAULT_BASE_URL,
   bookmarkletHref,
   exportSource,
   mergeCanvasData,
@@ -82,9 +80,13 @@ const copy = {
     privacyTitle: "Where your data lives",
     privacy: "Courses, scores and syllabi stay in this browser, and syllabus files are read on your device and never uploaded. When the bookmark hands your data over it travels in the URL fragment — the part after the # — which browsers never send to a server. Nothing here is sent to TerpPlan's servers.",
     connect: "Map Canvas", hide: "Hide", connectBody: "Bring your courses, scores and assignment groups across from Canvas and map them onto this term.",
-    tokenHeading: "Or map with an access token",
-    tokenLabel: "Canvas access token", tokenHint: "Stored in this browser's local storage. Clear it any time with Disconnect.",
-    sync: "Connect and sync", syncing: "Working…", disconnect: "Disconnect", connectedAs: (n: string) => `Connected as ${n}`,
+    syncing: "Working…",
+    importConfirm: (n: string) => `Import ${n} Canvas course(s) into this term?`,
+    importConfirmBody: "They are merged into what is already here — your credits, grading schemes, hand-typed scores and settings are kept.",
+    importConfirmYes: "Import", importConfirmNo: "Not now",
+    addCourse: "Add a course by hand", addCourseBody: "For a course Canvas does not have, or when nothing else works. Upload its syllabus afterwards for the real weighting, and type in the scores you can see.",
+    addCode: "Course code", addTitle: "Title (optional)", addCredits: "Credits", addConfirm: "Add course",
+    addedCourse: "Course added. Open it to upload a syllabus or enter scores.",
     demo: "Reload the sample term", demoNote: "Sample data, nothing is synced.",
     sampleBanner: "This is a sample term.",
     sampleBannerNote: "None of it is your data. Map Canvas, or import an export from your browser, and your own courses replace it.",
@@ -99,21 +101,20 @@ const copy = {
     noToken: "Map Canvas in one click",
     noTokenWhy: "This is the route that works at UMD. Many universities — UMD included — stop students creating their own Canvas API tokens, so the “+ New Access Token” button is greyed out with an ⓘ you cannot dismiss. That block is on creating a token, not on using the Canvas API: the same endpoints Canvas's own pages call will answer a request from your signed-in Canvas tab. So the bookmark reads your data directly, with no token and no password leaving your browser.",
     noTokenPolicy: "This is a policy, not a fault on your side — no browser setting, extension, or retry will change it.",
-    step1: "Drag this button to your bookmarks bar — one time only.", dragHint: "If the bar is hidden, press ⌥⌘B (Chrome) or ⇧⌘B (Safari). On a phone or tablet, use the console method below.",
+    step1: "Drag this button to your bookmarks bar — one time only.",
+    dragInstead: "That button is a bookmark, not a link: drag it to your bookmarks bar, then use it while you are on Canvas.", dragHint: "If the bar is hidden, press ⌥⌘B (Chrome) or ⇧⌘B (Safari). On a phone or tablet, use the console method below.",
     step2: "Open umd.instructure.com, sign in as usual, then click the bookmark. TerpPlan opens in a new tab with your courses already mapped. No file to download, no token, nothing to type.",
     fileSummary: "Bookmark blocked? Use a file instead",
     fileWhy: "A strict Content-Security-Policy can block bookmarklets. This route always works: the same script saves a file, and you import it by hand.",
     step3: "Click the bookmark. It reads your courses and scores, then saves terpplan-canvas-export.json.",
     step4: "Come back here and choose that file.",
-    bookmarklet: "⬇ Send Canvas to TerpPlan", console: "Bookmark didn't work? Use the console instead",
-    consoleWhy: "Some pages set a Content-Security-Policy that blocks bookmarklets. The DevTools console is not affected, so this method always works.",
-    consoleHow: "On umd.instructure.com press ⌥⌘I (Chrome) or ⌥⌘C (Safari), open the Console tab, paste the code below and press Enter. Chrome may first ask you to type “allow pasting”. Read the code before running it.",
+    bookmarklet: "⬇ Send Canvas to TerpPlan", console: "Last resort: run it from the DevTools console",
+    consoleWhy: "Only if the bookmark cannot be used at all — on a tablet, say, where there is no bookmarks bar. Browsers deliberately discourage pasting code into a console, and rightly so, so this is the exception rather than the route: read the code below before you run it.",
+    consoleHow: "On umd.instructure.com press ⌥⌘I (Chrome) or ⌥⌘C (Safari), open the Console tab, paste the code below and press Enter. Chrome may first ask you to type “allow pasting” — that warning exists for good reason, which is why this is not the method we lead with.",
     showCode: "Show the code", copy: "Copy", copied: "Copied.",
     importLabel: "Import the export", importHint: "Choose the terpplan-canvas-export.json your browser downloaded.", choose: "Choose file",
     badFormat: "That is not a TerpPlan Canvas export. Use the button above to create one.",
     badJson: "That file is not valid JSON.", noCourses: "That export contains no courses.",
-    syncFailed: "Canvas sync failed", unchanged: "Your existing courses and grades have not been changed.",
-    pasteTokenFirst: "Paste a token first.",
     manualFallback: "Nothing works? Everything still functions by hand: add a course, upload its syllabus, and type the scores you can see in Canvas. The grading maths and the GPA are identical.",
     ask: "Worth one attempt: search UMD's IT knowledge base for “Canvas API token” and open a ticket. Some institutions grant tokens on request for coursework — do not count on it for a personal project.",
 
@@ -122,7 +123,7 @@ const copy = {
     toCheckOne: "thing to check", toCheckMany: "things to check",
     noCoursesYet: "No courses yet. Connect Canvas, load the sample term, or add a course.",
     current: "Current", best: "Best case", nothingGraded: "Nothing graded yet", letter: "Letter",
-    semesterGpa: "Semester GPA", cumulative: "Cumulative", counted: "Counted", leftOut: "Left out",
+    semesterGpa: "Semester GPA", cumulative: "Across everything shown here", counted: "Counted", leftOut: "Left out",
     projection: "Projection, not a real GPA",
     projectionBody: (n: number) => `UMD computes GPA from final letter grades. ${n === 1 ? "1 course here has" : `${n} courses here have`} no final grade yet, so the letter was estimated from the running percentage against the grading scale. It will move as the term goes on.`,
     qualityPoints: (c: number, p: number) => `${c} credits · ${p} quality points`, truncated: (e: string, g: string) => `Exact value ${e} — truncated to ${g}, not rounded.`,
@@ -161,9 +162,14 @@ const copy = {
     privacyTitle: "你的数据存在哪里",
     privacy: "课程、分数和大纲都保存在本浏览器中，大纲文件在你的设备上解析，绝不外传。书签把数据交给 TerpPlan 时走的是网址的 # 片段 —— 浏览器不会把这一段发送给服务器。这里的内容也不会发送到 TerpPlan 的服务器。",
     connect: "映射 Canvas", hide: "收起", connectBody: "把 Canvas 上的课程、分数和作业分组映射到本学期。",
-    tokenHeading: "或者：用访问令牌映射",
-    tokenLabel: "Canvas 访问令牌", tokenHint: "保存在本浏览器的本地存储中。随时可以点「断开连接」清除。",
-    sync: "连接并同步", syncing: "处理中…", disconnect: "断开连接", connectedAs: (n: string) => `已连接：${n}`,
+
+    syncing: "处理中…",
+    importConfirm: (n: string) => `把 ${n} 门 Canvas 课程导入本学期？`,
+    importConfirmBody: "它们会合并进现有课程 —— 你的学分、评分结构、手动录入的分数和各项设置都会保留。",
+    importConfirmYes: "导入", importConfirmNo: "暂不",
+    addCourse: "手动添加课程", addCourseBody: "用于 Canvas 上没有的课，或者其它方式都走不通时。添加后上传它的课程大纲即可套用真实权重，再把你看到的分数填进去。",
+    addCode: "课程代码", addTitle: "课程名（可选）", addCredits: "学分", addConfirm: "添加课程",
+    addedCourse: "课程已添加。打开它可以上传大纲或录入分数。",
     demo: "重新载入示例学期", demoNote: "示例数据，未同步任何内容。",
     sampleBanner: "这是示例学期。",
     sampleBannerNote: "里面没有你的任何真实数据。映射 Canvas，或从浏览器导出后导入，它就会被替换成你自己的课程。",
@@ -178,21 +184,20 @@ const copy = {
     noToken: "一键映射 Canvas",
     noTokenWhy: "这是 UMD 下真正可行的路子。很多高校（包括 UMD）禁止学生自行创建 Canvas API 令牌，「+ 创建新访问许可证」按钮因此是灰的，并挂着一个关不掉的 ⓘ 说明。但被禁的是「创建令牌」，不是「使用 Canvas API」—— Canvas 自己页面调用的那些接口，从你已登录的 Canvas 标签页发请求同样会正常响应。所以书签可以直接读取你的数据，全程不需要令牌，密码也不会离开你的浏览器。",
     noTokenPolicy: "这是学校策略，不是你这边的问题 —— 换浏览器、关扩展、反复重试都不会有变化。",
-    step1: "把这个按钮拖到你的书签栏 —— 只需做这一次。", dragHint: "书签栏没显示就按 ⌥⌘B（Chrome）或 ⇧⌘B（Safari）。手机或平板请改用下面的控制台方式。",
+    step1: "把这个按钮拖到你的书签栏 —— 只需做这一次。",
+    dragInstead: "这个按钮是书签而不是链接：把它拖到书签栏，然后在 Canvas 页面上使用。", dragHint: "书签栏没显示就按 ⌥⌘B（Chrome）或 ⇧⌘B（Safari）。手机或平板请改用下面的控制台方式。",
     step2: "打开 umd.instructure.com，照常登录，然后点一下书签 —— TerpPlan 会在新标签页里打开，课程已经映射好了。不用下载文件、不用令牌、什么都不用输。",
     fileSummary: "书签被拦住了？改用文件",
     fileWhy: "严格的 Content-Security-Policy 会屏蔽书签小工具。这条路径永远可用：同一个脚本保存一个文件，你手动导入。",
     step3: "点一下书签。它会读取你的课程和分数，然后保存 terpplan-canvas-export.json。",
     step4: "回到这里，选择那个文件。",
-    bookmarklet: "⬇ 把 Canvas 送到 TerpPlan", console: "书签没反应？改用控制台",
-    consoleWhy: "部分页面会设置 Content-Security-Policy，这会拦掉书签小工具；而开发者工具的控制台不受它限制。这个方式一定可用。",
-    consoleHow: "在 umd.instructure.com 页面按 ⌥⌘I（Chrome）或 ⌥⌘C（Safari），切到 Console 标签，粘贴下面的代码并回车。Chrome 首次可能要求你先输入「allow pasting」。运行前请先读一遍代码。",
+    bookmarklet: "⬇ 把 Canvas 送到 TerpPlan", console: "最后手段：在开发者工具控制台里运行",
+    consoleWhy: "只有在书签完全没法用时才走这条 —— 比如平板上没有书签栏。浏览器刻意劝阻往控制台里粘代码，这是有道理的，所以它只是例外而非常规路径：运行前请先读一遍下面的代码。",
+    consoleHow: "在 umd.instructure.com 页面按 ⌥⌘I（Chrome）或 ⌥⌘C（Safari），切到 Console 标签，粘贴下面的代码并回车。Chrome 首次可能要求你先输入「allow pasting」—— 这个警告是有原因的，也正是我们不把它作为首选的原因。",
     showCode: "显示代码", copy: "复制", copied: "已复制。",
     importLabel: "导入导出文件", importHint: "选择浏览器刚下载的 terpplan-canvas-export.json。", choose: "选择文件",
     badFormat: "这不是 TerpPlan 的 Canvas 导出文件。请用上面的按钮先生成一份。",
     badJson: "该文件不是有效的 JSON。", noCourses: "该导出文件里没有任何课程。",
-    syncFailed: "Canvas 同步失败", unchanged: "你已有的课程和成绩没有被改动。",
-    pasteTokenFirst: "请先粘贴令牌。",
     manualFallback: "都不行？功能依然完整：添加课程、上传课程大纲、把 Canvas 上能看到的分数据填进去。评分计算和 GPA 结果完全一样。",
     ask: "值得试一次：在 UMD 的 IT 知识库里搜 “Canvas API token”，然后开一张工单。有些学校会为教学用途按需发放令牌 —— 但个人项目不要指望这条路。",
 
@@ -201,7 +206,7 @@ const copy = {
     toCheckOne: "处待确认", toCheckMany: "处待确认",
     noCoursesYet: "还没有课程。连接 Canvas、载入示例学期，或手动添加一门课。",
     current: "当前", best: "最好情况", nothingGraded: "还没有已评分作业", letter: "字母等级",
-    semesterGpa: "本学期 GPA", cumulative: "累计", counted: "已计入", leftOut: "未计入",
+    semesterGpa: "本学期 GPA", cumulative: "本页全部课程合计", counted: "已计入", leftOut: "未计入",
     projection: "这是预测值，不是真实 GPA",
     projectionBody: (n: number) => `UMD 只依据最终字母等级计算 GPA。此处有 ${n} 门课还没有最终成绩，字母等级是按当前百分制对照大纲里的等级表推算的。随着学期推进会不断变化。`,
     qualityPoints: (c: number, p: number) => `${c} 学分 · ${p} 质量分`, truncated: (e: string, g: string) => `精确值 ${e} —— 截断为 ${g}，未四舍五入。`,
@@ -260,15 +265,18 @@ export default function GradesPage() {
   const [basis, setBasis] = useState<"current" | "projected">("current");
   const hydrated = useRef(false);
 
-  const [token, setToken] = useState("");
-  const [userName, setUserName] = useState<string | null>(null);
   const [showConnect, setShowConnect] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ kind: "ok" | "bad"; text: string } | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [showNonCredit, setShowNonCredit] = useState(false);
   const [pending, setPending] = useState<Record<string, ParsedScheme>>({});
+  /** A fragment import waiting for the student to say yes. */
+  const [pendingImport, setPendingImport] = useState<CanvasPayload | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [draftCourse, setDraftCourse] = useState({ code: "", title: "", credits: "" });
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const bookmarkRef = useRef<HTMLAnchorElement | null>(null);
 
   const note = (kind: "ok" | "bad", text: string) => setMessage({ kind, text });
   // The fragment handler in the mount effect needs the localised word for "course", but the effect
@@ -282,20 +290,15 @@ export default function GradesPage() {
     /* eslint-disable react-hooks/set-state-in-effect */
     if (saved.language === "en" || saved.language === "zh") setLanguage(saved.language);
 
-    // A bookmarklet hand-off wins over everything. The student just clicked "send to TerpPlan" on
-    // Canvas, so neither the sample term nor a previously stored list should get in its way.
+    // A bookmarklet hand-off is only *offered*, never applied on its own. Applying it straight away
+    // meant any crafted /grades#canvas-import=… link could silently replace a student's saved work,
+    // and it also skipped the storage read below, so level, fill and basis fell back to defaults
+    // and were then written back over the real values.
     const hash = typeof window === "undefined" ? "" : window.location.hash;
-    if (hash.includes(`${IMPORT_HASH_KEY}=`)) {
-      // Clear it first, so a reload does not import twice.
+    const handoff = hash.includes(`${IMPORT_HASH_KEY}=`);
+    if (handoff) {
+      // Clear it immediately so a reload does not offer it twice.
       history.replaceState(null, "", window.location.pathname + window.location.search);
-      void readImportFragment(hash).then((payload) => {
-        if (!payload) return;
-        const merged = mergeCanvasData([], payload, () => `c${Math.random().toString(36).slice(2, 10)}`);
-        setCourses(merged.courses as Course[]);
-        if (merged.userName) setUserName(merged.userName);
-        note("ok", `${merged.added + merged.updated} ${tRef.current.course}`);
-      });
-      return;
     }
 
     let restored = false;
@@ -313,8 +316,41 @@ export default function GradesPage() {
     // First visit, or storage is unavailable: show the sample term so the tool explains itself
     // before anything is connected. It is labelled, and any real data clears it (see applyPayload).
     if (!restored) setCourses(sampleTerm());
+
+    if (handoff) {
+      void readImportFragment(hash).then((payload) => {
+        if (payload) setPendingImport(payload);
+      });
+    }
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
+
+  /**
+   * React 19 replaces a `javascript:` href with a call that throws, as a security precaution, so
+   * passing the bookmarklet as a prop produces a bookmark that does nothing when dragged. Setting
+   * the attribute after mount keeps the value off React's sanitising path.
+   */
+  /**
+   * The same hand-off, for a fragment that arrives without a fresh document — pasting the link
+   * into the address bar while /grades is already open only fires `hashchange`, so the mount effect
+   * above never runs and the import would silently do nothing.
+   */
+  useEffect(() => {
+    const onHashChange = () => {
+      const h = window.location.hash;
+      if (!h.includes(`${IMPORT_HASH_KEY}=`)) return;
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+      void readImportFragment(h).then((payload) => { if (payload) setPendingImport(payload); });
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  // Depends on showConnect: the anchor only exists once the panel is expanded, so an effect with
+  // an empty dependency list runs before there is anything to set the attribute on.
+  useEffect(() => {
+    if (showConnect) bookmarkRef.current?.setAttribute("href", bookmarkletHref());
+  }, [showConnect]);
 
   // The first pass of this effect is the read above; skip it so a fresh visit does not immediately
   // write back what it just read.
@@ -338,21 +374,49 @@ export default function GradesPage() {
     const real = courses.filter((c) => c.source !== "sample");
     const merged = mergeCanvasData(real as StoredCourse[], payload, () => `c${Math.random().toString(36).slice(2, 10)}`);
     setCourses(merged.courses as Course[]);
-    if (merged.userName) setUserName(merged.userName);
     return merged;
   }
 
-  async function connect() {
-    if (!token.trim()) { note("bad", t.pasteTokenFirst); return; }
+  /**
+   * A course the student types in themselves.
+   *
+   * This is the path that works without any Canvas access at all, which is why the copy promises
+   * it: upload the syllabus for the weighting, then enter the scores Canvas is showing. Without
+   * it, anyone whose bookmarklet is blocked had nowhere to go.
+   */
+  function addManualCourse() {
+    const code = draftCourse.code.trim();
+    if (!code) return;
+    const credits = Number(draftCourse.credits);
+    const id = `c${Math.random().toString(36).slice(2, 10)}`;
+    setCourses((list) => [
+      ...list.filter((c) => c.source !== "sample"),
+      {
+        id,
+        code,
+        title: draftCourse.title.trim() || undefined,
+        credits: Number.isFinite(credits) && credits > 0 ? credits : null,
+        source: "manual",
+        scheme: null,
+        manualItems: [],
+        overrides: {},
+      } as Course,
+    ]);
+    setDraftCourse({ code: "", title: "", credits: "" });
+    setShowAdd(false);
+    setOpenId(id);
+    note("ok", t.addedCourse);
+  }
+
+  async function confirmImport() {
+    const payload = pendingImport;
+    if (!payload) return;
+    setPendingImport(null);
     setBusy(t.syncing);
     try {
-      const client = new CanvasClient(token.trim(), DEFAULT_BASE_URL);
-      const payload = await client.syncAll((m) => setBusy(m));
       const merged = await applyPayload(payload);
       setShowConnect(false);
       note("ok", `${merged.added + merged.updated} ${tRef.current.course}`);
-    } catch (err) {
-      note("bad", `${t.syncFailed} ${(err as Error).message} ${t.unchanged}`);
     } finally {
       setBusy(null);
     }
@@ -451,10 +515,47 @@ export default function GradesPage() {
           <button type="button" onClick={() => setShowConnect((v) => !v)} className="rounded-lg bg-[#273c38] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1d302c]">
             {showConnect ? t.hide : t.connect}
           </button>
-          <button type="button" onClick={() => { setCourses(sampleTerm()); setUserName(null); note("ok", t.demoNote); }} className="rounded-lg border border-[#dcd9d0] bg-white px-4 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#f6f4ef]">
+          <button type="button" onClick={() => setShowAdd((v) => !v)} className="rounded-lg border border-[#dcd9d0] bg-white px-4 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#f6f4ef]">
+            {showAdd ? t.hide : t.addCourse}
+          </button>
+          <button type="button" onClick={() => { setCourses(sampleTerm()); note("ok", t.demoNote); }} className="rounded-lg border border-[#dcd9d0] bg-white px-4 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#f6f4ef]">
             {t.demo}
           </button>
         </div>
+
+        {showAdd && (
+          <div className="mt-4 rounded-xl border border-[#e0ddd5] bg-white p-4">
+            <p className="text-sm font-semibold text-[#273c38]">{t.addCourse}</p>
+            <p className="mt-1 text-xs text-[#48534f]">{t.addCourseBody}</p>
+            <div className="mt-3 flex flex-wrap items-end gap-2">
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[.1em] text-[#5d6561]">{t.addCode}</span>
+                <input
+                  value={draftCourse.code} onChange={(e) => setDraftCourse((d) => ({ ...d, code: e.target.value }))}
+                  placeholder="BMGT110F" className="w-32 rounded-lg border border-[#dcd9d0] px-2 py-1.5 text-xs"
+                />
+              </label>
+              <label className="block grow">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[.1em] text-[#5d6561]">{t.addTitle}</span>
+                <input
+                  value={draftCourse.title} onChange={(e) => setDraftCourse((d) => ({ ...d, title: e.target.value }))}
+                  className="w-full rounded-lg border border-[#dcd9d0] px-2 py-1.5 text-xs"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[.1em] text-[#5d6561]">{t.addCredits}</span>
+                <input
+                  type="number" min="0" step="1" value={draftCourse.credits}
+                  onChange={(e) => setDraftCourse((d) => ({ ...d, credits: e.target.value }))}
+                  className="w-20 rounded-lg border border-[#dcd9d0] px-2 py-1.5 text-xs"
+                />
+              </label>
+              <button type="button" onClick={addManualCourse} className="rounded-lg bg-[#273c38] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1d302c]">
+                {t.addConfirm}
+              </button>
+            </div>
+          </div>
+        )}
 
         {hasSample && (
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#ead8b5] bg-[#fffaf0] px-4 py-3">
@@ -490,6 +591,23 @@ export default function GradesPage() {
           </div>
         )}
 
+        {pendingImport && (
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#cddbd1] bg-[#edf3ef] px-4 py-3">
+            <div>
+              <p className="text-sm font-semibold text-[#273c38]">{t.importConfirm(String(pendingImport.courses.length))}</p>
+              <p className="mt-1 text-xs text-[#48534f]">{t.importConfirmBody}</p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <button type="button" onClick={() => void confirmImport()} className="rounded-lg bg-[#273c38] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1d302c]">
+                {t.importConfirmYes}
+              </button>
+              <button type="button" onClick={() => setPendingImport(null)} className="rounded-lg border border-[#dcd9d0] bg-white px-3 py-1.5 text-xs font-semibold text-[#273c38] hover:bg-[#f6f4ef]">
+                {t.importConfirmNo}
+              </button>
+            </div>
+          </div>
+        )}
+
         {message && (
           <p className={`mt-4 rounded-lg border px-4 py-3 text-sm ${message.kind === "bad" ? "border-[#e3c4bb] bg-[#fff5f1] text-[#8f3f30]" : "border-[#cddbd1] bg-[#edf3ef] text-[#315c43]"}`}>
             {message.text}
@@ -511,9 +629,9 @@ export default function GradesPage() {
               <li>
                 {t.step1}{" "}
                 <a
-                  href={bookmarkletHref()}
+                  ref={bookmarkRef}
                   draggable
-                  onClick={(e) => { e.preventDefault(); note("bad", t.noTokenPolicy); }}
+                  onClick={(e) => { e.preventDefault(); note("ok", t.dragInstead); }}
                   className="ml-1 inline-block rounded-lg bg-[#a34a39] px-3 py-1.5 text-xs font-semibold text-white"
                 >
                   {t.bookmarklet}
@@ -559,34 +677,6 @@ export default function GradesPage() {
                   {t.copy}
                 </button>
                 <pre className="mt-2 max-h-60 overflow-auto rounded-lg bg-[#273c38] p-3 text-[11px] leading-relaxed text-[#e8e6e0]">{exportSource()}</pre>
-              </div>
-            </details>
-
-            {/* The token route stays available for anyone whose institution still issues them. */}
-            <details className="rounded-lg border border-[#e0ddd5] bg-[#faf9f6]">
-              <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-[#273c38]">{t.tokenHeading}</summary>
-              <div className="grid gap-3 px-3 pb-3">
-                <p className="text-xs text-[#48534f]">{t.connectBody}</p>
-                <label className="block">
-                  <span className="mb-1 block text-xs font-semibold uppercase tracking-[.1em] text-[#5d6561]">{t.tokenLabel}</span>
-                  <input
-                    type="password" value={token} autoComplete="off" spellCheck={false}
-                    onChange={(e) => setToken(e.target.value)}
-                    className="w-full rounded-lg border border-[#dcd9d0] px-3 py-2 font-mono text-xs"
-                  />
-                  <span className="mt-1 block text-xs text-[#7a817d]">{t.tokenHint}</span>
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={connect} disabled={!!busy} className="rounded-lg bg-[#273c38] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:opacity-50">
-                    {busy ? t.syncing : t.sync}
-                  </button>
-                  {userName && (
-                    <button type="button" onClick={() => { setToken(""); setUserName(null); }} className="rounded-lg border border-[#dcd9d0] px-4 py-2 text-xs font-semibold text-[#273c38]">
-                      {t.disconnect}
-                    </button>
-                  )}
-                  {userName && <span className="self-center text-xs text-[#7a817d]">{t.connectedAs(userName)}</span>}
-                </div>
               </div>
             </details>
 

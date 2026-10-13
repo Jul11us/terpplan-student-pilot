@@ -142,7 +142,9 @@ async function readPdf(file: File, onProgress: (p: { page: number; total: number
 
   let doc;
   try {
-    doc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+    // isEvalSupported: false is deliberate — this is a user-supplied PDF, and pdfjs uses
+    // new Function(...) to compile PostScript functions when it is left on.
+    doc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false }).promise;
   } catch (err) {
     const message = String((err as Error)?.message ?? "");
     if (/password/i.test(message)) {
