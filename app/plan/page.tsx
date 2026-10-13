@@ -34,6 +34,7 @@ import { OpeningCheck } from "@/app/components/opening-check";
 import { RegistrationDayLink } from "@/app/components/registration-day-link";
 import { formatSeatReadTime } from "@/lib/seat-time";
 import { courseSearchView, startCourseSearch, type CourseSearchState } from "@/lib/course-search";
+import { offerInstructors, type InstructorSearch } from "@/lib/instructor-search";
 import { groupSections, ownMeetings } from "@/lib/section-groups";
 import { reportDetails } from "@/lib/report-link";
 import { openFeedback } from "@/lib/feedback";
@@ -85,7 +86,8 @@ const copy = {
   en: {
     eyebrow: "UNIVERSITY OF MARYLAND · STUDENT PILOT", title: "Plan your next semester",
     subtitle: "Find a course, build a schedule, and keep an eye on open seats.", find: "Find a course",
-    schedule: "Build a schedule", watch: "Watch seats", search: "Search course code or title",
+    schedule: "Build a schedule", watch: "Watch seats", search: "Search course code, title or instructor",
+    instructorsLabel: "Instructors", instructorOpen: "Sections this term →", instructorMore: "More instructors match; type more of the name.", instructorTip: "Type @ and a name to search only instructors.", noInstructors: "No instructor by that name on PlanetTerp.",
     searchHint: "e.g. ", term: "Term", results: "Course matches", select: "View sections",
     quickAdd: "Add", inPlanShort: "In plan", searchMode: "Search courses", genEdMode: "Find by Gen Ed", noResults: "No matches yet. Search by a course code or title.", notOffered: "{course} is not offered in {term}. It may be offered in another term — try switching the term above.", sections: "Sections", addSchedule: "Add this course to plan", courseInPlan: "Course in plan", instructorPick: "Instructors to keep", instructorHint: "Tap a name to leave out that instructor's sections.", keepOne: "Keep at least one instructor.", allInstructors: "All",
     addWatch: "Watch this section", watchShort: "Watch", watchingShort: "Watching", scheduleTitle: "Your schedule", emptySchedule: "Add courses from search to generate schedule options.",
@@ -108,7 +110,8 @@ const copy = {
   },
   zh: {
     eyebrow: "马里兰大学 · 学生试用", title: "规划下一学期", subtitle: "找课程、排进课表，并关注空余名额。",
-    find: "找课程", schedule: "排课", watch: "关注余位", search: "搜索课程编号或名称", searchHint: "例如 ",
+    find: "找课程", schedule: "排课", watch: "关注余位", search: "搜索课程编号、名称或老师",
+    instructorsLabel: "老师", instructorOpen: "这学期教的班 →", instructorMore: "同名的老师还有更多，多输入一些名字可以缩小范围。", instructorTip: "输入 @ 加老师名字，只搜老师。", noInstructors: "PlanetTerp 上没有这个名字的老师。", searchHint: "例如 ",
     term: "学期", results: "匹配课程", select: "查看班次", quickAdd: "加入", inPlanShort: "已加入", searchMode: "搜索课程", genEdMode: "按 Gen Ed 查找", noResults: "暂无匹配结果。请按课程编号或名称搜索。", notOffered: "{term}没有开设 {course}。这门课可能在其他学期开设，可以在上方切换学期查看。",
     sections: "可选班次", addSchedule: "将整门课程加入排课", courseInPlan: "课程已加入", instructorPick: "保留哪些老师", instructorHint: "点老师名字即可排除他的班次。", keepOne: "至少保留一位老师。", allInstructors: "全部", addWatch: "关注这个班次", watchShort: "关注", watchingShort: "已关注", scheduleTitle: "我的课表",
     emptySchedule: "请从找课中添加课程，再生成排课方案。", watchesTitle: "余位关注", watchCadence: "开通邮件提醒后，TerpPlan 大约每 10 分钟检查一次你关注的班次（高峰时可能更晚），满员的班次一有空位就发邮件。空位可能在你看到邮件前又被抢走，收到后请尽快去 Testudo 注册。", emptyWatches: "关注一个班次后会显示在这里。",
@@ -272,7 +275,10 @@ export default function Home() {
   const [referenceSchedule, setReferenceSchedule] = useState<ReferenceSchedule | null>(null);
   const rememberSchedule = useCallback((schedule: ReferenceSchedule) => setReferenceSchedule(schedule), []);
   const [searchState, setSearchState] = useState<CourseSearchState>({ key: "", status: "ready", results: [], error: "" });
-  const { results, searching, error: searchError } = courseSearchView(searchState, query, term);
+  const [instructorState, setInstructorState] = useState<{ key: string } & InstructorSearch>({ key: "", results: [], more: false });
+  // "@name" searches instructors only, so the course search is left out.
+  const courseQuery = query.trim().startsWith("@") ? "" : query;
+  const { results, searching, error: searchError } = courseSearchView(searchState, courseQuery, term);
   // Seat counts for the courses in the results list, by "term|courseId"; null once a lookup failed or the
   // term has no live seat data. Kept for two minutes, then asked again the next time the course is listed.
   const [resultSeats, setResultSeats] = useState<Record<string, { at: number; summary: SeatSummary | null }>>({});
@@ -463,7 +469,24 @@ export default function Home() {
     return () => window.removeEventListener("storage", onStorage);
   }, [syncPlanSlot]);
 
-  useEffect(() => startCourseSearch(query, term, setSearchState, t.error), [query, term, t.error]);
+  useEffect(() => startCourseSearch(courseQuery, term, setSearchState, t.error), [courseQuery, term, t.error]);
+  // Instructors whose names match, once the course search has answered (a department code such as "math" gets
+  // its courses, not Mathew and Mathis).
+  const instructorKey = query.trim().toLowerCase();
+  const offerNames = useMemo(() => !searching && offerInstructors(query, results.map((course) => course.course_id)), [searching, query, results]);
+  useEffect(() => {
+    if (!offerNames) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      fetch(`/api/instructor/search?q=${encodeURIComponent(instructorKey)}`, { signal: controller.signal })
+        .then((response) => response.ok ? response.json() as Promise<Partial<InstructorSearch>> : null)
+        .then((body) => { if (body) setInstructorState({ key: instructorKey, results: body.results ?? [], more: Boolean(body.more) }); })
+        .catch(() => undefined);
+    }, 150);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [offerNames, instructorKey]);
+  const instructorResults = offerNames && instructorState.key === instructorKey ? instructorState.results : [];
+  const instructorOnly = query.trim().startsWith("@");
 
   const changeSearchQuery = (value: string) => {
     setQuery(value); setError("");
@@ -1018,6 +1041,13 @@ export default function Home() {
             {findMode === "search" && <>
             <label id="course-search" className="block scroll-mt-6"><span className="sr-only">{t.search}</span><div className="flex items-center gap-3 rounded-xl border border-[#d9d6ce] bg-white px-4 py-3 focus-within:border-[#a34a39] focus-within:ring-2 focus-within:ring-[#a34a39]/30"><span aria-hidden="true" className="text-lg text-[#646c68]">⌕</span><input value={query} onChange={(event) => changeSearchQuery(event.target.value)} aria-label={t.search} placeholder={searchPlaceholder} className="w-full bg-transparent text-sm outline-none placeholder:text-[#646c68]" /><kbd title={language === "en" ? "Press / to search" : "按 / 快速搜索"} className="hidden rounded border border-[#dedbd3] px-1.5 text-[11px] text-[#646c68] sm:inline">/</kbd></div></label>
             {!query && <Link href="/hard-courses" className="mt-2 inline-block text-xs font-medium text-[#a34a39] hover:underline">{language === "en" ? "See the courses that fill up every semester →" : "看看往年最难抢的课 →"}</Link>}
+            {!query && <p className="mt-1 text-[11px] text-[#646c68]">{t.instructorTip}</p>}
+            {instructorResults.length > 0 && <div className="mt-3 rounded-xl border border-[#e0ddd5] bg-white px-3 py-2">
+              <p className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#9a5040]">{t.instructorsLabel}</p>
+              <ul className="divide-y divide-[#f0ede6]">{instructorResults.map((item) => <li key={item.name}><a href={`/instructor?${new URLSearchParams({ name: item.name, term })}`} className="flex flex-wrap items-baseline justify-between gap-x-3 py-2 text-sm hover:text-[#a34a39]"><span className="font-semibold">{item.name}</span><span className="text-xs font-medium text-[#a34a39]">{t.instructorOpen}</span></a></li>)}</ul>
+              {instructorState.more && <p className="pb-1 text-[11px] text-[#646c68]">{t.instructorMore}</p>}
+            </div>}
+            {instructorOnly && offerNames && instructorState.key === instructorKey && !instructorResults.length && <p className="mt-3 text-sm text-[#646c68]">{t.noInstructors}</p>}
             {!searching && results.length > 0 && <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
               {term === "202701" && <button type="button" aria-pressed={resultFilters.openSeats} onClick={() => setResultFilters((current) => ({ ...current, openSeats: !current.openSeats }))} className={`rounded-full border px-3 py-1.5 font-semibold ${resultFilters.openSeats ? "border-[#536d64] bg-[#edf3ef] text-[#273c38]" : "border-[#d9d6ce] text-[#48534f] hover:bg-[#f7f5f0]"}`}>{resultFilters.openSeats ? "✓ " : ""}{t.filterOpen}</button>}
               {term === "202701" && <button type="button" aria-pressed={Boolean(resultFilters.fitsSchedule && fitReference)} disabled={!fitReference} title={fitReference ? undefined : t.filterFitsNeedPlan} onClick={() => setResultFilters((current) => ({ ...current, fitsSchedule: !current.fitsSchedule }))} className={`rounded-full border px-3 py-1.5 font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${resultFilters.fitsSchedule && fitReference ? "border-[#536d64] bg-[#edf3ef] text-[#273c38]" : "border-[#d9d6ce] text-[#48534f] hover:bg-[#f7f5f0]"}`}>{resultFilters.fitsSchedule && fitReference ? "✓ " : ""}{t.filterFits}</button>}
@@ -1035,7 +1065,7 @@ export default function Home() {
               const active = filtersActive(resultFilters);
               return <>
             {active && !searching && results.length > 0 && <p className="mt-2 text-xs text-[#646c68]">{t.filterShowing.replace("{n}", String(shown.length)).replace("{m}", String(results.length))} · <button type="button" onClick={() => setResultFilters(NO_FILTERS)} className="font-semibold text-[#9a5040] hover:underline">{t.filterClear}</button></p>}
-            <div className="mt-4 divide-y divide-[#ece9e2]">{searching && <p className="py-5 text-sm text-[#646c68]">{t.loading}</p>}{active && !searching && results.length > 0 && !shown.length && <p className="py-5 text-sm text-[#646c68]">{t.filterNone}</p>}{!searching && query.trim().length >= 2 && !results.length && !error && <p className="py-5 text-sm leading-6 text-[#646c68]">{/^[a-z]{4}\s?\d{3}[a-z]?$/i.test(query.trim())
+            <div className="mt-4 divide-y divide-[#ece9e2]">{searching && <p className="py-5 text-sm text-[#646c68]">{t.loading}</p>}{active && !searching && results.length > 0 && !shown.length && <p className="py-5 text-sm text-[#646c68]">{t.filterNone}</p>}{!searching && query.trim().length >= 2 && !results.length && !error && !instructorOnly && !instructorResults.length && <p className="py-5 text-sm leading-6 text-[#646c68]">{/^[a-z]{4}\s?\d{3}[a-z]?$/i.test(query.trim())
                 // A full course code with no match usually means the course is not offered this term, not a typo.
                 ? t.notOffered.replace("{course}", query.trim().replace(/\s+/g, "").toUpperCase()).replace("{term}", termLabel(term, language))
                 : t.noResults}</p>}
