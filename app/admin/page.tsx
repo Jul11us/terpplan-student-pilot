@@ -298,7 +298,7 @@ export default function AdminPage() {
               <p className="mt-1 font-serif text-3xl text-[#24312d]">{value}</p>
             </div>)}
           </div>
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div className="admin-race-lists mt-4 grid gap-4 lg:grid-cols-2">
             <div>
               <h3 className="text-xs font-semibold text-[#24312d]">{t.movers}</h3>
               {stats.seatRace.movers.length ? <table className="mt-2 w-full text-xs"><thead><tr className="border-b border-[#ece9e2] text-left text-[#5d6561]"><th className="py-1.5 font-medium">{t.course}</th><th className="py-1.5 text-right font-medium">{t.mTaken}</th><th className="py-1.5 text-right font-medium">{t.mLeft}</th></tr></thead>

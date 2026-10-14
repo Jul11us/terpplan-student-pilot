@@ -93,6 +93,8 @@
 .admin-card-feedback .admin-card-toolbar { background: #e5dbf1; }
 .admin-card-visitors .admin-panel-content > .grid > div,
 .admin-card-race .admin-panel-content > .grid > div { border: var(--admin-border); border-radius: 9px; }
+/* The two lists under the race numbers are boxed like the numbers, with room inside, one under the other until wide screens. */
+.admin-card-race .admin-panel-content > .admin-race-lists > div { min-width: 0; padding: 12px 14px; background: #fff; }
 .admin-card-alerts .admin-panel-content > .grid > div { border: var(--admin-border); border-radius: 9px; box-shadow: 3px 3px 0 var(--admin-ink); background: #fff8e1; }
 .admin-quota-bars { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
 .admin-quota-bars label { display: block; font-size: 11px; font-weight: 700; }
@@ -147,6 +149,7 @@
   .admin-caption-detail { width: 100%; margin-left: 18px; }
   .admin-panel-content { padding: 16px; }
   .admin-panel-content > .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-panel-content > .admin-race-lists { grid-template-columns: minmax(0, 1fr); }
   .admin-card { box-shadow: 3px 3px 0 var(--admin-ink); }
   .admin-board { gap: 18px; }
   .admin-quota-bars { grid-template-columns: minmax(0, 1fr); }
