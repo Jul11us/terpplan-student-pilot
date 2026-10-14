@@ -6,6 +6,7 @@ import { useDocumentLanguage } from "@/lib/document-language";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { CONTACT_EMAIL } from "@/lib/site-config";
 import { openFeedback } from "@/lib/feedback";
+import { SEAT_CHECK_MINUTES } from "@/lib/seat-cadence";
 import homeReviews from "@/data/home-reviews.json";
 import { readRegistrationDay, savedReminder } from "@/lib/registration-day";
 import { RegistrationCountdown } from "@/app/components/registration-countdown";
@@ -85,7 +86,7 @@ const copy = {
       ["Is TerpPlan official?", "No. It is an independent project by UMD students, not affiliated with the university. You still register in Testudo, and Testudo is the final word on sections, times and seats."],
       ["Does it cost anything?", "No. TerpPlan is free, and you can plan without an account."],
       ["Where is my plan stored?", "In your browser. If you sign in with your email, your plan, preferences and courses taken are also kept in your account so they open on your other devices; you can delete that copy. Degree audit PDFs are read in your browser and never uploaded."],
-      ["How fresh are the seat counts?", "With seat emails on, watched sections are checked about every 10 minutes, sometimes later at busy times. While the planner is open it reads seats at most once a minute. A seat can fill again before you see it, so register right away."],
+      ["How fresh are the seat counts?", `With seat emails on, watched sections are checked about every ${SEAT_CHECK_MINUTES} minutes, sometimes later at busy times. While the planner is open it reads seats at most once a minute. A seat can fill again before you see it, so register right away.`],
       ["Where does the course data come from?", "Courses, sections and seats come from UMD's Schedule of Classes (Testudo) and umd.io. Instructor ratings, reviews and average GPAs come from PlanetTerp."],
       ["Are the empty rooms accurate?", "A room on the empty-room page has no class scheduled at that time, from this term's Testudo schedule. It can still be used for an exam, a review session or an event, and some rooms are locked outside class hours, so treat it as a good place to look, not a booking."],
       ["Is there a Chinese version?", "Yes. Switch to 中文 at the top of any page."],
@@ -124,7 +125,7 @@ const copy = {
       ["TerpPlan 是官方的吗？", "不是。这是 UMD 学生做的独立项目，与学校没有隶属关系。最终仍要在 Testudo 注册，班次、时间和余位以 Testudo 为准。"],
       ["要钱吗？", "不要，完全免费，不注册账号也能排课。"],
       ["我的数据存在哪？", "默认存在你的浏览器里。用邮箱登录后，方案、偏好和已修课程也会保存到账号，换设备登录就能看到，你也可以删除这份副本。学位审计 PDF 只在你的浏览器里读取，不会上传。"],
-      ["余位多久更新一次？", "开通邮件提醒后，关注的班次大约每 10 分钟检查一次，高峰时可能更晚。排课页打开时，最多每分钟读取一次余位。空位可能很快又被抢走，收到提醒请尽快注册。"],
+      ["余位多久更新一次？", `开通邮件提醒后，关注的班次大约每 ${SEAT_CHECK_MINUTES} 分钟检查一次，高峰时可能更晚。排课页打开时，最多每分钟读取一次余位。空位可能很快又被抢走，收到提醒请尽快注册。`],
       ["课程数据从哪来？", "课程、班次和余位来自 UMD 官方课表（Testudo）和 umd.io；老师评分、评论和平均 GPA 来自 PlanetTerp。"],
       ["空教室准吗？", "列出的教室只表示这个时段没有排课（根据 Testudo 本学期的课表）。它仍可能被考试、习题课或活动占用，有些教室课后会上锁，所以把它当作“值得去看看”的地方，而不是预约。"],
       ["有中文吗？", "有，在任意页面右上角切换。"],

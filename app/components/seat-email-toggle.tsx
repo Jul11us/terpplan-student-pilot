@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { SEAT_CHECK_MINUTES } from "@/lib/seat-cadence";
 
 type Language = "en" | "zh";
 
@@ -16,7 +17,8 @@ const copy = {
     notConfigured: "Seat emails are not available yet.",
     mismatch: "That is not the email you signed in with.",
     error: "Could not update seat emails. Please try again.",
-    lag: "Checks run about every 10 minutes and seat data can lag, so a seat may be gone by the time you open the email.",
+    lag: `Checks run about every ${SEAT_CHECK_MINUTES} minutes and seat data can lag, so a seat may be gone by the time you open the email.`,
+    unwatched: (n: number) => `You are watching ${n} section${n === 1 ? "" : "s"}, but seat emails are off: when one opens, you will only see it if this page is open.`,
   },
   zh: {
     title: "有空位时发邮件提醒我",
@@ -29,11 +31,12 @@ const copy = {
     notConfigured: "邮件提醒暂未开放。",
     mismatch: "这不是你登录时使用的邮箱。",
     error: "暂时无法更新邮件提醒，请重试。",
-    lag: "系统大约每 10 分钟检查一次，余位数据也可能有延迟，收到邮件时位置可能已被占用。",
+    lag: `系统大约每 ${SEAT_CHECK_MINUTES} 分钟检查一次，余位数据也可能有延迟，收到邮件时位置可能已被占用。`,
+    unwatched: (n: number) => `你关注了 ${n} 个班次，但还没开邮件提醒：有空位时不会通知你，只有打开这个页面才看得到。`,
   },
 } as const;
 
-export default function SeatEmailToggle({ language, defaultEmail }: { language: Language; defaultEmail: string }) {
+export default function SeatEmailToggle({ language, defaultEmail, watchCount = 0 }: { language: Language; defaultEmail: string; watchCount?: number }) {
   const t = copy[language];
   const [status, setStatus] = useState<{ configured: boolean; enabled: boolean } | null>(null);
   const [email, setEmail] = useState(defaultEmail);
@@ -67,7 +70,10 @@ export default function SeatEmailToggle({ language, defaultEmail }: { language: 
   };
 
   if (!status) return null;
-  return <div className="mt-3 rounded-xl border border-[#e3dfd6] bg-white p-4">
+  // Watches with seat emails off never reach the student: say so where they turn emails on.
+  const silent = status.configured && !status.enabled && watchCount > 0;
+  return <div className={`mt-3 rounded-xl border bg-white p-4 ${silent ? "border-[#e2b86b] ring-1 ring-[#e2b86b]/40" : "border-[#e3dfd6]"}`}>
+    {silent && <p role="alert" className="mb-3 rounded-lg bg-[#fff8e8] px-3 py-2 text-xs font-semibold leading-5 text-[#745424]">⚠ {t.unwatched(watchCount)}</p>}
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
         <p className="text-sm font-semibold">{t.title}</p>

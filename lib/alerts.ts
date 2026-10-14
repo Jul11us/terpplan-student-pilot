@@ -28,6 +28,15 @@ export function alertsConfigured() {
   return Boolean(env.EMAIL_AUTH_SECRET && env.RESEND_API_KEY && env.EMAIL_FROM);
 }
 
+// The student's opt-in: keeps the address for seat emails, with a fresh unsubscribe link. Used by the
+// seat-email switch and by sign-in when "email me when a seat opens" is ticked.
+export async function subscribeAlerts(db: Db, userId: string, email: string) {
+  const tokenHash = await hashToken(await unsubscribeToken(userId));
+  await db.insert(alertSubscriptions)
+    .values({ userId, email, unsubscribeTokenHash: tokenHash })
+    .onConflictDoUpdate({ target: alertSubscriptions.userId, set: { email, unsubscribeTokenHash: tokenHash } });
+}
+
 // The unsubscribe token is derived from the account with the server secret, so it never has to be
 // stored in plain form; the table keeps only its SHA-256 for lookup.
 export async function unsubscribeToken(userId: string) {

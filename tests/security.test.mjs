@@ -122,6 +122,28 @@ test("real code request and verification create a hardened session; replay is re
   assert.deepEqual(await auth.currentUser(new Request("https://terpplan.test", { headers: { cookie } })), { id: `email:${await auth.hashEmail(email)}`, provider: "email" });
   assert.equal((await verifyCode(jsonRequest("/api/auth/verify-code", { email, code }))).status, 401);
   assert.equal(rowCount("email_login_codes"), 0);
+  assert.equal(rowCount("alert_subscriptions"), 0, "seat emails stay off unless the box is ticked");
+});
+
+test("signing in with \"email me when a seat opens\" ticked turns seat emails on with the verified address", async () => {
+  const signIn = async (email, body) => {
+    await requestCode(jsonRequest("/api/auth/request-code", { email }));
+    const code = messages.at(-1).text.match(/is (\d{6})/)[1];
+    return verifyCode(jsonRequest("/api/auth/verify-code", { email, code, ...body }));
+  };
+  const response = await signIn("Ticked@Example.test", { alerts: true });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).alerts, true);
+  const row = database.sqlite.prepare("SELECT user_id, email, unsubscribe_token_hash FROM alert_subscriptions").get();
+  assert.deepEqual([row.user_id, row.email], [`email:${await auth.hashEmail("ticked@example.test")}`, "ticked@example.test"]);
+  assert.equal(row.unsubscribe_token_hash, await hashToken(await unsubscribeToken(row.user_id)), "alert emails can unsubscribe it");
+  const cookie = response.headers.get("set-cookie").split(";")[0];
+  assert.equal((await (await alertRoutes.GET(new Request("https://terpplan.test/api/alerts", { headers: { cookie } }))).json()).enabled, true);
+
+  const unticked = await signIn("unticked@example.test", { alerts: false });
+  assert.equal((await unticked.json()).alerts, false);
+  assert.equal((await signIn("text@example.test", { alerts: "yes" })).status, 200, "anything but true leaves it off");
+  assert.equal(rowCount("alert_subscriptions"), 1);
 });
 
 test("concurrent correct-code verifications consume one code only once", async () => {

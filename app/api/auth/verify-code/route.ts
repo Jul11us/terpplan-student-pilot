@@ -1,4 +1,6 @@
 import { env } from "cloudflare:workers";
+import { getDb } from "@/db";
+import { alertsConfigured, subscribeAlerts } from "@/lib/alerts";
 import { createEmailSession, emailAuthConfigured, emailSessionCookie, hashCode, hashEmail } from "@/lib/auth";
 import { readJsonObject, sameOriginMutation } from "@/lib/request-security";
 
@@ -48,7 +50,14 @@ export async function POST(request: Request) {
     const consumed = await env.DB.prepare("DELETE FROM email_login_codes WHERE email_hash = ? AND code_hash = ? RETURNING email_hash").bind(emailHash, record.code_hash).first<{ email_hash: string }>();
     if (!consumed) return Response.json({ error: "That code expired or is incorrect. Request a new code." }, { status: 401 });
     const token = await createEmailSession(emailHash);
-    return Response.json({ ok: true, authProvider: "email" }, { headers: { "Set-Cookie": emailSessionCookie(token) } });
+    // "Email me when a seat opens", ticked on the sign-in form: the address was just proven, so it is saved
+    // for seat emails without asking for it again. A failure here leaves seat emails off, not the sign-in.
+    let alerts = false;
+    if (body.alerts === true && alertsConfigured()) {
+      try { await subscribeAlerts(getDb(), `email:${emailHash}`, email); alerts = true; }
+      catch (error) { console.error("Seat emails could not be turned on at sign-in", error instanceof Error ? error.name : "unknown"); }
+    }
+    return Response.json({ ok: true, authProvider: "email", alerts }, { headers: { "Set-Cookie": emailSessionCookie(token) } });
   } catch (error) {
     console.error("Email sign-in verification failed", error instanceof Error ? error.name : "unknown");
     return Response.json({ error: "Email sign-in is temporarily unavailable." }, { status: 503 });

@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { alertSubscriptions, watches } from "@/db/schema";
-import { alertsConfigured, hashToken, unsubscribeToken } from "@/lib/alerts";
+import { alertsConfigured, subscribeAlerts } from "@/lib/alerts";
 import { authRequired, currentUser, hashEmail } from "@/lib/auth";
 import { readJsonObject, sameOriginMutation } from "@/lib/request-security";
 
@@ -28,10 +28,7 @@ export async function POST(request: Request) {
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || `email:${await hashEmail(email)}` !== user.id) {
     return Response.json({ error: "Enter the same email you signed in with.", code: "emailMismatch" }, { status: 400 });
   }
-  const tokenHash = await hashToken(await unsubscribeToken(user.id));
-  await getDb().insert(alertSubscriptions)
-    .values({ userId: user.id, email, unsubscribeTokenHash: tokenHash })
-    .onConflictDoUpdate({ target: alertSubscriptions.userId, set: { email, unsubscribeTokenHash: tokenHash } });
+  await subscribeAlerts(getDb(), user.id, email);
   return Response.json({ enabled: true });
 }
 
