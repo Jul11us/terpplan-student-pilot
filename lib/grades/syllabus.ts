@@ -184,6 +184,8 @@ function stripLabel(label: string): string {
   s = stripUnbalanced(s, "[", "]");
   s = s.replace(TRAILING_NOISE_RE, "");
   s = s.replace(/\s+/g, " ").trim();
+  // A trailing verb from a sentence-style row: "Labs count 25% toward your total" is "Labs".
+  s = s.replace(/\s+(?:count|counts|counting|is|are|worth|equals?|represents?)$/i, "").trim();
   // A leading article or conjunction is prose, not part of the category name.
   s = s.replace(/^(?:and|or|plus|also)\s+/i, "");
   s = s.replace(/^(?:the|a|an|your|my|our)\s+/i, "");
@@ -290,11 +292,13 @@ export function extractLetterScale(text: unknown): { scale: ScaleEntry[]; eviden
     // A 93-100 / A: 93–96 / A 93 至 96 分
     { re: /^([A-F][+-]?)(?:\s*[/&]\s*[A-F][+-]?)*\s*[:\-=]?\s*(\d{1,3}(?:\.\d+)?)\s*(?:-|–|—|to|through|~|至)\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*分?(?:\s+\d(?:\.\d+)?)?$/i, min: (m) => num(m[2]) },
     // A 93% and above / A 93+
-    { re: /^([A-F][+-]?)\s*[:\-=]?\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:\+|and\s+(?:above|up|higher|over)|or\s+(?:above|higher|better|more)|above|or\s+better).*$/i, min: (m) => num(m[2]) },
+    { re: /^([A-F][+-]?)(?:\\s*[:=]\\s*|\\s+-\\s+|\\s*[–—]\\s*)(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:\+|and\s+(?:above|up|higher|over)|or\s+(?:above|higher|better|more)|above|or\s+better).*$/i, min: (m) => num(m[2]) },
     // A (93%)
     { re: /^([A-F][+-]?)\s*[\(\[]\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*[\)\]](?:\s+\d(?:\.\d+)?)?$/i, min: (m) => num(m[2]) },
     // A = 93
-    { re: /^([A-F][+-]?)\s*[:\-=]\s*(\d{1,3}(?:\.\d+)?)\s*%?(?:\s+\d(?:\.\d+)?)?$/i, min: (m) => num(m[2]) },
+    // A "-" separator must stand alone: "A- 90%" is the grade A- at 90, and without the
+    // whitespace requirement the engine backtracks into reading it as "A" with a "-" separator.
+    { re: /^([A-F][+-]?)(?:\\s*[:=]\\s*|\\s+-\\s+|\\s*[–—]\\s*)(\d{1,3}(?:\.\d+)?)\s*%?(?:\s+\d(?:\.\d+)?)?$/i, min: (m) => num(m[2]) },
     // 93-100 = A
     { re: /^(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:-|–|—|to|through|~|至)\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*分?\s*[:\-=]?\s*([A-F][+-]?)(?:\s*[/&]\s*[A-F][+-]?)*(?:\s+\d(?:\.\d+)?)?$/i, min: (m) => num(m[1]) },
     // 93 and above → A
@@ -446,16 +450,12 @@ function extractWeightCandidates(text: unknown): Candidate[] {
   /**
    * "Exams (70% total):" is a subtotal heading, not a category of its own.
    *
-   * The bare "…total" form has to exclude weights phrased against the course total — "Homework 20%
-   * of total" is a row like any other, and matching it dropped every line of a scheme written that
-   * way, leaving the parser reporting no breakdown at all.
+   * This is the one subtotal that says so outright. Every other is found by structure — see the
+   * note above `return candidates` — because matching on the word "total" cannot tell
+   * "Exams 60% total" (a subtotal) from "Homework 20% of the final total" (a row).
    */
   const SUBTOTAL_RE = /\(\s*\d{1,3}(?:\.\d+)?\s*%?\s*(?:sub)?total\s*\)/i;
-  const isSubtotalRow = (text: string): boolean => {
-    if (SUBTOTAL_RE.test(text)) return true;
-    if (!/\b(?:sub)?total\s*[:=]?\s*$/i.test(text)) return false;
-    return !/\bof\s+(?:the\s+|course\s+)?total\b/i.test(text);
-  };
+  const isSubtotalRow = (text: string): boolean => SUBTOTAL_RE.test(text);
 
   /** Lines that already read as a complete row on their own. */
   const producedOnLine = new Set<number>();
@@ -571,7 +571,37 @@ function extractWeightCandidates(text: unknown): Candidate[] {
     }
   }
 
-  return candidates;
+  // A subtotal restates work already listed beneath it: "Exams 60% total" over "Midterm 20%" and
+  // "Final 40%". Identifying it by structure rather than by wording is what keeps "20% of the
+  // final total", "25% toward your total" and "10% of grade total" as ordinary rows — the word
+  // "total" appears in those too, and matching on it dropped whole schemes.
+  //
+  // At least two parts must add up, or "Homework 30%" followed by "Midterm 30%" would look like a
+  // subtotal of the single row beneath it.
+  const ordered = [...candidates].sort((a, b) => a.line - b.line);
+  const subtotal = new Set<number>();
+  for (let i = 0; i < ordered.length; i++) {
+    const head = ordered[i]!;
+    if (head.unit !== "pct" || head.fromProse) continue;
+
+    // Sum the whole run beneath. A *prefix* that happens to add up is not enough: in a five-row
+    // table "Projects 30 / Homework 15 / Midterm 15 / …" the first two rows sum to 30, and taking
+    // that as a subtotal deleted a real category. A genuine subtotal is the run.
+    let sum = 0;
+    let parts = 0;
+    for (let j = i + 1; j < ordered.length; j++) {
+      const next = ordered[j]!;
+      const prev = ordered[j - 1]!;
+      if (next.line <= prev.line) break;                // the same row
+      if (next.line - prev.line > 2) break;             // a gap ends the block
+      if (next.unit !== "pct" || next.fromProse) break;
+      sum += next.value;
+      parts += 1;
+      if (sum > head.value + 0.51) break;
+    }
+    if (parts >= 2 && Math.abs(sum - head.value) < 0.51) subtotal.add(i);
+  }
+  return ordered.filter((_, i) => !subtotal.has(i));
 }
 
 /**

@@ -1512,3 +1512,51 @@ test("a table of short rows is not run together into one category", () => {
   assert.deepEqual(bracket.categories.map((c) => `${c.name}=${c.weight}`), ["Midterm=30", "Final Exam=50", "Homework=20"]);
   assert.equal(bracket.weightTotal, 100);
 });
+
+test("a subtotal is identified by structure, not by the word 'total'", () => {
+  // Every one of these was read correctly before the word-based rule existed, and the rule broke
+  // them because the word "total" appeared in an ordinary row.
+  const finalTotal = parse(`
+    Grading
+    Homework 20% of the final total
+    Quizzes 10% of the final total
+    Midterm 30% of the final total
+    Final 40% of the final total
+  `);
+  assert.equal(finalTotal.ok, true, "a scheme written this way must still read");
+  assert.equal(finalTotal.weightTotal, 100);
+  assert.equal(finalTotal.categories.length, 4);
+
+  const toward = parse(`
+    Grading
+    Labs count 25% toward your total
+    Quizzes count 15% toward your total
+    Midterm counts 25% toward your total
+    Final counts 35% toward your total
+  `);
+  assert.equal(toward.weightTotal, 100);
+  assert.deepEqual(toward.categories.map((c) => c.weight), [25, 15, 25, 35]);
+
+  const gradeTotal = parse("Grading\nHomework 30%\nParticipation 10% of grade total\nMidterm 25%\nFinal 35%");
+  assert.equal(gradeTotal.weightTotal, 100, "the 'of grade total' row is not silently dropped");
+
+  // And a real subtotal is still skipped, by structure rather than by wording.
+  const plain = parse("Exams 60% total\nMidterm 20%\nFinal 40%");
+  assert.deepEqual(plain.categories.map((c) => `${c.name}=${c.weight}`), ["Midterm=20", "Final=40"]);
+  assert.equal(plain.weightTotal, 60);
+
+  // A prefix that happens to add up is not a subtotal: this five-row table keeps every row.
+  const five = parse("Projects 30%\nHomework 15%\nMidterm Exam 1 15%\nMidterm Exam 2 15%\nFinal Exam 25%");
+  assert.equal(five.categories.length, 5, "15 + 15 matching 30 must not delete Projects");
+  assert.equal(five.weightTotal, 100);
+});
+
+test("a minus grade is not read as the letter above it", () => {
+  const r = parse("Grading Scale\nA 93%\nA- 90%\nB+ 87%\nB 83%\nB- 80%\nC 70%\nD 60%");
+  const min = (letter) => r.letterScale.find((s) => s.letter === letter)?.min;
+  assert.equal(min("A"), 93);
+  assert.equal(min("A-"), 90, "A- must keep its minus, or 91% grades as B+");
+  assert.equal(min("B-"), 80);
+  assert.equal(min("B+"), 87);
+  assert.equal(r.letterScale.length, 7);
+});
