@@ -8,10 +8,16 @@ export const SEARCH_EXAMPLES = [
   "Calculus", "Linear Algebra", "Psychology", "Statistics", "Microeconomics", "Organic Chemistry",
 ];
 
+// Instructors, typed after "@" (which searches instructors only), so the box shows it can find them too: every
+// third example is one of these. Each name finds just that instructor on PlanetTerp.
+export const INSTRUCTOR_EXAMPLES = ["@Wyss-Gallifent", "@Christopher Kauffman"];
+const INSTRUCTOR_EVERY = 3;
+
 const TYPE_MS = 90, ERASE_MS = 45, HOLD_MS = 1600, PAUSE_MS = 350;
 
-function nextExample(previous: string | null) {
-  const choices = SEARCH_EXAMPLES.filter((example) => example !== previous);
+function nextExample(previous: string | null, count: number) {
+  const pool = count % INSTRUCTOR_EVERY === INSTRUCTOR_EVERY - 1 ? INSTRUCTOR_EXAMPLES : SEARCH_EXAMPLES;
+  const choices = pool.filter((example) => example !== previous);
   return choices[Math.floor(Math.random() * choices.length)]!;
 }
 
@@ -22,11 +28,11 @@ export function useTypingPlaceholder(prefix: string, active: boolean) {
 
   useEffect(() => {
     if (!active || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    let example = nextExample(null), shown = example.length, erasing = true, timer = 0;
+    let count = 0, example = nextExample(null, count++), shown = example.length, erasing = true, timer = 0;
     const step = () => {
       if (erasing) {
         shown -= 1;
-        if (shown <= 0) { erasing = false; example = nextExample(example); timer = window.setTimeout(step, PAUSE_MS); setText(""); return; }
+        if (shown <= 0) { erasing = false; example = nextExample(example, count++); timer = window.setTimeout(step, PAUSE_MS); setText(""); return; }
         setText(example.slice(0, shown));
         timer = window.setTimeout(step, ERASE_MS);
       } else {
