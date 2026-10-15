@@ -64,6 +64,7 @@ const copy = {
     divRule: "Diversity is two DVUP courses, or one DVUP and one DVCC: a second one can be either.", labRule: "One of the two natural sciences needs a lab (DSNL); a lab course can also be the other one.",
     uncovered: (list: string) => `No course this term covers ${list}; leave it for a later term.`, allCovered: "Your plan already covers these.",
     addAll: "Add all to plan", allInPlan: "All in your plan", overLimit: "A plan holds 10 courses; these would not fit.", noPlan: "Under these filters, no set of this term's courses fits together. Try turning off a filter below.",
+    ignorePlan: "Leave my plan out: don't count the courses already in it, and don't check times against my schedule",
     gpaUpdating: "Reading average GPAs; the options may shift a little.", manyCourses: "That is more than one term's load: take some now and the rest in later terms.",
     optimizeRules: "Check your degree audit too: one DSSP course must be outside your major, and AP credit cannot count for Big Question (I-Series).",
   },
@@ -88,6 +89,7 @@ const copy = {
     divRule: "Diversity 要 2 门 DVUP，或 1 门 DVUP 加 1 门 DVCC：第二门两种都行。", labRule: "自然科学的 2 门里要有 1 门带实验（DSNL）；实验课也能算作另一门。",
     uncovered: (list: string) => `这学期开的课补不了 ${list}，要留到以后的学期。`, allCovered: "你的方案已经补齐了这些类别。",
     addAll: "全部加入方案", allInPlan: "已全部在方案里", overLimit: "每个方案最多 10 门课，加不下了。", noPlan: "按现在的筛选条件，这学期的课配不出能同时上的组合。可以试着关掉下面的某个筛选。",
+    ignorePlan: "不结合我的方案：不算方案里已有的课，也不查和课表的时间冲突",
     gpaUpdating: "正在读取历史平均 GPA，组合可能会微调。", manyCourses: "一学期修不完这么多，可以先选一部分，其余留到以后的学期。",
     optimizeRules: "最后请以学位审计为准：DSSP 至少要有一门在本专业之外，AP 学分不能抵 Big Question（I-Series）。",
   },
@@ -121,6 +123,9 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
   // "fewest courses" sets are showing.
   const [needCounts, setNeedCounts] = useState<Record<string, number>>({});
   const [optimizing, setOptimizing] = useState(false);
+  // The sets can also be made as if the plan were empty: its courses count like any other, and no section is
+  // checked against the schedule.
+  const [ignorePlan, setIgnorePlan] = useState(false);
   const [matchAll, setMatchAll] = useState(false);
   // Loaded category lists, keyed by term|code, so adding or removing a category never reloads the others.
   const [lists, setLists] = useState<Record<string, { courses: GenEdCourse[]; seatCheckedAt: string | null }>>({});
@@ -221,17 +226,17 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
     && (!noPrereq || (!course.hasPrerequisite && !course.hasRestriction))
     && (!lowerLevel || /^[12]$/.test(course.course_id.charAt(4)))
     && (!prereqsMet || !canCheckPrereqs || unmetRequirements(course.pr, takenSet, planSet).length === 0)).flatMap((course) => {
-    const inPlan = planCourseIds.includes(course.course_id);
+    const inPlan = !ignorePlan && planCourseIds.includes(course.course_id);
     if (!inPlan && ARRANGED.test(course.name)) return [];
     const usable = course.sections.filter((section) => !/-FC[A-Z0-9]*$/i.test(section.section_id ?? "")).filter((section) => !openOnly || (count(section.open_seats) ?? 0) > 0);
-    const known = usable.filter((section) => !hasUnknownTime(section.meetings ?? []) && (!fitsOnly || !referenceForTerm || !meetingsConflict(section.meetings ?? [], referenceForTerm.meetings)));
+    const known = usable.filter((section) => !hasUnknownTime(section.meetings ?? []) && (!fitsOnly || ignorePlan || !referenceForTerm || !meetingsConflict(section.meetings ?? [], referenceForTerm.meetings)));
     const sections = [...known.map((section) => section.meetings ?? []), ...usable.filter((section) => hasUnknownTime(section.meetings ?? [])).map(() => [])];
     if (!sections.length && !inPlan) return [];
     // A good average GPA, then open to anyone (no prerequisite or restriction, 100-200 level), then a section
     // with a set time over one still to be announced.
     const score = (gpa[course.course_id] ?? 3) - (course.hasPrerequisite || course.hasRestriction ? 0.6 : 0) - (/^[12]$/.test(course.course_id.charAt(4)) ? 0 : 0.3) + (known.length ? 0.3 : 0);
     return [{ id: course.course_id, groups: groupsOf(course), score, sections: sections.length ? sections : [[]], inPlan }];
-  }), [poolCourses, hideHonors, noPrereq, lowerLevel, prereqsMet, canCheckPrereqs, takenSet, planSet, planCourseIds, openOnly, fitsOnly, referenceForTerm, gpa]);
+  }), [poolCourses, hideHonors, noPrereq, lowerLevel, prereqsMet, canCheckPrereqs, takenSet, planSet, planCourseIds, ignorePlan, openOnly, fitsOnly, referenceForTerm, gpa]);
   const genEdPlan = useMemo(() => poolCourses ? planGenEds(needs, candidates) : null, [poolCourses, needs, candidates]);
   // Averages for the courses the sets are made from: the ones that count for the most needs come first.
   const optimizeIds = useMemo(() => [...candidates].sort((a, b) => b.groups.length - a.groups.length).map((item) => item.id), [candidates]);
@@ -265,6 +270,7 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
       {codes.some((code) => code === "DVUP" || code === "DVCC") && <p className="mt-1.5 text-[11px] leading-5 text-[#646c68]">{t.divRule}</p>}
       {codes.some((code) => code === "DSNS" || code === "DSNL") && <p className="mt-1 text-[11px] leading-5 text-[#646c68]">{t.labRule}</p>}
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1"><button type="button" aria-pressed={optimizing} onClick={() => setOptimizing((value) => !value)} className={`rounded-lg px-3 py-2 text-xs font-semibold ${optimizing ? "border border-[#273c38] bg-white text-[#273c38]" : "bg-[#273c38] text-white hover:bg-[#1d302c]"}`}>{optimizing ? "✓ " : ""}{t.optimize}</button><span className="min-w-0 basis-full text-[11px] leading-5 text-[#646c68] sm:flex-1 sm:basis-auto">{t.optimizeHint}</span></div>
+      {optimizing && planCourseIds.length > 0 && <label className="mt-2 flex items-start gap-2 text-[11px] leading-5 text-[#48534f]"><input type="checkbox" className="mt-0.5" checked={ignorePlan} onChange={(event) => setIgnorePlan(event.target.checked)} />{t.ignorePlan}</label>}
       {optimizing && <div className="mt-3 border-t border-[#cddbd1] pt-3 text-xs text-[#48534f]">
         {!genEdPlan ? <p className="text-[#646c68]">{fetchKeys.some((key) => failed[key]) ? t.error : t.loading}</p> : <>
           {genEdPlan.plans.length > 0 ? <>
