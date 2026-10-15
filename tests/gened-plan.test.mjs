@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DIVERSITY, fillOptions, needSlots, planGenEds, sectionsFit } from "../lib/gened-plan.ts";
+import { DIVERSITY, diversityDefault, diversityNeeds, fillOptions, needSlots, planGenEds, sectionsFit } from "../lib/gened-plan.ts";
 
 const mwf = (start, end) => [{ days: "MWF", start_time: start, end_time: end }];
 const course = (id, groups, score, sections = [[]], extra = {}) => ({ id, groups, score, sections, ...extra });
@@ -78,4 +78,18 @@ test("Diversity is two DVUP courses or one DVUP and one DVCC; one course never f
   const both = planGenEds({ DVUP: 2 }, [course("X", [["DVUP"], ["DVCC"]], 3)]);
   assert.deepEqual(both.plans[0].picks.map((pick) => pick.needs), [["DVUP"]]);
   assert.deepEqual(both.uncovered, [DIVERSITY], "the same course cannot be both Diversity courses");
+});
+
+test("picking DVUP and DVCC is one Diversity requirement: what is left follows what the student has taken", () => {
+  assert.equal(diversityDefault(["DSHU", "DVUP", "DVCC"]), "none", "both lines of an audit: nothing taken yet");
+  assert.equal(diversityDefault(["DVCC"]), "DVUP", "only the second line: one DVUP taken");
+  assert.equal(diversityDefault(["DVUP"]), "DVCC", "only the first line: one DVCC taken");
+  assert.equal(diversityDefault(["DSHU"]), null);
+  assert.deepEqual(needSlots(diversityNeeds("none")), { DVUP: 1, [DIVERSITY]: 1 }, "two courses, at most one DVCC");
+  assert.deepEqual(needSlots(diversityNeeds("DVUP")), { [DIVERSITY]: 1 }, "one more of either kind");
+  assert.deepEqual(needSlots(diversityNeeds("DVCC")), { DVUP: 1 }, "one more DVUP");
+  const pool = [course("U", [["DVUP"]], 3), course("C", [["DVCC"]], 3.5)];
+  assert.deepEqual(ids(planGenEds(diversityNeeds("DVUP"), pool).plans[0]), ["C"]);
+  assert.deepEqual(ids(planGenEds(diversityNeeds("DVCC"), pool).plans[0]), ["U"]);
+  assert.deepEqual(ids(planGenEds(diversityNeeds("none"), pool).plans[0]), ["C", "U"]);
 });

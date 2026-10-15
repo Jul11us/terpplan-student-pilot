@@ -49,6 +49,20 @@ const ALSO_FILLS: Record<string, string[]> = { DSNL: ["DSNS"], DVUP: [DIVERSITY]
 // Needs one course never fills both of.
 const SAME_REQUIREMENT = [["DSNL", "DSNS"], ["DVUP", DIVERSITY]];
 
+// What a student has taken toward Diversity, which decides what is left: nothing (one DVUP and one of either),
+// one DVUP (one of either) or one DVCC (one DVUP).
+export type DiversityTaken = "none" | "DVUP" | "DVCC";
+// The case the selected codes most likely mean, as a degree audit lists the two: "Understanding Plural Societies
+// (DVUP)" for the first course and "Cultural Competence (DVCC) or 2nd ... (DVUP)" for the second. Null: neither.
+export function diversityDefault(codes: string[]): DiversityTaken | null {
+  const plural = codes.includes("DVUP");
+  const cultural = codes.includes("DVCC");
+  return plural && cultural ? "none" : cultural ? "DVUP" : plural ? "DVCC" : null;
+}
+export function diversityNeeds(taken: DiversityTaken): GenEdNeeds {
+  return taken === "none" ? { DVUP: 2 } : taken === "DVUP" ? { DVCC: 1 } : { DVUP: 1 };
+}
+
 const MAX_COMBOS = 60;
 const NODE_BUDGET = 200_000;
 const COURSES_TRIED_PER_PICK = 4;

@@ -6,7 +6,7 @@ import { hasUnknownTime, isOnlineOnly, meetingsConflict, type MeetingTime } from
 import { formatSeatReadTime } from "@/lib/seat-time";
 import { courseSet, unmetRequirements } from "@/lib/prereq-check";
 import type { PrereqNode } from "@/lib/programs";
-import { planGenEds, type NeedLine, type PlanCandidate } from "@/lib/gened-plan";
+import { diversityDefault, diversityNeeds, planGenEds, type DiversityTaken, type NeedLine, type PlanCandidate } from "@/lib/gened-plan";
 
 type Language = "en" | "zh";
 type GenEdSection = { section_id?: string; open_seats?: string | number | null; meetings?: MeetingTime[] };
@@ -14,8 +14,14 @@ type GenEdCourse = { course_id: string; name: string; credits: string | null; ge
 
 // Historical averages are looked up for at most this many listed courses (in requests of up to 30).
 const GPA_LOOKUP_LIMIT = 90;
-// Categories students take two courses in (Distributive Studies areas, I-Series, Understanding Plural Societies).
-const TWO_COURSE_CODES = ["DSHS", "DSHU", "DSNS", "DSSP", "SCIS", "DVUP"];
+// Categories students take two courses in (Distributive Studies areas, Big Question). Diversity has its own choice.
+const TWO_COURSE_CODES = ["DSHS", "DSHU", "DSNS", "DSSP", "SCIS"];
+// The two kinds of Diversity course, shown side by side as "DVUP or DVCC".
+const DIVERSITY_CODES = ["DVUP", "DVCC"];
+const DIVERSITY_TAKEN: DiversityTaken[] = ["none", "DVUP", "DVCC"];
+// One requirement per Diversity: a DVCC course counts the same as a DVUP one when counting what a course covers.
+const asRequirement = (code: string) => code === "DVCC" ? "DVUP" : code;
+const requirementGroups = (groups: string[][]) => groups.map((group) => [...new Set(group.map(asRequirement))]);
 const PLAN_LIMIT = 10;
 // Lists the sets also draw on: lab sciences can fill DSNS, and either kind of Diversity course a second one.
 const ALSO_LOAD: Record<string, string[]> = { DSNS: ["DSNL"], DVUP: ["DVCC"], DVCC: ["DVUP"] };
@@ -59,12 +65,13 @@ const copy = {
     credits: "cr", empty: "No courses match these filters.", count: (shown: number, total: number) => `${shown} of ${total} courses`,
     fcNote: "Freshman Connection (FC) sections are not counted.", view: "View sections →", quickAdd: "Add", inPlanShort: "In plan",
     needCount: "Courses still needed in each", optimize: "Find the fewest courses", optimizeHint: "From this term's courses, the smallest set that covers every category above, using the filters below. Courses anyone can take (no prerequisite, 100-200 level) with a good average GPA come first.",
-    fewest: (added: number, covered: number, total: number, inPlan: number) => `${inPlan ? `With ${inPlan} course${inPlan === 1 ? "" : "s"} already in your plan, ${added} more` : `${added} course${added === 1 ? "" : "s"}`} cover${added === 1 ? "s" : ""} ${covered === total ? `all ${total}` : `${covered} of the ${total}`} needs`,
+    fewest: (added: number, covered: number, total: number, inPlan: number) => `${inPlan ? `With ${inPlan} course${inPlan === 1 ? "" : "s"} already in your plan, ${added} more` : `${added} course${added === 1 ? "" : "s"}`} cover${added === 1 ? "s" : ""} ${covered === total ? total === 1 ? "this need" : `all ${total} needs` : `${covered} of the ${total} needs`}`,
     option: (n: number) => `Option ${n}`, coversLabel: "counts for", needLabel: (need: string) => need === "DIV" ? "DVUP or DVCC" : need, lineFromPlan: "in your plan",
-    divRule: "Diversity is two DVUP courses, or one DVUP and one DVCC: a second one can be either.", labRule: "One of the two natural sciences needs a lab (DSNL); a lab course can also be the other one.",
+    divRule: "Diversity is two DVUP courses, or one DVUP and one DVCC.", diversityTaken: "Diversity taken so far:", diversityOption: (taken: DiversityTaken) => taken === "none" ? "None yet" : `1 ${taken}`,
+    divNeed: (taken: DiversityTaken) => taken === "none" ? "So 2 to go: one DVUP, and one more DVUP or DVCC." : taken === "DVUP" ? "So 1 to go: DVUP or DVCC, either one." : "So 1 more DVUP.", labRule: "One of the two natural sciences needs a lab (DSNL); a lab course can also be the other one.",
     uncovered: (list: string) => `No course this term covers ${list}; leave it for a later term.`, allCovered: "Your plan already covers these.",
     addAll: "Add all to plan", allInPlan: "All in your plan", overLimit: "A plan holds 10 courses; these would not fit.", noPlan: "Under these filters, no set of this term's courses fits together. Try turning off a filter below.",
-    ignorePlan: "Leave my plan out: don't count the courses already in it, and don't check times against my schedule",
+    ignorePlan: "Leave my plan out of the sets: don't count the courses already in it, and don't check times against my schedule", noPlanYet: " (your plan has no courses yet)",
     gpaUpdating: "Reading average GPAs; the options may shift a little.", manyCourses: "That is more than one term's load: take some now and the rest in later terms.",
     optimizeRules: "Check your degree audit too: one DSSP course must be outside your major, and AP credit cannot count for Big Question (I-Series).",
   },
@@ -84,12 +91,13 @@ const copy = {
     credits: "学分", empty: "没有符合筛选条件的课程。", count: (shown: number, total: number) => `显示 ${shown} / ${total} 门课`,
     fcNote: "不计入 Freshman Connection（FC）班。", view: "查看班次 →", quickAdd: "加入", inPlanShort: "已加入",
     needCount: "每项还缺几门", optimize: "帮我配最少的课", optimizeHint: "用这学期的课，配出能补齐上面所有类别、门数最少的组合（按下面勾选的筛选条件）。同样门数时，优先选没有先修要求、100–200 级、历史 GPA 高的课。",
-    fewest: (added: number, covered: number, total: number, inPlan: number) => `${inPlan ? `加上方案里已有的 ${inPlan} 门，再加 ${added} 门课` : `${added} 门课`}就能补齐${covered === total ? `全部 ${total} 项` : ` ${total} 项里的 ${covered} 项`}`,
+    fewest: (added: number, covered: number, total: number, inPlan: number) => `${inPlan ? `加上方案里已有的 ${inPlan} 门，再加 ${added} 门课` : `${added} 门课`}就能补齐${covered === total ? total === 1 ? "这一项" : `全部 ${total} 项` : ` ${total} 项里的 ${covered} 项`}`,
     option: (n: number) => `组合 ${n}`, coversLabel: "抵", needLabel: (need: string) => need === "DIV" ? "DVUP 或 DVCC" : need, lineFromPlan: "已在方案",
-    divRule: "Diversity 要 2 门 DVUP，或 1 门 DVUP 加 1 门 DVCC：第二门两种都行。", labRule: "自然科学的 2 门里要有 1 门带实验（DSNL）；实验课也能算作另一门。",
+    divRule: "Diversity 要 2 门 DVUP，或 1 门 DVUP 加 1 门 DVCC。", diversityTaken: "Diversity 已修：", diversityOption: (taken: DiversityTaken) => taken === "none" ? "还没修" : `1 门 ${taken}`,
+    divNeed: (taken: DiversityTaken) => taken === "none" ? "所以还要 2 门：1 门 DVUP，另 1 门 DVUP 或 DVCC 都行。" : taken === "DVUP" ? "所以还要 1 门，DVUP 或 DVCC 都行。" : "所以还要 1 门 DVUP。", labRule: "自然科学的 2 门里要有 1 门带实验（DSNL）；实验课也能算作另一门。",
     uncovered: (list: string) => `这学期开的课补不了 ${list}，要留到以后的学期。`, allCovered: "你的方案已经补齐了这些类别。",
     addAll: "全部加入方案", allInPlan: "已全部在方案里", overLimit: "每个方案最多 10 门课，加不下了。", noPlan: "按现在的筛选条件，这学期的课配不出能同时上的组合。可以试着关掉下面的某个筛选。",
-    ignorePlan: "不结合我的方案：不算方案里已有的课，也不查和课表的时间冲突",
+    ignorePlan: "不结合我的方案来配课：不算方案里已有的课，也不查和课表的时间冲突", noPlanYet: "（方案里还没有课）",
     gpaUpdating: "正在读取历史平均 GPA，组合可能会微调。", manyCourses: "一学期修不完这么多，可以先选一部分，其余留到以后的学期。",
     optimizeRules: "最后请以学位审计为准：DSSP 至少要有一门在本专业之外，AP 学分不能抵 Big Question（I-Series）。",
   },
@@ -126,6 +134,9 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
   // The sets can also be made as if the plan were empty: its courses count like any other, and no section is
   // checked against the schedule.
   const [ignorePlan, setIgnorePlan] = useState(false);
+  // What the student has taken toward Diversity, once they say; until then it follows the selected codes.
+  const [diversityTaken, setDiversityTaken] = useState<DiversityTaken | null>(null);
+  const diversity = diversityDefault(codes) && diversityTaken ? diversityTaken : diversityDefault(codes);
   const [matchAll, setMatchAll] = useState(false);
   // Loaded category lists, keyed by term|code, so adding or removing a category never reloads the others.
   const [lists, setLists] = useState<Record<string, { courses: GenEdCourse[]; seatCheckedAt: string | null }>>({});
@@ -146,9 +157,12 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
   const [gpaLoading, setGpaLoading] = useState(false);
   const [gpaError, setGpaError] = useState(false);
   const gpaRequested = useRef(new Set<string>());
-  // Every course carries all of its Gen Ed tags, so "every selected category" needs only one list.
+  // The selected categories as requirements: DVUP and DVCC together are one.
+  const requirements = useMemo(() => [...new Set(codes.map(asRequirement))], [codes]);
+  // Every course carries all of its Gen Ed tags, so "every selected category" needs only the first
+  // requirement's lists (both Diversity lists when that is Diversity).
   // The fewest-courses sets need every selected category's list, even with "every selected category" on.
-  const neededKeys = useMemo(() => (matchAll && !optimizing ? codes.slice(0, 1) : codes).map((code) => `${term}|${code}`), [codes, matchAll, optimizing, term]);
+  const neededKeys = useMemo(() => (matchAll && !optimizing ? codes.filter((code) => asRequirement(code) === requirements[0]) : codes).map((code) => `${term}|${code}`), [codes, requirements, matchAll, optimizing, term]);
   const fetchKeys = useMemo(() => [...new Set([...neededKeys, ...(optimizing ? codes.flatMap((code) => ALSO_LOAD[code] ?? []).map((code) => `${term}|${code}`) : [])])], [neededKeys, optimizing, codes, term]);
 
   useEffect(() => {
@@ -171,6 +185,7 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
 
   const toggleCode = (code: string) => {
     setFailed({});
+    if (DIVERSITY_CODES.includes(code)) setDiversityTaken(null);
     setCodes((current) => current.includes(code) ? current.filter((item) => item !== code) : [...current, code]);
   };
   const loadedAll = neededKeys.length > 0 && neededKeys.every((key) => lists[key]);
@@ -179,10 +194,10 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
     if (!loadedAll) return null;
     const byId = new Map<string, GenEdCourse>();
     for (const key of neededKeys) for (const course of lists[key]!.courses) byId.set(course.course_id, course);
-    const courses = [...byId.values()].filter((course) => !matchAll || genEdCoverage(groupsOf(course), codes) === codes.length);
+    const courses = [...byId.values()].filter((course) => !matchAll || genEdCoverage(requirementGroups(groupsOf(course)), requirements) === requirements.length);
     const times = neededKeys.map((key) => lists[key]!.seatCheckedAt).filter((value): value is string => Boolean(value)).sort();
     return { courses, seatCheckedAt: times[0] ?? null };
-  }, [loadedAll, neededKeys, lists, matchAll, codes]);
+  }, [loadedAll, neededKeys, lists, matchAll, requirements]);
   const referenceForTerm = reference?.term === term ? reference : null;
 
   const baseRows = useMemo(() => (current?.courses ?? []).filter((course) =>
@@ -201,9 +216,9 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
     const fitting = usable.filter((section) => !hasUnknownTime(section.meetings ?? [])
       && (!fitsOnly || !referenceForTerm || !meetingsConflict(section.meetings ?? [], referenceForTerm.meetings)));
     // How many of the selected categories this one course would satisfy at once.
-    const matched = genEdCoverage(groupsOf(course), codes);
+    const matched = genEdCoverage(requirementGroups(groupsOf(course)), requirements);
     return { course, matched, fitting: fitting.length, online: fitting.filter((section) => isOnlineOnly(section.meetings ?? [])).length, tba: tba.length };
-  }).sort((a, b) => Number(b.fitting > 0) - Number(a.fitting > 0) || b.matched - a.matched || Number(b.tba > 0) - Number(a.tba > 0) || a.course.course_id.localeCompare(b.course.course_id)), [current, openOnly, fitsOnly, referenceForTerm, codes, hideHonors, noPrereq, lowerLevel, twoForOne, prereqsMet, canCheckPrereqs, takenSet, planSet]);
+  }).sort((a, b) => Number(b.fitting > 0) - Number(a.fitting > 0) || b.matched - a.matched || Number(b.tba > 0) - Number(a.tba > 0) || a.course.course_id.localeCompare(b.course.course_id)), [current, openOnly, fitsOnly, referenceForTerm, requirements, hideHonors, noPrereq, lowerLevel, twoForOne, prereqsMet, canCheckPrereqs, takenSet, planSet]);
   const baseShown = useMemo(() => baseRows.filter((row) => row.fitting > 0 || row.tba > 0 || (!fitsOnly && !openOnly)), [baseRows, fitsOnly, openOnly]);
   // Averages are fetched for the default-order list, so re-sorting by them never triggers more lookups.
   const gpaIds = useMemo(() => baseShown.slice(0, GPA_LOOKUP_LIMIT).map((row) => row.course.course_id), [baseShown]);
@@ -213,7 +228,11 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
 
   // "Find the fewest courses": every listed course (the filters above apply, except "two requirements, one
   // course", which would hide single-category courses a set may need) with the sections it can be taken in.
-  const needs = useMemo(() => Object.fromEntries(codes.map((code) => [code, needCounts[code] ?? 1])), [codes, needCounts]);
+  const needs = useMemo(() => Object.fromEntries(codes.flatMap((code): [string, number][] => {
+    if (!DIVERSITY_CODES.includes(code)) return [[code, needCounts[code] ?? 1]];
+    // Diversity once, where the first of its codes was picked.
+    return diversity && code === codes.find((item) => DIVERSITY_CODES.includes(item)) ? Object.entries(diversityNeeds(diversity)) : [];
+  })), [codes, needCounts, diversity]);
   const poolReady = optimizing && fetchKeys.length > 0 && fetchKeys.every((key) => lists[key]);
   const poolCourses = useMemo(() => {
     if (!poolReady) return null;
@@ -257,20 +276,25 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
       .finally(() => setGpaLoading(false));
   }, [gpaWanted]);
 
+  const categoryButton = (item: (typeof GEN_ED_CATEGORIES)[number]) => {
+    const on = codes.includes(item.code);
+    return <button key={item.code} type="button" aria-pressed={on} title={item[language]} onClick={() => toggleCode(item.code)} className={`rounded-lg border px-2.5 py-1.5 text-left text-xs transition ${on ? "border-[#273c38] bg-[#273c38] text-white" : "border-[#dedbd3] bg-white text-[#48534f] hover:border-[#9aa8a1]"}`}><span className="font-semibold">{item.code}</span><span className={`ml-1 ${on ? "text-white/80" : "text-[#646c68]"}`}>{item[language]}</span></button>;
+  };
+
   return <div>
     {fromAudit && initialCodes.length > 0 && <p className="mb-3 rounded-lg bg-[#edf3ef] px-3 py-2 text-xs leading-5 text-[#315c43]">{t.fromAudit(initialCodes.join(", "))}</p>}
     <div className="flex items-center justify-between gap-3"><p className="text-xs font-medium text-[#5d6561]">{t.category}</p>{codes.length > 0 && <button type="button" onClick={() => setCodes([])} className="text-[11px] font-medium text-[#8b5148] hover:underline">{t.clear}</button>}</div>
-    <div className="mt-2 flex flex-wrap gap-1.5">{GEN_ED_CATEGORIES.map((item) => {
-      const on = codes.includes(item.code);
-      return <button key={item.code} type="button" aria-pressed={on} title={item[language]} onClick={() => toggleCode(item.code)} className={`rounded-lg border px-2.5 py-1.5 text-left text-xs transition ${on ? "border-[#273c38] bg-[#273c38] text-white" : "border-[#dedbd3] bg-white text-[#48534f] hover:border-[#9aa8a1]"}`}><span className="font-semibold">{item.code}</span><span className={`ml-1 ${on ? "text-white/80" : "text-[#646c68]"}`}>{item[language]}</span></button>;
-    })}</div>
-    {codes.length > 1 && <label className="mt-3 flex items-start gap-2 text-xs text-[#48534f]"><input type="checkbox" className="mt-0.5" checked={matchAll} onChange={(event) => setMatchAll(event.target.checked)} />{t.matchAll}</label>}
+    <div className="mt-2 flex flex-wrap gap-1.5">{GEN_ED_CATEGORIES.filter((item) => !DIVERSITY_CODES.includes(item.code)).map(categoryButton)}
+      <span className="inline-flex flex-wrap items-center gap-1.5 rounded-lg border border-dashed border-[#cfcac0] p-1" title={t.divRule}>{DIVERSITY_CODES.map((code, index) => <span key={code} className="inline-flex items-center gap-1.5">{index > 0 && <span className="text-[11px] text-[#646c68]">{t.or.trim()}</span>}{categoryButton(GEN_ED_CATEGORIES.find((item) => item.code === code)!)}</span>)}</span>
+    </div>
+    {requirements.length > 1 && <label className="mt-3 flex items-start gap-2 text-xs text-[#48534f]"><input type="checkbox" className="mt-0.5" checked={matchAll} onChange={(event) => setMatchAll(event.target.checked)} />{t.matchAll}</label>}
     {codes.length > 0 && <div className="mt-3 rounded-lg border border-[#cddbd1] bg-[#f4f8f5] p-3">
       {codes.some((code) => TWO_COURSE_CODES.includes(code)) && <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-[#48534f]"><span className="font-medium">{t.needCount}</span>{codes.filter((code) => TWO_COURSE_CODES.includes(code)).map((code) => <span key={code} className="inline-flex items-center gap-1"><span className="font-semibold">{code}</span>{[1, 2].map((n) => <button key={n} type="button" aria-pressed={(needCounts[code] ?? 1) === n} onClick={() => setNeedCounts((current) => ({ ...current, [code]: n }))} className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${(needCounts[code] ?? 1) === n ? "bg-[#273c38] text-white" : "border border-[#d9d6ce] bg-white text-[#48534f]"}`}>×{n}</button>)}</span>)}</div>}
-      {codes.some((code) => code === "DVUP" || code === "DVCC") && <p className="mt-1.5 text-[11px] leading-5 text-[#646c68]">{t.divRule}</p>}
+      {diversity && <div className={`flex flex-wrap items-center gap-x-1.5 gap-y-1.5 text-xs text-[#48534f] ${codes.some((code) => TWO_COURSE_CODES.includes(code)) ? "mt-2" : ""}`}><span className="font-medium">{t.diversityTaken}</span>{DIVERSITY_TAKEN.map((taken) => <button key={taken} type="button" aria-pressed={diversity === taken} onClick={() => setDiversityTaken(taken)} className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${diversity === taken ? "bg-[#273c38] text-white" : "border border-[#d9d6ce] bg-white text-[#48534f]"}`}>{t.diversityOption(taken)}</button>)}</div>}
+      {diversity && <p className="mt-1.5 text-[11px] leading-5 text-[#646c68]">{t.divRule} {t.divNeed(diversity)}</p>}
       {codes.some((code) => code === "DSNS" || code === "DSNL") && <p className="mt-1 text-[11px] leading-5 text-[#646c68]">{t.labRule}</p>}
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1"><button type="button" aria-pressed={optimizing} onClick={() => setOptimizing((value) => !value)} className={`rounded-lg px-3 py-2 text-xs font-semibold ${optimizing ? "border border-[#273c38] bg-white text-[#273c38]" : "bg-[#273c38] text-white hover:bg-[#1d302c]"}`}>{optimizing ? "✓ " : ""}{t.optimize}</button><span className="min-w-0 basis-full text-[11px] leading-5 text-[#646c68] sm:flex-1 sm:basis-auto">{t.optimizeHint}</span></div>
-      {optimizing && planCourseIds.length > 0 && <label className="mt-2 flex items-start gap-2 text-[11px] leading-5 text-[#48534f]"><input type="checkbox" className="mt-0.5" checked={ignorePlan} onChange={(event) => setIgnorePlan(event.target.checked)} />{t.ignorePlan}</label>}
+      <label className={`mt-2 flex items-start gap-2 text-[11px] leading-5 ${planCourseIds.length ? "text-[#48534f]" : "text-[#8a918e]"}`}><input type="checkbox" className="mt-0.5" disabled={!planCourseIds.length} checked={ignorePlan && planCourseIds.length > 0} onChange={(event) => setIgnorePlan(event.target.checked)} /><span>{t.ignorePlan}{!planCourseIds.length && t.noPlanYet}</span></label>
       {optimizing && <div className="mt-3 border-t border-[#cddbd1] pt-3 text-xs text-[#48534f]">
         {!genEdPlan ? <p className="text-[#646c68]">{fetchKeys.some((key) => failed[key]) ? t.error : t.loading}</p> : <>
           {genEdPlan.plans.length > 0 ? <>
@@ -331,7 +355,7 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
           <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-[#646c68]">
             {course.credits && <span>{course.credits} {t.credits}</span>}
             {typeof gpa[course.course_id] === "number" && <span className="font-medium text-[#536d64]">{t.avgGpa} {gpa[course.course_id]!.toFixed(2)}</span>}
-            {codes.length > 1 && matched > 1 && <span className="rounded bg-[#a34a39] px-1.5 py-0.5 font-semibold text-white">{t.counts(matched)}</span>}
+            {requirements.length > 1 && matched > 1 && <span className="rounded bg-[#a34a39] px-1.5 py-0.5 font-semibold text-white">{t.counts(matched)}</span>}
             {groupsOf(course).map((group) => <span key={group.join("|")} title={group.length > 1 ? t.orTitle : undefined} className={`rounded px-1.5 py-0.5 font-semibold ${group.some((tag) => codes.includes(tag)) ? "bg-[#273c38] text-white" : "bg-[#eeece6] text-[#59635f]"}`}>{group.join(t.or)}</span>)}
             
           </span>
