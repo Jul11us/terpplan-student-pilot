@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fillOptions, planGenEds, sectionsFit } from "../lib/gened-plan.ts";
+import { DIVERSITY, fillOptions, needSlots, planGenEds, sectionsFit } from "../lib/gened-plan.ts";
 
 const mwf = (start, end) => [{ days: "MWF", start_time: start, end_time: end }];
 const course = (id, groups, score, sections = [[]], extra = {}) => ({ id, groups, score, sections, ...extra });
@@ -40,7 +40,11 @@ test("courses whose sections all clash are not put together; the next smallest s
 test("plan courses count first, and needs nothing this term covers are reported", () => {
   const pool = [course("PLAN1", [["DSHU"]], 3, undefined, { inPlan: true }), course("H1", [["DSHU"]], 3.2), course("I1", [["SCIS"]], 3)];
   const result = planGenEds({ DSHU: 2, SCIS: 2, DSNL: 1 }, pool);
-  assert.deepEqual(result.fromPlan, [{ id: "PLAN1", covers: ["DSHU"] }]);
+  assert.deepEqual(result.fromPlan, [{ id: "PLAN1", needs: ["DSHU"], covers: ["DSHU"] }]);
+  assert.equal(result.total, 5);
+  assert.deepEqual(result.plans[0].lines.map((line) => [line.need, line.id, line.fromPlan]), [
+    ["DSHU", "PLAN1", true], ["DSHU", "H1", false], ["SCIS", "I1", false], ["SCIS", null, false], ["DSNL", null, false],
+  ], "every need, in the order given, with what fills it");
   assert.deepEqual(ids(result.plans[0]), ["H1", "I1"]);
   assert.deepEqual(result.uncovered.sort(), ["DSNL", "SCIS"], "one SCIS course this term, and no lab");
 });
@@ -50,7 +54,8 @@ test("an \"or\" counts once; a lab science can fill the plain science need", () 
   assert.deepEqual(orResult.plans[0].picks.map((pick) => [pick.id, pick.covers]).sort(), [["F", ["DSHU"]], ["G", ["DSSP"]]]);
   const lab = planGenEds({ DSNL: 1, DSNS: 1 }, [course("L1", [["DSNL"]], 3), course("L2", [["DSNL"]], 2.9, [mwf("9:00am", "9:50am")]), course("N", [["DSNS"]], 1, [mwf("9:00am", "9:50am")])]);
   assert.deepEqual(ids(lab.plans[0]), ["L1", "L2"]);
-  assert.deepEqual(lab.plans[0].picks.flatMap((pick) => pick.covers).sort(), ["DSNL", "DSNS"]);
+  assert.deepEqual(lab.plans[0].picks.flatMap((pick) => pick.needs).sort(), ["DSNL", "DSNS"]);
+  assert.deepEqual(lab.plans[0].picks.flatMap((pick) => pick.covers), ["DSNL", "DSNL"], "both are lab courses; one fills the science need");
 });
 
 test("up to three different sets, best score first, and nothing needed means no plan", () => {
@@ -58,5 +63,19 @@ test("up to three different sets, best score first, and nothing needed means no 
   const result = planGenEds({ DSHS: 1, DVUP: 1 }, pool);
   assert.equal(result.plans.length, 3);
   assert.deepEqual(result.plans.map((plan) => ids(plan)), [["T"], ["S"], ["R"]]);
-  assert.deepEqual(planGenEds({}, pool), { fromPlan: [], plans: [], uncovered: [] });
+  assert.deepEqual(planGenEds({}, pool), { total: 0, fromPlan: [], plans: [], uncovered: [], lines: [] });
+});
+
+test("Diversity is two DVUP courses or one DVUP and one DVCC; one course never fills both", () => {
+  assert.deepEqual(needSlots({ DVUP: 2 }), { DVUP: 1, [DIVERSITY]: 1 });
+  assert.deepEqual(needSlots({ DVUP: 1, DVCC: 1 }), { DVUP: 1, [DIVERSITY]: 1 });
+  assert.deepEqual(needSlots({ DVCC: 1 }), { [DIVERSITY]: 1 }, "a second Diversity course can be either kind");
+  const pool = [course("U1", [["DVUP"]], 3), course("C1", [["DSHU"], ["DVCC"]], 3.9), course("U2", [["DVUP"]], 2.5)];
+  const best = planGenEds({ DVUP: 2, DSHU: 1 }, pool).plans[0];
+  assert.deepEqual(best.picks.map((pick) => [pick.id, pick.needs, pick.covers]).sort(), [["C1", ["DIV", "DSHU"], ["DVCC", "DSHU"]], ["U1", ["DVUP"], ["DVUP"]]]);
+  const dvccOnly = planGenEds({ DVCC: 1 }, [course("U3", [["DVUP"]], 3.5), course("C2", [["DVCC"]], 3)]).plans[0];
+  assert.deepEqual(dvccOnly.picks.map((pick) => [pick.id, pick.covers]), [["U3", ["DVUP"]]], "a DVUP course also does");
+  const both = planGenEds({ DVUP: 2 }, [course("X", [["DVUP"], ["DVCC"]], 3)]);
+  assert.deepEqual(both.plans[0].picks.map((pick) => pick.needs), [["DVUP"]]);
+  assert.deepEqual(both.uncovered, [DIVERSITY], "the same course cannot be both Diversity courses");
 });

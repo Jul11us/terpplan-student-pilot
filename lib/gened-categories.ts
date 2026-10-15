@@ -11,7 +11,8 @@ export const GEN_ED_CATEGORIES = [
   { code: "DSNS", en: "Natural Sciences", zh: "自然科学" },
   { code: "DSNL", en: "Natural Science Lab", zh: "自然科学（含实验）" },
   { code: "DSSP", en: "Scholarship in Practice", zh: "实践学术" },
-  { code: "SCIS", en: "I-Series", zh: "I-Series 课程" },
+  // Renamed Big Question by UMD; Testudo still lists it as SCIS.
+  { code: "SCIS", en: "Big Question (I-Series)", zh: "Big Question（原 I-Series）" },
   { code: "DVCC", en: "Cultural Competence", zh: "文化素养" },
   { code: "DVUP", en: "Understanding Plural Societies", zh: "理解多元社会" },
 ] as const;
