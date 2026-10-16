@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useDocumentLanguage } from "@/lib/document-language";
-import { parseCourseIds, parseDegreeAudit, type AuditRequirement, type AuditResult } from "@/lib/degree-audit";
+import { auditGenEdNeeds, coursesNeeded, parseCourseIds, parseDegreeAudit, type AuditRequirement, type AuditResult } from "@/lib/degree-audit";
 import { extractDegreeAuditText } from "@/lib/degree-audit-pdf";
-import { GEN_ED_CATEGORIES } from "@/lib/gened-categories";
+import { GEN_ED_CATEGORIES, genEdParam } from "@/lib/gened-categories";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { compareAuditCandidates, compareAuditCandidatesByGpa, type AuditCandidate } from "@/lib/audit-recommendations";
 import { AUDIT_HANDOFF_KEY } from "@/lib/programs";
@@ -25,7 +25,7 @@ const copy = {
     prereqStorage: "Saves only completed and in-progress course codes in this browser. Edit or clear them in the planner.",
     genEdMissing: (codes: string) => `Your audit still needs these Gen Ed categories: ${codes}`, genEdOpen: "Find courses for them together →",
     genEdOpenOne: "Find this category in course search (checks your schedule) →",
-    genEdHint: "Opens Gen Ed search with them selected. It checks time conflicts with your plan and lists courses that count for several first. Only the category codes are passed along.",
+    genEdHint: "Opens Gen Ed search with them selected. It checks time conflicts with your plan and lists courses that count for several first. Only the category codes and how many courses each still needs are passed along.",
     actionable: "Requirements you can search courses for", others: (n: number) => `${n} other requirements (credit totals, GPA, residency…) · not tied to specific courses`,
     summary: (a: number, o: number, p: number) => `${a} to search · ${o} other · ${p} in progress`,
     kind: { credits: "Credit requirement", gpa: "GPA requirement", courses: "Course count requirement", other: "Other requirement" },
@@ -42,7 +42,7 @@ const copy = {
     prereqStorage: "只将已完成和正在修的课程编号保存在当前浏览器，可在排课页修改或清空。",
     genEdMissing: (codes: string) => `审计显示还缺这些 Gen Ed：${codes}`, genEdOpen: "到找课页一起查找 →",
     genEdOpenOne: "到找课页查找这个类别（会检查课表冲突）→",
-    genEdHint: "会打开 Gen Ed 查找并选好这些类别，检查和你课表的时间冲突，能同时抵多项要求的课排在前面。只会带上类别代码。",
+    genEdHint: "会打开 Gen Ed 查找并选好这些类别，检查和你课表的时间冲突，能同时抵多项要求的课排在前面。只会带上类别代码和每类还缺几门。",
     actionable: "可以直接找课的要求", others: (n: number) => `另有 ${n} 项其他要求（总学分、GPA、住校等）· 不对应具体课程`,
     summary: (a: number, o: number, p: number) => `${a} 项可找课 · ${o} 项其他要求 · ${p} 门正在修`,
     kind: { credits: "学分要求", gpa: "GPA 要求", courses: "课程数量要求", other: "其他要求" },
@@ -240,11 +240,11 @@ export default function AuditPage() {
             <span className="mt-1 block text-xs leading-5 text-[#5d6561]">{t.need}: {requirement.need}</span>
             {plain ? <span className="mt-1 block truncate text-[11px] text-[#646c68]">{requirement.title}</span> : <span className="mt-1 block text-[11px] font-medium text-[#536d64]">{requirement.courseIds.length ? `${requirement.courseIds.length} ${t.listed}` : requirement.genEdCode}</span>}
           </button>;
-          const missingGenEds = [...new Set(audit.requirements.map((requirement) => requirement.genEdCode).filter((code): code is string => Boolean(code)))];
+          const missingGenEds = auditGenEdNeeds(audit.requirements);
           return <>
             {missingGenEds.length > 0 && <div className="mt-4 rounded-xl border border-[#cddbd1] bg-[#f4f8f5] p-3">
-              <p className="text-sm font-semibold text-[#273c38]">{t.genEdMissing(missingGenEds.join(", "))}</p>
-              <Link href={`/plan?gened=${missingGenEds.join(",")}`} className="mt-2 inline-block rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c]">{t.genEdOpen}</Link>
+              <p className="text-sm font-semibold text-[#273c38]">{t.genEdMissing(missingGenEds.map(({ code, count }) => count > 1 ? `${code} ×${count}` : code).join(", "))}</p>
+              <Link href={`/plan?gened=${genEdParam(missingGenEds)}`} className="mt-2 inline-block rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c]">{t.genEdOpen}</Link>
               <p className="mt-2 text-[11px] leading-5 text-[#5d6561]">{t.genEdHint}</p>
             </div>}
             <button type="button" onClick={openMinor} className="mt-4 block text-left text-xs font-medium text-[#536d64] underline underline-offset-2 hover:text-[#273c38]">{t.minorLink}</button>
@@ -271,7 +271,7 @@ export default function AuditPage() {
           <button type="button" onClick={() => setManualId(selected.id)} className="mt-3 text-xs font-medium text-[#536d64] underline underline-offset-2">{t.manual}</button>
         </div> : selected ? <><label className="mt-4 block text-xs font-medium text-[#5d6561]">{t.editTitle}<input value={selected.title} onChange={(event) => { const next = event.target.value; setAudit((current) => current ? { ...current, requirements: current.requirements.map((item) => item.id === selectedId ? { ...item, title: next } : item) } : current); }} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm" /></label><p className="mt-2 text-xs text-[#5d6561]">{t.need}: {selected.need}</p><div className="mt-5 grid gap-3 sm:grid-cols-2"><label className="text-xs font-medium text-[#5d6561]">{t.term}<select value={term} onChange={(event) => { const next = event.target.value; setTerm(next); setPlanIds((readSavedState().plans[next] ?? []).map((course) => course.courseId)); resetResults(); }} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm">{(terms.length ? terms : [term]).map((value) => <option key={value} value={value}>{titleForTerm(value, language)}</option>)}</select></label><label className="text-xs font-medium text-[#5d6561]">{t.category}<select value={category} onChange={(event) => { const next = event.target.value; setCategory(next); setAudit((current) => current ? { ...current, requirements: current.requirements.map((item) => item.id === selectedId ? { ...item, genEdCode: next || null } : item) } : current); resetResults(); }} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm"><option value="">{t.chooseCategory}</option>{GEN_ED_CATEGORIES.map((item) => <option key={item.code} value={item.code}>{item.code} · {item[language]}</option>)}</select></label></div>
         <label className="mt-4 block text-xs font-medium text-[#5d6561]">{t.edit}<textarea value={courseText} onChange={(event) => { const next = event.target.value; setCourseText(next); setAudit((current) => current ? { ...current, requirements: current.requirements.map((item) => item.id === selectedId ? { ...item, courseIds: parseCourseIds(next) } : item) } : current); resetResults(); }} rows={2} placeholder="CMSC132, MATH141" className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm" /></label><div className="mt-4 flex flex-wrap gap-4 text-xs"><label className="flex items-center gap-2"><input type="radio" checked={mode === "list"} onChange={() => { setMode("list"); resetResults(); }} />{t.useList}</label><label className="flex items-center gap-2"><input type="radio" checked={mode === "category"} onChange={() => { setMode("category"); resetResults(); }} />{t.useCategory}</label></div>
-        {selected.genEdCode && <Link href={`/plan?gened=${selected.genEdCode}`} className="mt-4 block text-xs font-medium text-[#536d64] underline underline-offset-2">{t.genEdOpenOne}</Link>}
+        {selected.genEdCode && <Link href={`/plan?gened=${genEdParam([{ code: selected.genEdCode, count: coursesNeeded(selected.need) ?? 1 }])}`} className="mt-4 block text-xs font-medium text-[#536d64] underline underline-offset-2">{t.genEdOpenOne}</Link>}
         <button onClick={() => void findCourses()} disabled={loading || (mode === "list" ? !parseCourseIds(courseText).length : !category)} className="mt-5 rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{loading ? t.loading : t.find}</button>{!selected.courseIds.length && !selected.genEdCode && <p className="mt-3 text-xs text-[#646c68]">{t.nonCourse}</p>}
         {candidates && <>
           <div className="mt-7 flex flex-wrap items-center justify-between gap-3">

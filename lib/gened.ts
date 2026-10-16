@@ -1,5 +1,5 @@
 import { GEN_ED_CATEGORIES } from "@/lib/gened-categories";
-import { classTexts, firstClassText, genEdGroupsIn, htmlText, parseTestudoSections, testudoHtml, type UmdSection } from "@/lib/umd";
+import { classTexts, firstClassText, genEdGroupsIn, htmlText, parseTestudoSections, testudoHtml, testudoRelatedCourses, type UmdSection } from "@/lib/umd";
 
 // Gen Ed lists always come from Testudo, for every term: it lists a whole category on one page and
 // returns sections for many courses per request, while umd.io needs many slow calls for the same data.
@@ -20,6 +20,10 @@ export type GenEdCourse = {
   hasRestriction: boolean;
   // Only students in a named program (Honors, Scholars, a Living-Learning program, ...) may enroll.
   programOnly: boolean;
+  // Other listings of the same class (Testudo's "Cross-listed with"), and courses Testudo gives credit for
+  // only once together with this one ("Credit only granted for").
+  crossListed: string[];
+  creditOnlyFor: string[];
   sections: UmdSection[];
 };
 
@@ -79,6 +83,7 @@ async function testudoGenEd(term: string, code: GenEdCode): Promise<GenEdCourse[
       // Testudo writes these as "<strong>Prerequisite:</strong> ..." in the course text block.
       hasPrerequisite: /<strong>\s*(?:Prerequisite|Corequisite)/i.test(block),
       ...restrictionFlags(block),
+      ...testudoRelatedCourses(block, courseId),
       sections: [] as UmdSection[],
     };
   });

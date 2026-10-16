@@ -152,6 +152,16 @@ function parseTestudoRequirements(html: string) {
   return { requirements, description: description || null };
 }
 
+// The courses Testudo ties to one course: other listings of the same class ("Cross-listed with: ENGL234",
+// "Also offered as") and courses it gives credit for only once together ("Credit only granted for: ENGL234,
+// AAAS234 or AASP298L"). `block` is the course's markup; the course itself is left out of both lists.
+export function testudoRelatedCourses(block: string, courseId: string) {
+  const { requirements } = parseTestudoRequirements(block);
+  const ids = (kind: CourseRequirementKind) => [...new Set(requirements.filter((item) => item.kind === kind)
+    .flatMap((item) => item.text.toUpperCase().match(/\b[A-Z]{4}\d{3}[A-Z]?\b/g) ?? []))].filter((id) => id !== courseId);
+  return { crossListed: ids("crossListed"), creditOnlyFor: ids("creditOnlyFor") };
+}
+
 // umd.io keeps the same information under course.relationships.
 const UMDIO_RELATIONSHIPS: Array<[string, CourseRequirementKind, string]> = [
   ["prereqs", "prerequisite", "Prerequisite"],

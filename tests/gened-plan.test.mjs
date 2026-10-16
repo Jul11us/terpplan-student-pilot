@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DIVERSITY, diversityDefault, diversityNeeds, fillOptions, needSlots, planGenEds, sectionsFit } from "../lib/gened-plan.ts";
+import { crossListGroups, DIVERSITY, diversityDefault, diversityNeeds, fillOptions, fitSections, needSlots, planGenEds, sectionsFit } from "../lib/gened-plan.ts";
 
 const mwf = (start, end) => [{ days: "MWF", start_time: start, end_time: end }];
 const course = (id, groups, score, sections = [[]], extra = {}) => ({ id, groups, score, sections, ...extra });
@@ -92,4 +92,63 @@ test("picking DVUP and DVCC is one Diversity requirement: what is left follows w
   assert.deepEqual(ids(planGenEds(diversityNeeds("DVUP"), pool).plans[0]), ["C"]);
   assert.deepEqual(ids(planGenEds(diversityNeeds("DVCC"), pool).plans[0]), ["U"]);
   assert.deepEqual(ids(planGenEds(diversityNeeds("none"), pool).plans[0]), ["C", "U"]);
+});
+
+test("one class under two numbers, or two courses credited only once, never share a set or make two sets", () => {
+  const pool = [
+    course("AAAS234", [["DSHU"], ["DVUP"]], 3.6, [[]], { sameAs: "AAAS234", notWith: ["ENGL234", "AASP298L"] }),
+    course("ENGL234", [["DSHU"], ["DVUP"]], 3.5, [[]], { sameAs: "AAAS234", notWith: ["AAAS234"] }),
+    course("AMST101", [["DSHU"]], 3.9, [[]], { notWith: ["AMST201"] }),
+    course("AMST201", [["DSHU"]], 3.8, [[]], { notWith: ["AMST101"] }),
+    course("HIST100", [["DSHU"]], 3, [[]]),
+  ];
+  const result = planGenEds({ DSHU: 2, DVUP: 1 }, pool);
+  assert.ok(result.plans.length > 0);
+  for (const plan of result.plans) {
+    const picked = ids(plan);
+    assert.ok(!(picked.includes("AAAS234") && picked.includes("ENGL234")), "the same class twice");
+    assert.ok(!(picked.includes("AMST101") && picked.includes("AMST201")), "credit only once");
+  }
+  const sets = result.plans.map((plan) => ids(plan).map((id) => id === "ENGL234" ? "AAAS234" : id).sort().join());
+  assert.equal(new Set(sets).size, sets.length, "swapping AAAS234 for ENGL234 is not another set");
+  const twinsOnly = planGenEds({ DSHU: 2 }, pool.slice(0, 2));
+  assert.deepEqual(twinsOnly.uncovered, ["DSHU"], "two numbers of one class fill one need");
+});
+
+test("a set knows which section of each course it was checked with", () => {
+  const a = course("A", [["DSHU"]], 3, [mwf("10:00am", "10:50am"), mwf("11:00am", "11:50am")]);
+  const b = course("B", [["DSHS"]], 3, [mwf("10:00am", "10:50am")]);
+  assert.deepEqual(fitSections([a, b]), [1, 0]);
+  assert.equal(fitSections([b, { ...b, id: "C" }]), null);
+  const best = planGenEds({ DSHU: 1, DSHS: 1 }, [a, b]).plans[0];
+  assert.deepEqual(best.picks.map((pick) => [pick.id, pick.section]).sort(), [["A", 1], ["B", 0]]);
+});
+
+test("another listing of a class can supply the sections that make a complete set fit", () => {
+  // Cross-listed numbers can have different open sections after the finder applies its seat filter.
+  const a = course("AAAS100", [["DSHU"]], 4, [mwf("10:00am", "10:50am")], { sameAs: "AAAS100" });
+  const b = course("ENGL100", [["DSHU"]], 3, [mwf("11:00am", "11:50am")], { sameAs: "AAAS100" });
+  const c = course("HIST100", [["DSHS"]], 3, [mwf("10:00am", "10:50am")]);
+  assert.equal(sectionsFit([b, c]), true);
+  const result = planGenEds({ DSHU: 1, DSHS: 1 }, [a, b, c]);
+  assert.deepEqual(result.uncovered, []);
+  assert.deepEqual(ids(result.plans[0]), ["ENGL100", "HIST100"]);
+  assert.equal(result.plans.length, 1);
+});
+
+test("listings are one class when Testudo cross-lists them or they meet at the same times in the same rooms", () => {
+  const meets = (start) => [{ meetings: [{ days: "TuTh", start_time: start, end_time: "12:15pm", building: "TWS", room: "0100" }] }];
+  const groups = crossListGroups([
+    { course_id: "AAAS234", name: "African-American Literature", crossListed: ["ENGL234"], sections: meets("11:00am") },
+    { course_id: "ENGL234", name: "African-American Literature", sections: meets("11:00am") },
+    { course_id: "AMST213", name: "Heroes and Villains", sections: meets("2:00pm") },
+    { course_id: "CINE282", name: "Heroes and villains", sections: meets("2:00pm") },
+    { course_id: "HIST200", name: "Heroes and Villains", sections: meets("9:30am") },
+    { course_id: "ARHU468", name: "Independent Study", sections: [{ meetings: [] }] },
+    { course_id: "ENGL468", name: "Independent Study", sections: [{ meetings: [] }] },
+  ]);
+  assert.equal(groups.get("ENGL234"), groups.get("AAAS234"));
+  assert.equal(groups.get("CINE282"), groups.get("AMST213"), "same title, same times and rooms");
+  assert.notEqual(groups.get("HIST200"), groups.get("AMST213"), "another time is another class");
+  assert.notEqual(groups.get("ENGL468"), groups.get("ARHU468"), "no set time says nothing");
 });

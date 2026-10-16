@@ -11,6 +11,8 @@
 // - A lab science course (DSNL) is also one natural-science course, so it can fill a DSNS need instead of the
 //   lab one.
 // One course fills at most one need in each of those two requirements. Courses already in the plan count first.
+// A set never holds one class twice under two listings (cross-listed, AAAS234 and ENGL234) or two courses Testudo
+// credits only once together, and two sets that differ only by the listing are offered once.
 
 import { meetingsConflict, type MeetingTime } from "@/lib/meeting-time";
 
@@ -23,10 +25,16 @@ export type PlanCandidate = {
   // Each usable section's meetings; an empty list is a section with no set time, which fits anything.
   sections: MeetingTime[][];
   inPlan?: boolean;
+  // The class this listing belongs to when it is cross-listed (one key for AAAS234 and ENGL234; see
+  // crossListGroups).
+  sameAs?: string;
+  // Courses Testudo gives credit for only once together with this one ("Credit only granted for").
+  notWith?: string[];
 };
 // `needs`: the needs this course fills (DIV for "a Diversity course"); `covers`: the same as the course's own
-// Gen Ed codes, for showing (a lab course filling the science need shows DSNL).
-export type GenEdPick = { id: string; needs: string[]; covers: string[] };
+// Gen Ed codes, for showing (a lab course filling the science need shows DSNL). `section`: the section (an index
+// into the course's `sections`) the set was checked with; plan courses have none.
+export type GenEdPick = { id: string; needs: string[]; covers: string[]; section?: number };
 // One line per need, in the order the student listed them: which course fills it (null: nothing this term).
 export type NeedLine = { need: string; id: string | null; fromPlan: boolean };
 export type GenEdPlan = { picks: GenEdPick[]; score: number; lines: NeedLine[] };
@@ -117,20 +125,65 @@ const fills = (option: string[], left: GenEdNeeds) => option.filter((key) => (le
 const take = (left: GenEdNeeds, keys: string[]) => { const next = { ...left }; for (const key of keys) next[key] = (next[key] ?? 0) - 1; return next; };
 const sum = (left: GenEdNeeds) => Object.values(left).reduce((total, count) => total + Math.max(0, count), 0);
 
-// Whether every course can be taken in one of its sections without two of them meeting at the same time.
-export function sectionsFit(courses: PlanCandidate[]) {
-  const choose = (index: number, chosen: MeetingTime[][]): boolean => {
-    if (index === courses.length) return true;
-    const sections = courses[index]!.sections.length ? courses[index]!.sections : [[]];
-    return sections.some((meetings) => !chosen.some((other) => meetingsConflict(meetings, other)) && choose(index + 1, [...chosen, meetings]));
+// One section for each course (an index into its `sections`) with no two of them meeting at the same time,
+// trying each course's sections in order; null when there is none.
+export function fitSections(courses: PlanCandidate[]): number[] | null {
+  const sectionsOf = (course: PlanCandidate) => course.sections.length ? course.sections : [[]];
+  const choose = (index: number, chosen: number[]): number[] | null => {
+    if (index === courses.length) return chosen;
+    const sections = sectionsOf(courses[index]!);
+    for (let at = 0; at < sections.length; at += 1) {
+      if (chosen.some((other, before) => meetingsConflict(sections[at]!, sectionsOf(courses[before]!)[other]!))) continue;
+      const found = choose(index + 1, [...chosen, at]);
+      if (found) return found;
+    }
+    return null;
   };
   return choose(0, []);
+}
+
+// Whether every course can be taken in one of its sections without two of them meeting at the same time.
+export const sectionsFit = (courses: PlanCandidate[]) => fitSections(courses) !== null;
+
+// The class a listing belongs to, and whether two courses can go in one set: not one class under two listings,
+// and not two courses Testudo credits only once together.
+const classKey = (course: PlanCandidate) => course.sameAs ?? course.id;
+const apart = (a: PlanCandidate, b: PlanCandidate) => a.id !== b.id && classKey(a) !== classKey(b) && !a.notWith?.includes(b.id) && !b.notWith?.includes(a.id);
+
+type Listing = { course_id: string; name: string; crossListed?: string[]; sections: { meetings?: MeetingTime[] }[] };
+// Which listings are one class: the ones Testudo says are cross-listed, and the ones with the same title whose
+// sections meet at the same times in the same rooms. Maps each course to its class's key (the group's first id).
+export function crossListGroups(courses: Listing[]): Map<string, string> {
+  const parent = new Map<string, string>();
+  const find = (id: string): string => {
+    const up = parent.get(id);
+    if (!up || up === id) return id;
+    const root = find(up);
+    parent.set(id, root);
+    return root;
+  };
+  const join = (a: string, b: string) => {
+    const x = find(a), y = find(b);
+    if (x !== y) parent.set(x < y ? y : x, x < y ? x : y);
+  };
+  for (const course of courses) for (const other of course.crossListed ?? []) join(course.course_id, other);
+  // Only sections with a set time say anything: two "Independent Study" listings to be arranged are not one class.
+  const bySchedule = new Map<string, string>();
+  for (const course of courses) {
+    if (!course.sections.some((section) => (section.meetings ?? []).some((meeting) => meeting.start_time))) continue;
+    const times = course.sections.map((section) => (section.meetings ?? []).map((meeting) => [meeting.days, meeting.start_time, meeting.end_time, meeting.building, meeting.room].join(" ")).join("+")).sort().join(";");
+    const key = `${course.name.trim().toLowerCase()}|${times}`;
+    const first = bySchedule.get(key);
+    if (first) join(first, course.course_id);
+    else bySchedule.set(key, course.course_id);
+  }
+  return new Map(courses.map((course) => [course.course_id, find(course.course_id)]));
 }
 
 export function planGenEds(needs: GenEdNeeds, candidates: PlanCandidate[], maxPlans = 3): GenEdPlanResult {
   const slots = needSlots(needs);
   const order = Object.keys(slots);
-  const pick = (course: PlanCandidate, keys: string[]): GenEdPick => ({ id: course.id, needs: keys, covers: keys.map((key) => shownCode(key, course.groups)) });
+  const pick = (course: PlanCandidate, keys: string[], section?: number): GenEdPick => ({ id: course.id, needs: keys, covers: keys.map((key) => shownCode(key, course.groups)), ...(section === undefined ? {} : { section }) });
   // Need lines in the student's order: plan courses, then the set's courses, then what is left uncovered.
   const linesFor = (planPicks: GenEdPick[], added: GenEdPick[], missing: string[]): NeedLine[] => [
     ...planPicks.flatMap((item) => item.needs.map((need) => ({ need, id: item.id, fromPlan: true }))),
@@ -146,12 +199,12 @@ export function planGenEds(needs: GenEdNeeds, candidates: PlanCandidate[], maxPl
     if (best?.length) { fromPlan.push(pick(course, best)); left = take(left, best); }
   }
 
-  // A need can be covered only as many times as there are courses that can fill it.
+  // A need can be covered only as many times as there are classes that can fill it.
   const pool = candidates.filter((item) => !item.inPlan);
   const uncovered: string[] = [];
   for (const [key, count] of Object.entries(left)) {
     if (count <= 0) continue;
-    const able = pool.filter((course) => fillOptions(course.groups, [key]).length).length;
+    const able = new Set(pool.filter((course) => fillOptions(course.groups, [key]).length).map(classKey)).size;
     for (let index = able; index < count; index += 1) uncovered.push(key);
     if (able < count) left[key] = able;
   }
@@ -170,7 +223,7 @@ export function planGenEds(needs: GenEdNeeds, candidates: PlanCandidate[], maxPl
     kind.courses.push(course);
     kinds.set(key, kind);
   }
-  const kindList = [...kinds.values()].map((kind) => ({ ...kind, courses: [...kind.courses].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)) }))
+  const kindList = [...kinds.values()].map((kind) => ({ ...kind, courses: [...kind.courses].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)), classes: new Set(kind.courses.map(classKey)).size }))
     .sort((a, b) => Math.max(...b.options.map((o) => o.length)) - Math.max(...a.options.map((o) => o.length)) || b.courses[0]!.score - a.courses[0]!.score);
   const widest = Math.max(...kindList.flatMap((kind) => kind.options.map((option) => option.length)));
 
@@ -190,7 +243,7 @@ export function planGenEds(needs: GenEdNeeds, candidates: PlanCandidate[], maxPl
       if (steps.length + Math.ceil(remaining / widest) > k) return;
       for (let index = at; index < kindList.length; index += 1) {
         const kind = kindList[index]!;
-        if ((used.get(index) ?? 0) >= kind.courses.length) continue;
+        if ((used.get(index) ?? 0) >= kind.classes) continue;
         for (const option of kind.options) {
           const covers = fills(option, rest);
           if (!covers.length) continue;
@@ -203,18 +256,26 @@ export function planGenEds(needs: GenEdNeeds, candidates: PlanCandidate[], maxPl
       const realize = (index: number, chosen: PlanCandidate[]) => {
         if (plans.length >= MAX_COMBOS) return;
         if (index === steps.length) {
-          const key = chosen.map((course) => course.id).sort().join(",");
+          // The same classes under other listings make the same set.
+          const key = chosen.map(classKey).sort().join(",");
           if (seen.has(key)) return;
           seen.add(key);
-          const picks = chosen.map((course, at) => pick(course, steps[at]!.covers));
+          const sections = fitSections(chosen)!;
+          const picks = chosen.map((course, at) => pick(course, steps[at]!.covers, sections[at]));
           plans.push({ picks, score: chosen.reduce((total, course) => total + course.score, 0), lines: linesFor(fromPlan, picks, uncovered) });
           return;
         }
-        let tried = 0;
+        // The best few classes of this kind. Try every listing of those classes: each listing can have
+        // different usable sections (open seats, for example), so one may fit where another does not.
+        // Completed sets are still deduplicated by class above.
+        const tried = new Set<string>();
         for (const course of kindList[steps[index]!.kind]!.courses) {
-          if (tried >= COURSES_TRIED_PER_PICK) break;
-          if (chosen.includes(course)) continue;
-          tried += 1;
+          if (!chosen.every((other) => apart(other, course))) continue;
+          const key = classKey(course);
+          if (!tried.has(key)) {
+            if (tried.size >= COURSES_TRIED_PER_PICK) continue;
+            tried.add(key);
+          }
           if (sectionsFit([...chosen, course])) realize(index + 1, [...chosen, course]);
         }
       };
@@ -229,7 +290,7 @@ export function planGenEds(needs: GenEdNeeds, candidates: PlanCandidate[], maxPl
   const chosen: PlanCandidate[] = [];
   const picks: GenEdPick[] = [];
   for (let rest = left; sum(rest);) {
-    const next = pool.filter((course) => !chosen.includes(course) && sectionsFit([...chosen, course]))
+    const next = pool.filter((course) => chosen.every((other) => apart(other, course)) && sectionsFit([...chosen, course]))
       .map((course) => ({ course, keys: fillOptions(course.groups, Object.keys(rest)).map((option) => fills(option, rest)).sort(fuller)[0] ?? [] }))
       .filter((item) => item.keys.length)
       .sort((x, y) => y.keys.length - x.keys.length || y.course.score - x.course.score)[0];
@@ -237,5 +298,7 @@ export function planGenEds(needs: GenEdNeeds, candidates: PlanCandidate[], maxPl
     chosen.push(next.course); picks.push(pick(next.course, next.keys)); rest = take(rest, next.keys);
   }
   if (!picks.length) return done([]);
-  return { ...done([{ picks, score: chosen.reduce((total, course) => total + course.score, 0), lines: linesFor(fromPlan, picks, uncovered) }]), lines: linesFor(fromPlan, [], uncovered) };
+  const sections = fitSections(chosen);
+  const placed = picks.map((item, at) => sections ? { ...item, section: sections[at] } : item);
+  return { ...done([{ picks: placed, score: chosen.reduce((total, course) => total + course.score, 0), lines: linesFor(fromPlan, placed, uncovered) }]), lines: linesFor(fromPlan, [], uncovered) };
 }

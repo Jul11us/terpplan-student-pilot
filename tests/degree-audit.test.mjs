@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseCourseIds, parseDegreeAudit } from "../lib/degree-audit.ts";
+import { auditGenEdNeeds, coursesNeeded, parseCourseIds, parseDegreeAudit } from "../lib/degree-audit.ts";
 import { degreeAuditPageLines } from "../lib/degree-audit-pdf.ts";
 
 test("reads unmet Gen Ed and named course requirements without retaining student identity", () => {
@@ -93,4 +93,18 @@ SELECT FROM: BMGT 220,221`);
   assert.equal(result.requirements.some((item) => item.genEdCode === "DVUP"), false);
   assert.equal(result.requirements[3].title, "Principles of Accounting I & II");
   assert.deepEqual(result.requirements[3].courseIds, ["BMGT220", "BMGT221"]);
+});
+
+test("the Gen Ed finder gets how many courses each category still needs", () => {
+  assert.equal(coursesNeeded("2 COURSES"), 2);
+  assert.equal(coursesNeeded("1 COURSE"), 1);
+  assert.equal(coursesNeeded("6 CREDITS"), 2, "three credits a course");
+  assert.equal(coursesNeeded("3.0 CREDITS"), 1);
+  assert.equal(coursesNeeded("1 SET"), null);
+  assert.equal(coursesNeeded("2.0 GPA"), null);
+  const needs = auditGenEdNeeds([
+    { genEdCode: "SCIS", need: "2 COURSES" }, { genEdCode: "DSHU", need: "1 COURSE" }, { genEdCode: null, need: "2 COURSES" },
+    { genEdCode: "DSNS", need: "1 SET" }, { genEdCode: "DSHU", need: "6 CREDITS" },
+  ]);
+  assert.deepEqual(needs, [{ code: "SCIS", count: 2 }, { code: "DSHU", count: 2 }, { code: "DSNS", count: 1 }]);
 });

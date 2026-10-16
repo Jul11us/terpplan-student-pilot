@@ -80,6 +80,25 @@ function labelAbove(lines: string[], index: number) {
   return labels.find((line) => genEdCodesIn(line).length) ?? labels[0] ?? "Unlabeled requirement";
 }
 
+// How many courses a "NEEDS:" line asks for: "2 COURSES" -> 2, "6 CREDITS" -> 2 (3 credits a course); null
+// for anything else ("1 SUB-GROUP", a GPA).
+export function coursesNeeded(need: string): number | null {
+  const courses = /(\d+(?:\.\d+)?)\s*COURSES?\b/i.exec(need);
+  if (courses) return Math.max(1, Math.round(Number(courses[1])));
+  const credits = /(\d+(?:\.\d+)?)\s*CREDITS?\b/i.exec(need);
+  return credits ? Math.max(1, Math.ceil(Number(credits[1]) / 3)) : null;
+}
+
+// The Gen Ed categories an audit still needs and how many courses each, in the audit's order. A category named by
+// more than one requirement keeps the largest count.
+export function auditGenEdNeeds(requirements: Pick<AuditRequirement, "genEdCode" | "need">[]) {
+  const counts = new Map<string, number>();
+  for (const { genEdCode, need } of requirements) {
+    if (genEdCode) counts.set(genEdCode, Math.max(counts.get(genEdCode) ?? 1, coursesNeeded(need) ?? 1));
+  }
+  return [...counts].map(([code, count]) => ({ code, count }));
+}
+
 // uAchieve lists a department once and then uses abbreviated numbers, e.g. CMSC 426,460.
 export function parseCourseIds(value: string) {
   const found: string[] = [];

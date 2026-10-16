@@ -20,6 +20,7 @@ import { planKey } from "@/lib/plan-key";
 import { sharePath } from "@/lib/shared-schedule";
 import { weekFromSections, writeMyWeek } from "@/lib/my-week";
 import { anonymousBusyBlocks, type BusyBlock } from "@/lib/personal-schedule";
+import type { SectionPreferences } from "@/lib/section-preferences";
 import type { ScheduleOption, ScheduledSection, PlanDiagnosis, PlanRepair } from "@/lib/planner";
 import { PersonalSchedule, repairText, ScheduleRecovery, SectionSwap } from "@/app/components/schedule-tools";
 import { SeasonNote, useOfferingSeasons } from "@/app/components/season-note";
@@ -200,6 +201,8 @@ type Props = {
   onRestoreCourse?: (course: PlanCourse, index: number) => void;
   // Reports the option being viewed so the Gen Ed finder can check conflicts against it.
   onChosenChange?: (schedule: ReferenceSchedule) => void;
+  // Reports the preferences that rule sections out, so the Gen Ed finder can follow them too.
+  onPreferencesChange?: (preferences: SectionPreferences) => void;
 };
 
 // Day names as Testudo writes them, so meeting-time parsing reads personal commitments like classes.
@@ -478,7 +481,7 @@ export function CalendarExport({ sections, term, termName, language, incomplete,
   </div>;
 }
 
-export default function SchedulePlanner({ courses, term, termName, language, creditsLabel, creditWarning, creditMeter, prereqNeeds = {}, takenEditor, planSwitch, onRemove, onBack, onChosenChange, onUpdateCourse, onRestoreCourse }: Props) {
+export default function SchedulePlanner({ courses, term, termName, language, creditsLabel, creditWarning, creditMeter, prereqNeeds = {}, takenEditor, planSwitch, onRemove, onBack, onChosenChange, onPreferencesChange, onUpdateCourse, onRestoreCourse }: Props) {
   const t = copy[language];
   const [generated, setGenerated] = useState<{ requestKey: string; prefsKey: string; options: ScheduleOption[]; warnings: PlanWarning[]; diagnostics?: PlanDiagnosis[]; repairs?: PlanRepair[] }>({ requestKey: "", prefsKey: "", options: [], warnings: [] });
   // The option being viewed, kept by its section ids so re-sorting the list does not move the selection.
@@ -537,6 +540,9 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
   useEffect(() => {
     writeSavedState({ preferences: { excludedDays, earliestStart, earlyBefore, windowStart, windowEnd, strictTime, openSeatsOnly, preferGpa, preferFewerDays, preferNearbyClasses, campusAreas, includeFreshmanConnection, busyBlocks, bufferMinutes } });
   }, [excludedDays, earliestStart, earlyBefore, windowStart, windowEnd, strictTime, openSeatsOnly, preferGpa, preferFewerDays, preferNearbyClasses, campusAreas, includeFreshmanConnection, busyBlocks, bufferMinutes]);
+  useEffect(() => {
+    onPreferencesChange?.({ excludedDays, earliestStart, windowStart, windowEnd, strictTime, busyBlocks, campusAreas });
+  }, [onPreferencesChange, excludedDays, earliestStart, windowStart, windowEnd, strictTime, busyBlocks, campusAreas]);
   // Results belong to the course list and term they were generated for; hide them once either changes.
   const requestKey = useMemo(() => planKey(courses, term), [courses, term]);
   // Preferences only mark results as out of date: the options stay visible with a notice to regenerate.

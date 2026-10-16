@@ -17,6 +17,25 @@ export const GEN_ED_CATEGORIES = [
   { code: "DVUP", en: "Understanding Plural Societies", zh: "理解多元社会" },
 ] as const;
 
+// The degree audit opens the Gen Ed finder with ?gened=DSHU:2,SCIS,DVUP: categories, each with how many courses
+// it still needs when that is more than one.
+export function genEdParam(needs: { code: string; count: number }[]) {
+  return needs.map(({ code, count }) => count > 1 ? `${code}:${count}` : code).join(",");
+}
+
+// Reads that link: known categories only, each once, with the counts above one. Plain "DSHU,DVUP" links still work.
+export function parseGenEdParam(value: string | null | undefined) {
+  const codes: string[] = [];
+  const counts: Record<string, number> = {};
+  for (const part of (value ?? "").split(",")) {
+    const [code = "", count = ""] = part.trim().toUpperCase().split(":").map((item) => item.trim());
+    if (!GEN_ED_CATEGORIES.some((item) => item.code === code) || codes.includes(code)) continue;
+    codes.push(code);
+    if (/^\d+$/.test(count) && Number(count) > 1) counts[code] = Number(count);
+  }
+  return { codes, counts };
+}
+
 // Testudo lists a course's Gen Ed codes as groups: "DSHS, DVUP" counts for both, while "DSHU or DSSP"
 // counts for one of the two (the student's choice). "GenEd: DSHU or DSSP, DVUP" -> [["DSHU", "DSSP"], ["DVUP"]].
 export function parseGenEdGroups(text: string): string[][] {

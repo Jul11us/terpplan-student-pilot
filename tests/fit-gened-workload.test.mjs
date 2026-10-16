@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { filterResults, NO_FILTERS, scheduleFit } from "../lib/result-filters.ts";
 import { sectionSlots } from "../lib/seat-summary.ts";
-import { genEdCoverage, parseGenEdGroups } from "../lib/gened-categories.ts";
+import { genEdCoverage, genEdParam, parseGenEdGroups, parseGenEdParam } from "../lib/gened-categories.ts";
 import { courseDifficulty, semesterWorkload } from "../lib/workload.ts";
 
 const slot = (days, start, end, open = 5) => ({ open, meetings: [{ days, start_time: start, end_time: end }] });
@@ -60,4 +60,12 @@ test("semester workload weighs credits by how hard each course has been", () => 
   // Two hard courses make even a small term heavy.
   assert.equal(semesterWorkload([{ courseId: "PHYS260", credits: 3, averageGpa: 2.5 }, { courseId: "MATH241", credits: 4, averageGpa: 2.6 }]).level, "heavy");
   assert.equal(semesterWorkload([{ courseId: "XXXX100", credits: null, averageGpa: undefined }]).credits, 3, "unknown credits count as 3");
+});
+
+test("the audit's link to the Gen Ed finder carries each category's count, and old links still work", () => {
+  assert.equal(genEdParam([{ code: "SCIS", count: 2 }, { code: "DSHU", count: 1 }, { code: "DVUP", count: 1 }]), "SCIS:2,DSHU,DVUP");
+  assert.deepEqual(parseGenEdParam("SCIS:2,DSHU,DVUP"), { codes: ["SCIS", "DSHU", "DVUP"], counts: { SCIS: 2 } });
+  assert.deepEqual(parseGenEdParam("dshu, dvup"), { codes: ["DSHU", "DVUP"], counts: {} });
+  assert.deepEqual(parseGenEdParam("XXXX:2,DSHU:abc,DSHU:2,SCIS:1"), { codes: ["DSHU", "SCIS"], counts: {} }, "unknown codes, repeats and bad counts are dropped");
+  assert.deepEqual(parseGenEdParam(null), { codes: [], counts: {} });
 });
