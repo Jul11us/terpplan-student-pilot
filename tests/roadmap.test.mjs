@@ -129,4 +129,9 @@ test("the chosen major and track are kept with the plan; anything else is droppe
   assert.deepEqual(parseRoadmap({ ...base, major: { id: "CS", track: "data" } }).major, { id: "CS", track: "data" });
   assert.equal(parseRoadmap({ ...base, major: { id: "CS", track: "art" } }).major, undefined);
   assert.equal(parseRoadmap({ ...base, major: { id: "ENGL", track: "general" } }).major, undefined);
+  // A catalog major keeps its tables and the rules the student ticked.
+  const economics = { id: "catalog", slug: "economics--economics-major", blocks: [1, 1, -2, 0.5, "x"], ticked: ["1x9k2a", "1x9k2a-1", "BAD", 7] };
+  assert.deepEqual(parseRoadmap({ ...base, major: economics }).major, { id: "catalog", slug: "economics--economics-major", blocks: [1], ticked: ["1x9k2a", "1x9k2a-1"] });
+  assert.deepEqual(parseRoadmap({ ...base, major: { id: "catalog", slug: "economics--economics-major", blocks: [], ticked: [] } }).major, { id: "catalog", slug: "economics--economics-major", blocks: [] }, "every table switched off is a choice too");
+  assert.equal(parseRoadmap({ ...base, major: { id: "catalog", slug: "../etc/passwd" } }).major, undefined);
 });

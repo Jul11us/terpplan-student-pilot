@@ -72,4 +72,4 @@ export function planSummary(state: SyncState) {
 }
 
 // Everything a student's planner keeps in this browser, for "sign out and clear this device".
-export const PERSONAL_KEYS = ["terpplan:v1", "terpplan:taken", "terpplan:registration-time", "terpplan:registration-day", "terpplan:my-week", "terpplan:sync-meta"];
+export const PERSONAL_KEYS = ["terpplan:v1", "terpplan:taken", "terpplan:audit-needs", "terpplan:registration-time", "terpplan:registration-day", "terpplan:my-week", "terpplan:sync-meta"];

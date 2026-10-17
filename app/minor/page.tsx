@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useDocumentLanguage } from "@/lib/document-language";
 import { parseCourseIds, parseDegreeAudit } from "@/lib/degree-audit";
 import { extractDegreeAuditText } from "@/lib/degree-audit-pdf";
-import { AUDIT_HANDOFF_KEY, defaultBlocks, evaluateProgram, MINOR_MAJOR_OVERLAP_COURSES, unmetPrerequisites, withBaseCourses, type CourseFact, type CourseStatus, type ItemProgress, type Program } from "@/lib/programs";
+import { AUDIT_HANDOFF_KEY, defaultBlocks, evaluateProgram, MINOR_MAJOR_OVERLAP_COURSES, PROGRAMS_DATA_VERSION, unmetPrerequisites, withBaseCourses, type CourseFact, type CourseStatus, type ItemProgress, type Program } from "@/lib/programs";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { SiteHeader } from "@/app/components/site-header";
 
@@ -14,8 +14,7 @@ type ProgramData = { program: Program; courses: Record<string, CourseFact> };
 type Mode = "minor" | "major";
 type AuditCourses = { completed: string[]; inProgress: string[] };
 
-// Program responses are cached by the browser for an hour; bump this when their shape changes.
-const DATA_VERSION = 5;
+const DATA_VERSION = PROGRAMS_DATA_VERSION;
 // Choices on this page are remembered per browser.
 const PREFS_KEY = "terpplan:minor";
 

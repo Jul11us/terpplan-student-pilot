@@ -4,14 +4,16 @@ import { prerequisiteCodes, programCodes, type CourseFact, type Program } from "
 const data = snapshot as unknown as { source: string; builtAt: string; programs: Program[]; courses: Record<string, CourseFact> };
 const CACHE = { "cache-control": "public, max-age=3600" };
 
-// GET /api/programs                     -> minors and majors to choose from
+// GET /api/programs                     -> minors and majors to choose from (majors with a course table)
+// GET /api/programs?all=1               -> the same, with every major (the four-year plan lists them all)
 // GET /api/programs?slug=<slug>         -> requirements plus facts for the listed courses and their prerequisites
 // GET /api/programs?slug=<slug>&codes=1 -> only the course codes the program lists, used to find overlap
 export function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const slug = params.get("slug");
   if (!slug) {
-    const list = (kind: Program["kind"]) => data.programs.filter((program) => program.kind === kind && (kind === "minor" || program.items.length)).map(({ slug: id, name }) => ({ slug: id, name }));
+    const every = params.get("all") === "1";
+    const list = (kind: Program["kind"]) => data.programs.filter((program) => program.kind === kind && (kind === "minor" || every || program.items.length)).map(({ slug: id, name }) => ({ slug: id, name }));
     return Response.json({ builtAt: data.builtAt, minors: list("minor"), majors: list("major") }, { headers: CACHE });
   }
   const program = data.programs.find((item) => item.slug === slug);

@@ -9,6 +9,7 @@ import { extractDegreeAuditText } from "@/lib/degree-audit-pdf";
 import { GEN_ED_CATEGORIES, genEdParam } from "@/lib/gened-categories";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { compareAuditCandidates, compareAuditCandidatesByGpa, type AuditCandidate } from "@/lib/audit-recommendations";
+import { auditNeedsFrom, writeAuditNeeds } from "@/lib/audit-plan";
 import { AUDIT_HANDOFF_KEY } from "@/lib/programs";
 import { writeTakenFromAudit } from "@/lib/taken-courses";
 import { SeasonNote, useOfferingSeasons } from "@/app/components/season-note";
@@ -22,6 +23,7 @@ const copy = {
     upload: "Choose degree audit PDF", size: "PDF · up to 12 MB · up to 60 pages", reading: "Reading PDF in your browser…", badFile: "Choose a PDF under 12 MB and 60 pages.", badPdf: "This PDF could not be read. Export a text-based audit PDF from uAchieve and try again.", noText: "No readable text was found. A scanned PDF needs text recognition before it can be used here.", noNeeds: "No unmet requirements were found. Check that this is a uAchieve degree audit PDF.", complete: "This audit says all identified requirements are met.", unknown: "The audit format was not fully recognized. Review every result against your official audit.",
     chooseFile: "Choose PDF", noFile: "No file chosen",
     minorLink: "Thinking about a minor or a double major? See how your courses count →",
+    roadmapLink: "Check your four-year plan against this audit →", roadmapStorage: "Keeps only the unfinished requirements and your course codes, in this browser; nothing is synced to your account.",
     useForPrereqs: "Use these courses to check planner prerequisites →",
     prereqStorage: "Saves only completed and in-progress course codes in this browser. Edit or clear them in the planner.",
     genEdMissing: (codes: string) => `Your audit still needs these Gen Ed categories: ${codes}`, genEdOpen: "Find courses for them together →",
@@ -39,6 +41,7 @@ const copy = {
     upload: "选择 degree audit PDF", size: "PDF · 不超过 12 MB · 不超过 60 页", reading: "正在浏览器中读取 PDF…", badFile: "请选择不超过 12 MB、60 页的 PDF。", badPdf: "无法读取这个 PDF。请从 uAchieve 导出含文字的审计 PDF 后重试。", noText: "没有找到可读取的文字。扫描版 PDF 需要先做文字识别。", noNeeds: "没有识别出未完成要求。请确认上传的是 uAchieve 的 degree audit PDF。", complete: "这份审计显示已满足所有列出的要求。", unknown: "未完全识别这份审计的格式。请对照官方报告逐项核对。",
     chooseFile: "选择 PDF", noFile: "未选择文件",
     minorLink: "想修辅修或双专业？看看你的课能抵多少 →",
+    roadmapLink: "用这份审计核对四年规划 →", roadmapStorage: "只把未完成的要求和课程编号存在这个浏览器里，不会同步到账号。",
     useForPrereqs: "用这些课程检查排课的先修要求 →",
     prereqStorage: "只将已完成和正在修的课程编号保存在当前浏览器，可在排课页修改或清空。",
     genEdMissing: (codes: string) => `审计显示还缺这些 Gen Ed：${codes}`, genEdOpen: "到找课页一起查找 →",
@@ -205,6 +208,13 @@ export default function AuditPage() {
     router.push("/minor");
   }
 
+  // The four-year plan checks its later courses against the unfinished requirements (lib/audit-plan.ts).
+  function openRoadmap() {
+    if (!audit) return;
+    writeAuditNeeds(auditNeedsFrom(audit));
+    router.push("/roadmap");
+  }
+
   function useForPrereqs() {
     if (!audit) return;
     writeTakenFromAudit(audit);
@@ -249,6 +259,10 @@ export default function AuditPage() {
               <p className="mt-2 text-[11px] leading-5 text-[#5d6561]">{t.genEdHint}</p>
             </div>}
             <button type="button" onClick={openMinor} className="mt-4 block text-left text-xs font-medium text-[#536d64] underline underline-offset-2 hover:text-[#273c38]">{t.minorLink}</button>
+            <div className="mt-3">
+              <button type="button" onClick={openRoadmap} className="text-left text-xs font-medium text-[#536d64] underline underline-offset-2 hover:text-[#273c38]">{t.roadmapLink}</button>
+              <p className="mt-1 text-[11px] leading-5 text-[#646c68]">{t.roadmapStorage}</p>
+            </div>
             {audit.completedCourseIds.length + audit.inProgressCourseIds.length > 0 && <div className="mt-3">
               <button type="button" onClick={useForPrereqs} className="text-left text-xs font-medium text-[#536d64] underline underline-offset-2 hover:text-[#273c38]">{t.useForPrereqs}</button>
               <p className="mt-1 text-[11px] leading-5 text-[#646c68]">{t.prereqStorage}</p>

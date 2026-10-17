@@ -15,10 +15,19 @@ async function page(url) {
   const name = url.replace(/\/$/, "").split("/").slice(-2).join("__") + ".html";
   const cached = cacheDir && join(cacheDir, name);
   if (cached && existsSync(cached)) return readFileSync(cached, "utf8");
-  await sleep(250);
-  const response = await fetch(url, { headers: { "user-agent": "TerpPlan catalog snapshot (terpplan@proton.me)" } });
-  if (!response.ok) throw new Error(`${url} returned ${response.status}`);
-  const html = await response.text();
+  let html = "";
+  // The catalog server sometimes drops a connection mid-page; a few tries, further apart each time.
+  for (let attempt = 1; ; attempt++) {
+    await sleep(250 * attempt * attempt);
+    try {
+      const response = await fetch(url, { headers: { "user-agent": "TerpPlan catalog snapshot (terpplan@proton.me)" } });
+      if (!response.ok) throw new Error(`${url} returned ${response.status}`);
+      html = await response.text();
+      break;
+    } catch (error) {
+      if (attempt >= 4) throw error;
+    }
+  }
   if (cached) writeFileSync(cached, html);
   return html;
 }
@@ -93,6 +102,9 @@ function parseTable(table) {
   {
     let section = "";
     let group = null; // the choose item that indented rows are added to
+    // A row that only says "or" between two course rows: the next course row is another way to meet the one above
+    // ("MATH135 & MATH136", or "MATH140 & MATH141", or ...), not one more requirement.
+    let orNext = false;
     for (const [, rowClass, row] of table.matchAll(/<tr class="([^"]*)"[^>]*>([\s\S]*?)<\/tr>/g)) {
       const hoursText = text(/<td class="hourscol">([\s\S]*?)<\/td>/.exec(row)?.[1] ?? "");
       const hours = /^\d+(?:\.\d+)?$/.test(hoursText) ? Number(hoursText) : /^\d+-\d+$/.test(hoursText) ? Number(hoursText.split("-")[0]) : null;
@@ -107,7 +119,9 @@ function parseTable(table) {
       }
       if (comment && !codes.length) {
         const label = text(comment[1]);
-        if (!label || /^or$/i.test(label)) continue;
+        if (/^or$/i.test(label)) { orNext = true; continue; }
+        if (!label) continue;
+        orNext = false;
         // A note inside a list that has not started yet ("A third course from the pairs above") keeps the list open.
         if (group && !group.options.length && hours === null && !/areaheader/.test(rowClass)) continue;
         // "Maximum 3 credits from the following" adds capped choices to the list above it.
@@ -159,6 +173,11 @@ function parseTable(table) {
       const rowText = text(row);
       // "GEOL100 & GEOL110" must be taken together; other multi-code rows list alternatives.
       const options = /&/.test(rowText) ? [codes] : codes.map((code) => [code]);
+      if (orNext) {
+        orNext = false;
+        const last = group ?? items.at(-1);
+        if (last) { last.options.push(...options); continue; }
+      }
       // Suggested courses are not requirements.
       if (/recommended|optional|suggested/i.test(section) && !group) continue;
       // A list heading without its own credit total ("Select one of the following:") owns every course row

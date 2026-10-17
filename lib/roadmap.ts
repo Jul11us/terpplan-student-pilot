@@ -18,9 +18,13 @@ export type SavedRoadmap = {
   earlier: string[];
   // Credits the student set for a course the catalog gives a range for, or nothing.
   credits?: Record<string, number>;
-  // The major whose requirements are checked (lib/cs-major.ts); only Computer Science so far.
-  major?: { id: "CS"; track: CsTrack };
+  // The major whose requirements are checked: Computer Science in full (lib/cs-major.ts), or a major from the catalog
+  // snapshot (lib/major-check.ts) with the catalog tables that apply (its defaults when unset) and the rules written
+  // only as text that the student ticked (lib/major-check.ts requirementKeys).
+  major?: { id: "CS"; track: CsTrack } | CatalogMajorChoice;
 };
+
+export type CatalogMajorChoice = { id: "catalog"; slug: string; blocks?: number[]; ticked?: string[] };
 
 export type TermSeason = "fall" | "spring" | "winter" | "summer";
 // A course as the bundled catalogs list it (app/api/catalog); null when neither term lists it.
@@ -103,9 +107,19 @@ export function parseRoadmap(value: unknown): SavedRoadmap | undefined {
       if (COURSE.test(id) && typeof amount === "number" && amount >= 0 && amount <= 20) credits[id] = Math.round(amount * 2) / 2;
     }
   }
-  const major = record.major && typeof record.major === "object" ? record.major as Record<string, unknown> : null;
-  const track = major?.id === "CS" && CS_TRACKS.includes(major.track as CsTrack) ? major.track as CsTrack : null;
-  return { start: record.start, years, terms, earlier: codes(record.earlier, MAX_EARLIER), ...(Object.keys(credits).length ? { credits } : {}), ...(track ? { major: { id: "CS" as const, track } } : {}) };
+  return { start: record.start, years, terms, earlier: codes(record.earlier, MAX_EARLIER), ...(Object.keys(credits).length ? { credits } : {}), ...parseMajor(record.major) };
+}
+
+const indexes = (raw: unknown) => Array.isArray(raw) ? [...new Set(raw.filter((item): item is number => Number.isInteger(item) && item >= 0 && item < 1000))].slice(0, 200) : null;
+
+function parseMajor(raw: unknown): { major?: SavedRoadmap["major"] } {
+  const major = raw && typeof raw === "object" ? raw as Record<string, unknown> : null;
+  if (major?.id === "CS" && CS_TRACKS.includes(major.track as CsTrack)) return { major: { id: "CS", track: major.track as CsTrack } };
+  if (major?.id !== "catalog" || typeof major.slug !== "string" || !/^[a-z0-9-]{3,160}$/.test(major.slug)) return {};
+  // An empty list of tables is a choice too (every table switched off); an empty list of ticks is not kept.
+  const blocks = indexes(major.blocks);
+  const ticked = Array.isArray(major.ticked) ? [...new Set(major.ticked.filter((item): item is string => typeof item === "string" && /^[a-z0-9]{1,8}(?:-\d{1,3})?$/.test(item)))].slice(0, 200) : null;
+  return { major: { id: "catalog", slug: major.slug, ...(blocks ? { blocks } : {}), ...(ticked?.length ? { ticked } : {}) } };
 }
 
 // Where a course sits in the plan: a term, "earlier", or nowhere.
