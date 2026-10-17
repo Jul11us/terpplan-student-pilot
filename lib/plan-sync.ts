@@ -6,6 +6,7 @@
 
 import { canonicalJson, parseSavedState, type SavedState } from "@/lib/saved-state";
 import { parseTaken, type TakenCourses } from "@/lib/taken-courses";
+import { roadmapHasCourses } from "@/lib/roadmap";
 
 export type SyncState = { saved: SavedState; taken: TakenCourses | null; reminders: Record<string, { date: string; time: string }> };
 
@@ -35,6 +36,7 @@ export function syncStateEmpty(state: SyncState) {
   return !Object.values(state.saved.plans).some((courses) => courses.length)
     && !Object.values(state.saved.otherPlans ?? {}).some((courses) => courses.length)
     && !(state.saved.genEd?.codes.length)
+    && !roadmapHasCourses(state.saved.roadmap)
     && !state.taken && !(state.saved.preferences?.busyBlocks?.length);
 }
 

@@ -1,34 +1,15 @@
 import { courseIdIsValid, DEFAULT_TERM, getCourse, type CatalogItem, umdJson } from "@/lib/umd";
 import spring2027Catalog from "@/data/202701-catalog.json";
 import { BoundedCache } from "@/lib/bounded-cache";
+import { matchCourses } from "@/lib/catalog-match";
 
 type CacheEntry = { expiresAt: number; courses: CatalogItem[] };
 // The page shows 40 at a time; the rest are there for "Show more" and for its result filters.
 export const MAX_RESULTS = 120;
 const catalogCache = new BoundedCache<string, CacheEntry>(12);
 
-// Course codes beat titles: "MATH" should list MATH courses before AMSC "Mathematical Modeling".
-// Rank: exact code, code prefix, code contains, a title word starting with the query, anything else.
-function matchCourses(courses: CatalogItem[], query: string, compactQuery: string) {
-  const rank = (course: CatalogItem) => {
-    const id = course.course_id.toLowerCase().replace(/\s+/g, "");
-    if (id === compactQuery) return 0;
-    if (id.startsWith(compactQuery)) return 1;
-    if (id.includes(compactQuery)) return 2;
-    if (course.name.toLowerCase().split(/[^a-z0-9]+/).some((word) => word.startsWith(query))) return 3;
-    return 4;
-  };
-  return courses
-    .filter((course) => {
-      const haystack = `${course.course_id} ${course.name} ${course.department ?? ""}`.toLowerCase();
-      return haystack.includes(query) || course.course_id.toLowerCase().replace(/\s+/g, "").includes(compactQuery);
-    })
-    .map((course) => ({ course, rank: rank(course) }))
-    .sort((a, b) => a.rank - b.rank || a.course.course_id.localeCompare(b.course.course_id, "en", { numeric: true }))
-    .slice(0, MAX_RESULTS)
-    // Prerequisite rules are for the planner (/api/prereqs), not for the results list.
-    .map(({ course }) => ({ course_id: course.course_id, name: course.name, department: course.department, credits: course.credits, ...(course.ge ? { ge: course.ge } : {}) }));
-}
+// What the results list shows; prerequisite rules are for the planner (/api/prereqs), not for the list.
+const summary = (course: CatalogItem) => ({ course_id: course.course_id, name: course.name, department: course.department, credits: course.credits, ...(course.ge ? { ge: course.ge } : {}) });
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -40,7 +21,7 @@ export async function GET(request: Request) {
   if (query.length < 2) return Response.json({ results: [] });
 
   if (term === "202701") {
-    const results = matchCourses(spring2027Catalog as CatalogItem[], query, compactQuery);
+    const results = matchCourses(spring2027Catalog as CatalogItem[], query, MAX_RESULTS).map(summary);
     // The bundled catalog is a snapshot. For a full course code it does not list, ask Testudo directly,
     // so a newly added course is found instead of being reported as "not offered".
     const exactId = compactQuery.toUpperCase();
@@ -67,7 +48,7 @@ export async function GET(request: Request) {
       entry = { courses, expiresAt: Date.now() + 5 * 60_000 };
       catalogCache.set(term, entry);
     }
-    const results = matchCourses(entry.courses, query, compactQuery);
+    const results = matchCourses(entry.courses, query, MAX_RESULTS).map(summary);
     return Response.json({ results, term });
   } catch {
     return Response.json({ error: "Course search is temporarily unavailable. Try again shortly." }, { status: 503 });

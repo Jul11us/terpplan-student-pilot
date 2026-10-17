@@ -11,7 +11,8 @@ export const TAKEN_EVENT = "terpplan:taken-changed";
 
 // credits: credits the student will have finished by next term (earned plus in progress), for courses
 // that need a number of credits ("24 credit hours completed"). Optional.
-export type TakenCourses = { completed: string[]; inProgress: string[]; credits?: number; source: "audit" | "manual"; updatedAt: string };
+// terms: the term code each course was taken in, when the degree audit said (for the four-year plan).
+export type TakenCourses = { completed: string[]; inProgress: string[]; credits?: number; terms?: Record<string, string>; source: "audit" | "manual"; updatedAt: string };
 
 const CODE = /^[A-Z]{4}\d{3}[A-Z]?$/;
 
@@ -44,7 +45,11 @@ export function parseTaken(raw: unknown): TakenCourses | null {
   const inProgress = list(value.inProgress);
   const credits = parseCredits(value.credits);
   if (!completed.length && !inProgress.length && credits === undefined) return null;
-  return { completed, inProgress, ...(credits === undefined ? {} : { credits }), source: value.source === "audit" ? "audit" : "manual", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : "" };
+  const listed = new Set([...completed, ...inProgress]);
+  const terms = value.terms && typeof value.terms === "object"
+    ? Object.fromEntries(Object.entries(value.terms as Record<string, unknown>).filter(([id, term]) => listed.has(id) && typeof term === "string" && /^\d{4}(01|05|08|12)$/.test(term)))
+    : {};
+  return { completed, inProgress, ...(credits === undefined ? {} : { credits }), ...(Object.keys(terms).length ? { terms: terms as Record<string, string> } : {}), source: value.source === "audit" ? "audit" : "manual", updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : "" };
 }
 
 export function writeTaken(value: Omit<TakenCourses, "updatedAt"> | null) {
@@ -61,5 +66,7 @@ export function writeTaken(value: Omit<TakenCourses, "updatedAt"> | null) {
 // Import only the parser's passing and in-progress course lists, after the student chooses to use them.
 export function writeTakenFromAudit(audit: AuditResult) {
   const credits = audit.completedCredits + audit.inProgressCredits;
-  writeTaken({ completed: audit.completedCourseIds, inProgress: audit.inProgressCourseIds, ...(credits > 0 ? { credits: Math.round(credits * 10) / 10 } : {}), source: "audit" });
+  const listed = new Set([...audit.completedCourseIds, ...audit.inProgressCourseIds]);
+  const terms = Object.fromEntries(Object.entries(audit.courseTerms ?? {}).filter(([id]) => listed.has(id)));
+  writeTaken({ completed: audit.completedCourseIds, inProgress: audit.inProgressCourseIds, ...(credits > 0 ? { credits: Math.round(credits * 10) / 10 } : {}), ...(Object.keys(terms).length ? { terms } : {}), source: "audit" });
 }

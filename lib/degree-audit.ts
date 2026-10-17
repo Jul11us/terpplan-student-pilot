@@ -16,11 +16,26 @@ export type AuditResult = {
   // Credits from the course rows: earned (any passing grade, D included, and transfer credit) and in progress.
   completedCredits: number;
   inProgressCredits: number;
+  // The term each course was (or is being) taken in, as a term code ("202608"), for the four-year plan. AP and
+  // transfer credit (grade TP) has no term of its own and is left out; a retaken course keeps its latest term.
+  courseTerms: Record<string, string>;
 };
 
 const GEN_ED_CODES = new Set<string>(GEN_ED_CATEGORIES.map((item) => item.code));
 const COURSE_ID = /^[A-Z]{2,6}\d{3}[A-Z]{0,2}$/;
-const COURSE_ROW = /^(?:Fa|Sp|Wi|Su|S1|S2)\d{2}\s+([A-Z]{2,6}\d{3}[A-Z0-9]{0,2})\s+([\d.]+)\s+(\S+)/i;
+const COURSE_ROW = /^(Fa|Sp|Wi|Su|S1|S2)(\d{2})\s+([A-Z]{2,6}\d{3}[A-Z0-9]{0,2})\s+([\d.]+)\s+(\S+)/i;
+
+// A uAchieve term ("Fa26", "Wi27", "S126") as a term code: winter is the January after the fall it is coded
+// with (Wi27 is 202612), both summer sessions are the summer term.
+export function auditTermCode(season: string, year: string) {
+  const full = 2000 + Number(year);
+  switch (season.toLowerCase()) {
+    case "fa": return `${full}08`;
+    case "sp": return `${full}01`;
+    case "wi": return `${full - 1}12`;
+    default: return `${full}05`;
+  }
+}
 // Unknown, failing, withdrawn, and incomplete grades must never hide a retake.
 // D grades can require a retake for some programs, so only clear passes are hidden.
 // TP is a transfer pass: AP, IB, and transfer credit that uAchieve applies like a completed course.
@@ -120,12 +135,17 @@ export function parseDegreeAudit(text: string): AuditResult {
   // A course is listed under every requirement it counts for, so credits are kept once per course.
   const earned = new Map<string, number>();
   const taking = new Map<string, number>();
+  const courseTerms: Record<string, string> = {};
   for (const line of lines) {
     const row = line.match(COURSE_ROW);
     if (!row) continue;
-    const courseId = row[1].toUpperCase();
-    const credits = Number(row[2]) || 0;
-    const grade = row[3].toUpperCase();
+    const courseId = row[3].toUpperCase();
+    const credits = Number(row[4]) || 0;
+    const grade = row[5].toUpperCase();
+    if (grade !== "TP" && (grade === "IP" || EARNS_CREDIT.test(grade))) {
+      const term = auditTermCode(row[1], row[2]);
+      if (!courseTerms[courseId] || term > courseTerms[courseId]) courseTerms[courseId] = term;
+    }
     if (grade === "IP") { inProgress.add(courseId); taking.set(courseId, Math.max(taking.get(courseId) ?? 0, credits)); }
     else {
       if (CLEAR_PASS.test(grade)) completed.add(courseId);
@@ -162,5 +182,5 @@ export function parseDegreeAudit(text: string): AuditResult {
       genEdCode,
     });
   }
-  return { status, requirements, completedCourseIds: [...completed], inProgressCourseIds: [...inProgress], completedCredits: sum(earned), inProgressCredits: sum(taking) };
+  return { status, requirements, completedCourseIds: [...completed], inProgressCourseIds: [...inProgress], completedCredits: sum(earned), inProgressCredits: sum(taking), courseTerms };
 }

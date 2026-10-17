@@ -1,7 +1,7 @@
-// Adds each course's credits and prerequisite rule to the bundled Spring 2027 catalog
-// (data/202701-catalog.json), so search results can show credits and the planner can check prerequisites
-// without another request per course.
-// Run: node scripts/add-catalog-details.mjs
+// Adds each course's credits and prerequisite rule to a bundled term catalog (data/<term>-catalog.json), so
+// search results can show credits and the planner can check prerequisites without another request per course.
+// Spring 2027 is the planner's term; Fall 2026 fills in the courses the four-year plan needs that run only in fall.
+// Run: node scripts/add-catalog-details.mjs [term]   (202701 by default; a term without a file starts empty)
 // Source: Testudo's department pages (one page per department lists every course's credits and notes).
 //   credits  "3", or a range such as "1–3" for variable-credit courses
 //   pr       the prerequisite as a logic tree (see scripts/prerequisites.mjs); left out when the text names
@@ -10,12 +10,13 @@
 //            left out when the course counts for none (lib/gened-categories.ts parses the same line)
 // A course Testudo no longer lists keeps neither field rather than a guess. Courses on a Testudo department
 // page that the catalog does not have yet (a whole department was once missing: HIST, ENVH) are added.
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { prerequisiteTree } from "./prerequisites.mjs";
 
-const TERM = "202701";
-const FILE = new URL("../data/202701-catalog.json", import.meta.url);
-const catalog = JSON.parse(readFileSync(FILE, "utf8"));
+const TERM = process.argv[2] ?? "202701";
+if (!/^\d{4}(01|05|08|12)$/.test(TERM)) throw new Error(`Not a term code: ${TERM}`);
+const FILE = new URL(`../data/${TERM}-catalog.json`, import.meta.url);
+const catalog = existsSync(FILE) ? JSON.parse(readFileSync(FILE, "utf8")) : [];
 
 const text = (block, className) => block.match(new RegExp(`class="${className}">\\s*([^<]*?)\\s*<`))?.[1] ?? "";
 const plain = (html) => html

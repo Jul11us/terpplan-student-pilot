@@ -5,11 +5,12 @@ import type { ReactNode } from "react";
 import { openFeedback } from "@/lib/feedback";
 
 type Language = "en" | "zh";
-export type SitePage = "plan" | "audit" | "minor" | "hard" | "rooms" | "week";
+export type SitePage = "plan" | "roadmap" | "audit" | "minor" | "hard" | "rooms" | "week";
 
 // Phones get the short names, so the whole row fits next to the thumb.
 const LINKS: Array<{ page: SitePage; href: string; label: Record<Language, string>; short: Record<Language, string> }> = [
   { page: "plan", href: "/plan", label: { en: "Planner", zh: "排课" }, short: { en: "Plan", zh: "排课" } },
+  { page: "roadmap", href: "/roadmap", label: { en: "4-year plan", zh: "四年规划" }, short: { en: "4 years", zh: "四年" } },
   { page: "audit", href: "/audit", label: { en: "Degree audit", zh: "学位审计" }, short: { en: "Audit", zh: "审计" } },
   { page: "minor", href: "/minor", label: { en: "Minors", zh: "辅修 / 双专业" }, short: { en: "Minor", zh: "辅修" } },
   { page: "hard", href: "/hard-courses", label: { en: "Hardest courses", zh: "最难抢的课" }, short: { en: "Hardest", zh: "难抢的课" } },

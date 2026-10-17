@@ -19,8 +19,10 @@ test("audit import persists only passing and in-progress course codes and can be
     assert.deepEqual(taken.inProgress, ["MATH141"]);
     assert.equal(taken.source, "audit");
     const stored = JSON.parse(values.get(TAKEN_KEY));
-    assert.deepEqual(Object.keys(stored).sort(), ["completed", "credits", "inProgress", "source", "updatedAt"]);
+    assert.deepEqual(Object.keys(stored).sort(), ["completed", "credits", "inProgress", "source", "terms", "updatedAt"]);
     assert.equal(stored.credits, 12);
+    // The term of each course taken here, for the four-year plan; AP credit (TP) has none.
+    assert.deepEqual(stored.terms, { CMSC131: "202508", MATH141: "202608" });
     assert.equal(values.get(TAKEN_KEY).includes("Doe"), false);
     // Saving also tells account sync that something changed.
     assert.deepEqual(events, ["terpplan:local-change", TAKEN_EVENT]);

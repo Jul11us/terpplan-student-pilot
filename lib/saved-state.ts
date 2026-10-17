@@ -8,6 +8,7 @@ import { CAMPUS_AREA_KEYS } from "@/lib/campus-walk";
 import { GEN_ED_CATEGORIES } from "@/lib/gened-categories";
 import { storageKey } from "@/lib/demo";
 import { markLocalChange } from "@/lib/sync-meta";
+import { parseRoadmap, type SavedRoadmap } from "@/lib/roadmap";
 
 export const STORAGE_KEY = "terpplan:v1";
 
@@ -58,6 +59,8 @@ export type SavedState = {
   showingB?: Record<string, true>;
   preferences?: SavedPreferences;
   genEd?: SavedGenEd;
+  // The four-year plan (lib/roadmap.ts).
+  roadmap?: SavedRoadmap;
 };
 
 const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
@@ -133,6 +136,7 @@ export function parseSavedState(value: unknown): SavedState {
     ? Object.fromEntries(Object.entries(parsed.showingB as Record<string, unknown>).filter(([term, value]) => /^\d{6}$/.test(term) && value === true).map(([term]) => [term, true as const]))
     : {};
   const savedGenEd = genEd(parsed.genEd);
+  const roadmap = parseRoadmap(parsed.roadmap);
   return {
     language: parsed.language === "zh" || parsed.language === "en" ? parsed.language : undefined,
     term: typeof parsed.term === "string" && /^\d{6}$/.test(parsed.term) ? parsed.term : undefined,
@@ -141,6 +145,7 @@ export function parseSavedState(value: unknown): SavedState {
     showingB,
     preferences: preferences(parsed.preferences),
     ...(savedGenEd ? { genEd: savedGenEd } : {}),
+    ...(roadmap ? { roadmap } : {}),
   };
 }
 
