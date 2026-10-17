@@ -8,7 +8,7 @@ import FeedbackDialog from "@/app/components/feedback-dialog";
 import "./globals.css";
 
 const title = "TerpPlan · UMD course & schedule planner";
-const description = "Find University of Maryland courses, compare conflict-free schedules, and watch open seats. Free and student-built.";
+const description = "Find University of Maryland courses, compare conflict-free schedules, watch open seats, and plan all four years. Free and student-built.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
