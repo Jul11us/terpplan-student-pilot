@@ -8,13 +8,14 @@ import { readRegistrationDay, savedReminder, writeRegistrationDay, type Registra
 import { RegistrationCountdown } from "@/app/components/registration-countdown";
 import { formatTermName } from "@/lib/seat-trends";
 import { countUse } from "@/lib/usage";
+import { SiteHeader } from "@/app/components/site-header";
 
 type Language = "en" | "zh";
 
 const copy = {
   en: {
     home: "Back to planner", eyebrow: "Registration day", title: (term: string) => `Register for ${term}`,
-    none: "Nothing saved yet. Build a schedule in TerpPlan, then open \"Registration-day view\" from the registration checklist under the timetable.",
+    none: "Nothing saved yet. Build a schedule in TerpPlan, then open \"Registration-day view\" from the registration checklist under the timetable.", goPlan: "Go to the planner",
     noTime: "Add your registration date and time on the TerpPlan home page to see a countdown here.",
     testudo: "Open Testudo", copyAll: "Copy all", copied: "Copied", copyFailed: "Copy failed. Select the text and copy it manually.",
     registered: "Registered", full: "Full", backups: "If it is full, try:", noBackups: "No backup section in your other options.",
@@ -25,7 +26,7 @@ const copy = {
   },
   zh: {
     home: "返回排课", eyebrow: "选课当天", title: (term: string) => `${term} 选课`,
-    none: "还没有保存选课清单。先在 TerpPlan 排好课，再在课表下方的选课清单里点“打开‘选课当天’页面”。",
+    none: "还没有保存选课清单。先在 TerpPlan 排好课，再在课表下方的选课清单里点“打开‘选课当天’页面”。", goPlan: "去排课",
     noTime: "在 TerpPlan 首页顶部填上你的注册日期和时间，这里就会显示倒计时。",
     testudo: "打开 Testudo", copyAll: "全部复制", copied: "已复制", copyFailed: "复制失败，请手动选中文字复制。",
     registered: "已注册", full: "已满", backups: "满了的话可以试：", noBackups: "其他方案里没有这门课的备选班次。",
@@ -74,10 +75,10 @@ export default function RegisterPage() {
   const when = day ? new Date(day.savedAt).toLocaleString(language === "zh" ? "zh-CN" : "en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
 
   return <main className="min-h-screen bg-[#f5f3ef] text-[#202728]">
-    <header className="border-b border-[#dedbd3] bg-[#fbfaf8]"><div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-5 py-4 sm:px-8"><Link href="/" className="flex items-center gap-3 font-semibold"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#bd302f] font-serif text-lg text-white">T</span>TerpPlan</Link><div className="flex items-center gap-3"><Link href="/plan" className="inline-flex items-center gap-1.5 rounded-lg border border-[#d9d6ce] bg-white px-3 py-1.5 text-xs font-semibold text-[#273c38] shadow-sm hover:border-[#536d64] hover:bg-[#edf3ef]"><span aria-hidden="true">←</span>{t.home}</Link><button type="button" onClick={() => { const next = language === "en" ? "zh" : "en"; setLanguage(next); writeSavedState({ language: next }); }} className="rounded-lg border border-[#dcd9d0] px-3 py-2 text-xs">{language === "en" ? "中文" : "English"}</button></div></div></header>
+    <SiteHeader language={language} onLanguage={() => { const next = language === "en" ? "zh" : "en"; setLanguage(next); writeSavedState({ language: next }); }} />
     <div className="mx-auto max-w-3xl px-5 pb-16 pt-8 sm:px-8">
       <p className="text-[11px] font-semibold uppercase tracking-[.17em] text-[#a34a39]">{t.eyebrow}</p>
-      {loaded && !day && <p className="mt-4 rounded-xl border border-[#e0ddd5] bg-[#fbfaf8] px-4 py-3 text-sm leading-6 text-[#5d6561]">{t.none}</p>}
+      {loaded && !day && <div className="mt-4 rounded-xl border border-[#e0ddd5] bg-[#fbfaf8] px-4 py-4"><p className="text-sm leading-6 text-[#5d6561]">{t.none}</p><Link href="/plan" className="mt-3 inline-flex min-h-9 items-center rounded-lg bg-[#273c38] px-4 text-sm font-semibold text-white hover:bg-[#1d302c]">{t.goPlan} →</Link></div>}
       {day && <>
         <h1 className="mt-2 font-serif text-3xl sm:text-4xl">{t.title(/^\d{6}$/.test(day.term) ? formatTermName(day.term, language) : day.termName)}</h1>
         <div className="mt-4 rounded-2xl border border-[#e0ddd5] bg-white p-4">

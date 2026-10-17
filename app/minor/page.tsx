@@ -1,12 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useDocumentLanguage } from "@/lib/document-language";
 import { parseCourseIds, parseDegreeAudit } from "@/lib/degree-audit";
 import { extractDegreeAuditText } from "@/lib/degree-audit-pdf";
 import { AUDIT_HANDOFF_KEY, defaultBlocks, evaluateProgram, MINOR_MAJOR_OVERLAP_COURSES, unmetPrerequisites, withBaseCourses, type CourseFact, type CourseStatus, type ItemProgress, type Program } from "@/lib/programs";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
+import { SiteHeader } from "@/app/components/site-header";
 
 type Language = "en" | "zh";
 type ProgramList = { builtAt: string; minors: Array<{ slug: string; name: string }>; majors: Array<{ slug: string; name: string }> };
@@ -391,7 +391,7 @@ export default function ProgramExplorerPage() {
   const stat = (label: string, value: string, detail: string) => <div className="rounded-xl border border-[#e3e0d8] bg-white p-4"><p className="text-[11px] font-semibold uppercase tracking-[.08em] text-[#646c68]">{label}</p><p className="mt-1 font-serif text-2xl text-[#202728]">{value}</p><p className="mt-1 text-xs text-[#5d6561]">{detail}</p></div>;
 
   return <main className="min-h-screen bg-[#f5f3ef] text-[#202728]">
-    <header className="border-b border-[#dedbd3] bg-[#fbfaf8]"><div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-5 py-4 sm:px-8"><Link href="/" className="flex items-center gap-3 font-semibold"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#bd302f] font-serif text-lg text-white">T</span>TerpPlan</Link><div className="flex items-center gap-3"><Link href="/plan" className="inline-flex items-center gap-1.5 rounded-lg border border-[#d9d6ce] bg-white px-3 py-1.5 text-xs font-semibold text-[#273c38] shadow-sm hover:border-[#536d64] hover:bg-[#edf3ef]"><span aria-hidden="true">←</span>{t.home}</Link><button onClick={() => { const next = language === "en" ? "zh" : "en"; setLanguage(next); writeSavedState({ language: next }); }} className="rounded-lg border border-[#dcd9d0] px-3 py-2 text-xs">{language === "en" ? "中文" : "English"}</button></div></div></header>
+    <SiteHeader language={language} onLanguage={() => { const next = language === "en" ? "zh" : "en"; setLanguage(next); writeSavedState({ language: next }); }} current="minor" />
     <div className="mx-auto max-w-6xl px-5 pb-16 pt-10 sm:px-8">
       <p className="text-[11px] font-semibold uppercase tracking-[.17em] text-[#a34a39]">{t.pilot}</p>
       <h1 className="mt-3 max-w-3xl font-serif text-4xl leading-tight sm:text-5xl">{t.title}</h1>

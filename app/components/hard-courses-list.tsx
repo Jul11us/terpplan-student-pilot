@@ -7,6 +7,7 @@ import type { HardCourse } from "@/lib/hard-courses";
 import { formatTermName } from "@/lib/seat-trends";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { countUse } from "@/lib/usage";
+import { SiteHeader } from "@/app/components/site-header";
 
 type Language = "en" | "zh";
 type Level = "undergrad" | "100" | "300" | "grad" | "all";
@@ -77,13 +78,13 @@ export function HardCoursesList({ courses, terms, builtAt }: { courses: HardCour
   const control = "rounded-lg border border-[#d9d6ce] bg-white px-3 py-2 text-sm outline-none focus:border-[#a34a39] focus:ring-2 focus:ring-[#a34a39]/30";
 
   return <main className="min-h-screen bg-[#f5f3ef] text-[#202728]">
-    <header className="border-b border-[#dedbd3] bg-[#fbfaf8]"><div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-5 py-4 sm:px-8"><Link href="/" className="flex items-center gap-3 font-semibold"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#bd302f] font-serif text-lg text-white">T</span>TerpPlan</Link><div className="flex items-center gap-3"><Link href="/plan" className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-[#d9d6ce] bg-white px-3 py-1.5 text-xs font-semibold text-[#273c38] shadow-sm hover:border-[#536d64] hover:bg-[#edf3ef]"><span aria-hidden="true">←</span><span className="sm:hidden">{language === "en" ? "Planner" : "排课"}</span><span className="hidden sm:inline">{t.home}</span></Link><button type="button" onClick={() => { const next = language === "en" ? "zh" : "en"; setLanguage(next); writeSavedState({ language: next }); }} className="whitespace-nowrap rounded-lg border border-[#dcd9d0] px-3 py-2 text-xs">{language === "en" ? "中文" : "English"}</button></div></div></header>
+    <SiteHeader language={language} onLanguage={() => { const next = language === "en" ? "zh" : "en"; setLanguage(next); writeSavedState({ language: next }); }} current="hard" />
     <div className="mx-auto max-w-5xl px-5 pb-16 pt-10 sm:px-8">
       <p className="text-[11px] font-semibold uppercase tracking-[.17em] text-[#a34a39]">{t.eyebrow}</p>
       <h1 className="mt-3 max-w-3xl font-serif text-4xl leading-tight sm:text-5xl">{t.title}</h1>
       <p className="mt-4 max-w-2xl text-sm leading-6 text-[#5d6561]">{t.intro}</p>
       <details className="mt-4 max-w-2xl rounded-xl border border-[#e0ddd5] bg-[#fbfaf8] px-4 py-3 text-sm">
-        <summary className="cursor-pointer font-semibold text-[#273c38]">{t.how}</summary>
+        <summary className="cursor-pointer py-0.5 font-semibold text-[#273c38]">{t.how}</summary>
         <p className="mt-2 text-xs leading-5 text-[#5d6561]">{t.howBody} {t.updated(builtAt)}</p>
       </details>
 

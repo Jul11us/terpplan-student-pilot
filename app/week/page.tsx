@@ -9,6 +9,7 @@ import { roomLabel } from "@/lib/room";
 import type { MeetingTime } from "@/lib/meeting-time";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { dayGaps, type Gap } from "@/lib/study-gaps";
+import { SiteHeader } from "@/app/components/site-header";
 
 type Language = "en" | "zh";
 
@@ -146,10 +147,7 @@ export default function MyWeekPage() {
   const savedDate = week?.savedAt ? new Date(week.savedAt).toLocaleDateString(language === "zh" ? "zh-CN" : "en-US", { month: "short", day: "numeric" }) : "";
 
   return <main className="min-h-screen bg-[#f5f3ef] text-[#202728]">
-    <header className="border-b border-[#dedbd3] bg-[#fbfaf8]"><div className="mx-auto flex max-w-2xl items-center justify-between gap-3 px-4 py-3">
-      <Link href="/" className="flex items-center gap-2 font-semibold"><span className="grid h-8 w-8 place-items-center rounded-lg bg-[#bd302f] font-serif text-white">T</span>TerpPlan</Link>
-      <div className="flex items-center gap-2"><Link href="/plan" className="rounded-lg border border-[#d9d6ce] bg-white px-3 py-1.5 text-xs font-semibold text-[#273c38]">{t.plan}</Link><button type="button" onClick={switchLanguage} className="rounded-lg border border-[#dcd9d0] px-3 py-1.5 text-xs">{language === "en" ? "中文" : "English"}</button></div>
-    </div></header>
+    <SiteHeader language={language} onLanguage={switchLanguage} current="week" />
     <div className="mx-auto max-w-2xl px-4 pb-12 pt-6">
       <h1 className="font-serif text-3xl">{t.title}</h1>
       {week && <p className="mt-1 text-xs text-[#5d6561]">{t.saved.replace("{term}", week.termName).replace("{date}", savedDate)}</p>}

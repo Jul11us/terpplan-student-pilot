@@ -61,7 +61,7 @@ export default function TakenCoursesEditor({ taken, language }: { taken: TakenCo
   if (!open) {
     return <p className="text-xs text-[#5d6561]">
       {all.length ? <>{t.some(all.length)}{credits !== undefined ? t.creditsShown(credits) : ""}{taken?.source === "audit" ? t.fromAudit : ""}</> : credits !== undefined ? <>{t.creditsOnly}{t.creditsShown(credits)}</> : t.none}{" "}
-      <button type="button" onClick={start} className="font-semibold text-[#9a5040] underline-offset-2 hover:underline">{taken ? t.edit : t.add}</button>
+      <button type="button" onClick={start} className="-my-1 py-1 font-semibold text-[#9a5040] underline-offset-2 hover:underline">{taken ? t.edit : t.add}</button>
     </p>;
   }
   return <div className="rounded-xl border border-[#e0ddd5] bg-white p-3">

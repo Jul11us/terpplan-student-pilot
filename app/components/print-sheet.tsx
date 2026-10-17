@@ -86,7 +86,11 @@ async function loadBackups(sections: ScheduledSection[], request: Record<string,
 // "Print / save as PDF": builds a print-only page (the week, then a table to register from) as a direct
 // child of <body>, hides everything else while printing, and removes it again afterwards. Personal
 // commitments appear without their names, since a printout is easily left lying around.
-export function PrintSchedule({ option, busyBlocks, request, termName, language, canLoadBackups }: { option: ScheduleOption; busyBlocks: BusyBlock[]; request: Record<string, unknown>; termName: string; language: Language; canLoadBackups: boolean }) {
+// What the print button does, for the help under the planner's row of save and share buttons.
+export const printHint = (language: Language) => copy[language].hint;
+
+// `compact`: just the button and the backups choice, for a row of buttons (the hint is shown elsewhere).
+export function PrintSchedule({ option, busyBlocks, request, termName, language, canLoadBackups, compact = false }: { option: ScheduleOption; busyBlocks: BusyBlock[]; request: Record<string, unknown>; termName: string; language: Language; canLoadBackups: boolean; compact?: boolean }) {
   const t = copy[language];
   const [withBackups, setWithBackups] = useState(true);
   const [preparing, setPreparing] = useState(false);
@@ -112,12 +116,16 @@ export function PrintSchedule({ option, busyBlocks, request, termName, language,
   const printedAt = new Date().toLocaleString(language === "zh" ? "zh-CN" : "en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   const anonymous = busyBlocks.map((block) => ({ ...block, label: "" }));
 
+  const controls = <>
+    <button type="button" onClick={() => void start()} disabled={preparing} className="rounded-lg border border-[#273c38] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef] disabled:opacity-60">{preparing ? t.preparing : t.button}</button>
+    {canLoadBackups && <label className="inline-flex min-h-8 items-center gap-1.5 text-xs text-[#5d6561]"><input type="checkbox" checked={withBackups} onChange={(event) => setWithBackups(event.target.checked)} />{t.withBackups}</label>}
+  </>;
+
   return <>
-    <div className="flex flex-wrap items-center gap-3">
-      <button type="button" onClick={() => void start()} disabled={preparing} className="rounded-lg border border-[#273c38] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef] disabled:opacity-60">{preparing ? t.preparing : t.button}</button>
-      {canLoadBackups && <label className="inline-flex items-center gap-1.5 text-xs text-[#5d6561]"><input type="checkbox" checked={withBackups} onChange={(event) => setWithBackups(event.target.checked)} />{t.withBackups}</label>}
+    {compact ? controls : <div className="flex flex-wrap items-center gap-3">
+      {controls}
       <p className="w-full text-[11px] leading-5 text-[#646c68] sm:w-auto sm:min-w-0 sm:flex-1">{t.hint}</p>
-    </div>
+    </div>}
     {sheet && createPortal(<div id="print-sheet" lang={language === "zh" ? "zh-CN" : "en"} className="bg-white p-0 text-[#202728]">
       <header className="mb-3 flex items-baseline justify-between gap-4 border-b border-[#202728] pb-2">
         <h1 className="font-serif text-xl">{t.title} · {termName}</h1>

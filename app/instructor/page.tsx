@@ -10,6 +10,7 @@ import { isAsyncOnline } from "@/lib/meeting-time";
 import { roomLabel } from "@/lib/room";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { formatSeatReadTime } from "@/lib/seat-time";
+import { SiteHeader } from "@/app/components/site-header";
 
 type Language = "en" | "zh";
 type Payload = {
@@ -25,7 +26,8 @@ const zhDays: Record<string, string> = { Mon: "周一", Tue: "周二", Wed: "周
 const copy = {
   en: {
     plan: "Plan courses", loading: "Loading this instructor's sections…", failed: "This instructor's sections could not be loaded. Try again shortly.",
-    missingName: "Choose an instructor from a course's sections.", unmatched: "PlanetTerp does not list an instructor by this name, so TerpPlan cannot find their courses.", search: "Search PlanetTerp",
+    findTitle: "Find an instructor", findIntro: "Type part of a name to see what they teach this term, with seats, their PlanetTerp rating and the GPA they give. You can also click an instructor's name in a course's sections.",
+    findPlaceholder: "e.g. Kauffman", searching: "Searching…", findNone: "No instructor on PlanetTerp matches that name.", findMore: "More instructors match; type more of the name.", unmatched: "PlanetTerp does not list an instructor by this name, so TerpPlan cannot find their courses.", search: "Search PlanetTerp",
     rating: "PlanetTerp average {r} / 5", reviews: "{n} reviews", gpa: "Avg GPA {g} across all their courses ({n} students)", allReviews: "All reviews on PlanetTerp",
     teaching: "Teaching in {term}", none: "No {term} sections found in the courses PlanetTerp lists for this instructor.",
     open: "Open in planner →", openOf: "{n} / {total} open", full: "Full", waitlist: "{n} waitlisted", seatsUnknown: "Seats unknown", timeTba: "Time TBA", online: "Online · no set time",
@@ -33,13 +35,45 @@ const copy = {
   },
   zh: {
     plan: "规划课程", loading: "正在读取这位老师的班次…", failed: "暂时无法读取这位老师的班次，请稍后再试。",
-    missingName: "请从课程的班次列表里选择一位老师。", unmatched: "PlanetTerp 上没有这个名字的老师，所以 TerpPlan 找不到这位老师教的课。", search: "在 PlanetTerp 搜索",
+    findTitle: "找老师", findIntro: "输入老师名字的一部分，查看这学期开的课、余位、PlanetTerp 评分和平均给分。也可以在课程的班次列表里直接点老师的名字。",
+    findPlaceholder: "例如 Kauffman", searching: "正在搜索…", findNone: "PlanetTerp 上没有找到这个名字的老师。", findMore: "还有更多老师符合，请输入更完整的名字。", unmatched: "PlanetTerp 上没有这个名字的老师，所以 TerpPlan 找不到这位老师教的课。", search: "在 PlanetTerp 搜索",
     rating: "PlanetTerp 平均分 {r} / 5", reviews: "{n} 条评价", gpa: "所有课程平均 GPA {g}（{n} 名学生）", allReviews: "在 PlanetTerp 查看全部评价",
     teaching: "{term}开的课", none: "在 PlanetTerp 记录的这位老师的课程里，没有找到{term}的班次。",
     open: "在排课页打开 →", openOf: "空位 {n} / {total}", full: "已满", waitlist: "候补 {n} 人", seatsUnknown: "余位未知", timeTba: "时间待定", online: "线上 · 无固定时间",
     readAt: "余位数据读取于", note: "课程列表来自这位老师在 PlanetTerp 上的记录，再加上你刚才看的那门课。第一次开的课可能不在里面，请以 Testudo 为准。",
   },
 } as const;
+
+// No instructor chosen: look one up by name in PlanetTerp's list, as the planner's "@" search does.
+function InstructorFinder({ language, term }: { language: Language; term: string }) {
+  const t = copy[language];
+  const [text, setText] = useState("");
+  const [found, setFound] = useState<{ query: string; names: string[]; more: boolean } | null>(null);
+  const query = text.trim();
+  useEffect(() => {
+    if (query.length < 3) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      fetch(`/api/instructor/search?q=${encodeURIComponent(query)}`)
+        .then(async (response) => response.ok ? (await response.json()) as { results?: Array<{ name: string }>; more?: boolean } : null)
+        .catch(() => null)
+        .then((data) => { if (!cancelled) setFound({ query, names: (data?.results ?? []).map((item) => item.name), more: Boolean(data?.more) }); });
+    }, 300);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [query]);
+  const shown = found?.query === query && query.length >= 3 ? found : null;
+  return <section className="rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5">
+    <h1 className="font-serif text-3xl">{t.findTitle}</h1>
+    <p className="mt-2 text-sm leading-6 text-[#5d6561]">{t.findIntro}</p>
+    <input value={text} onChange={(event) => setText(event.target.value)} placeholder={t.findPlaceholder} aria-label={t.findTitle} autoComplete="off" className="mt-4 w-full rounded-xl border border-[#dedbd3] bg-white px-4 py-3 text-sm text-[#202728] outline-none focus:border-[#a34a39] focus:ring-2 focus:ring-[#a34a39]/30" />
+    {query.length >= 3 && !shown && <p className="mt-3 text-xs text-[#646c68]">{t.searching}</p>}
+    {/* A full page load, so the instructor page reads its new name from the address. */}
+    {shown && (shown.names.length
+      ? <ul className="mt-3 divide-y divide-[#ece9e2] rounded-xl border border-[#e7e4dc] bg-white">{shown.names.map((name) => <li key={name}><a href={`/instructor?${new URLSearchParams({ name, term })}`} className="flex min-h-11 items-center justify-between px-4 text-sm font-medium text-[#273c38] hover:text-[#a34a39]">{name}<span aria-hidden="true">→</span></a></li>)}</ul>
+      : <p className="mt-3 text-xs text-[#646c68]">{t.findNone}</p>)}
+    {shown?.more && <p className="mt-2 text-xs text-[#646c68]">{t.findMore}</p>}
+  </section>;
+}
 
 export default function InstructorPage() {
   const [language, setLanguage] = useState<Language>("en");
@@ -75,12 +109,9 @@ export default function InstructorPage() {
   const term = query ? termName(query.term, language) : "";
 
   return <main className="min-h-screen bg-[#f5f3ef] text-[#202728]">
-    <header className="border-b border-[#dedbd3] bg-[#fbfaf8]"><div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3">
-      <Link href="/" className="flex items-center gap-2 font-semibold"><span className="grid h-8 w-8 place-items-center rounded-lg bg-[#bd302f] font-serif text-white">T</span>TerpPlan</Link>
-      <div className="flex items-center gap-2"><Link href="/plan" className="rounded-lg border border-[#d9d6ce] bg-white px-3 py-1.5 text-xs font-semibold text-[#273c38]">{t.plan}</Link><button type="button" onClick={switchLanguage} className="rounded-lg border border-[#dcd9d0] px-3 py-1.5 text-xs">{language === "en" ? "中文" : "English"}</button></div>
-    </div></header>
+    <SiteHeader language={language} onLanguage={switchLanguage} />
     <div className="mx-auto max-w-3xl px-4 pb-12 pt-6">
-      {query && !query.name && <p className="text-sm text-[#5d6561]">{t.missingName}</p>}
+      {query && !query.name && <InstructorFinder language={language} term={query.term} />}
       {query?.name && <h1 className="font-serif text-3xl">{data?.status === "ok" ? data.name : query.name}</h1>}
       {query?.name && !data && !failed && <p className="mt-4 text-sm text-[#5d6561]">{t.loading}</p>}
       {failed && <p role="alert" className="mt-4 text-sm text-[#8c352c]">{t.failed}</p>}

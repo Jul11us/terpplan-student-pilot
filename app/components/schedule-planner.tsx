@@ -25,7 +25,7 @@ import type { SectionPreferences } from "@/lib/section-preferences";
 import type { ScheduleOption, ScheduledSection, PlanDiagnosis, PlanRepair } from "@/lib/planner";
 import { PersonalSchedule, repairText, ScheduleRecovery, SectionSwap } from "@/app/components/schedule-tools";
 import { SeasonNote, useOfferingSeasons } from "@/app/components/season-note";
-import { PrintSchedule } from "@/app/components/print-sheet";
+import { PrintSchedule, printHint } from "@/app/components/print-sheet";
 import { WorkloadCard } from "@/app/components/workload-card";
 import { CreditMeter, WeekLoadChart } from "@/app/components/plan-insights";
 import type { CreditMeter as CreditMeterData } from "@/lib/plan-credits";
@@ -81,7 +81,8 @@ const copy = {
     resetPrefs: "Clear preferences", resetDone: "Preferences cleared.", undo: "Undo",
     resetHint: "Clears the preferences above. Your personal schedule and class buffer stay.",
     includeFc: "I'm in the Freshman Connection program (include FC sections)",
-    exportCalendar: "Export to calendar (.ics)",
+    exportCalendar: "Export to calendar (.ics)", saveTitle: "Save or share this schedule", saveHelp: "What each of these does",
+    registerView: "Registration-day view ↗", registerHint: "Course and section numbers, each course's backups and a countdown on one page to keep next to Testudo. It is also linked at the top of the home page.",
     shareSchedule: "Copy share link", shareCopied: "Link copied", shareReady: "Share link", shareCopyFailed: "Copy the link below to share this schedule.",
     shareHint: "Anyone with this link can see these sections. Times and seats are refreshed when they open it.",
     exportHelp: "Apple Calendar / Outlook: open the downloaded file. Google Calendar: on a computer, Settings → Import & export → Import.",
@@ -152,7 +153,8 @@ const copy = {
     resetPrefs: "清空偏好", resetDone: "偏好已清空。", undo: "撤销",
     resetHint: "清空上面的偏好设置，个人日程和课间缓冲不变。",
     includeFc: "我参加了 Freshman Connection 项目（包含 FC 班次）",
-    exportCalendar: "导出到日历（.ics）",
+    exportCalendar: "导出到日历（.ics）", saveTitle: "保存和分享这份课表", saveHelp: "这几个按钮分别做什么",
+    registerView: "选课当天页面 ↗", registerHint: "课号、班号、每门课的备选班次和倒计时都在一页，注册时开在 Testudo 旁边。首页顶部也有入口。",
     shareSchedule: "复制分享链接", shareCopied: "链接已复制", shareReady: "分享链接", shareCopyFailed: "请复制下方链接分享这个课表。",
     shareHint: "拿到链接的人可以查看这些班次；打开时会重新读取上课时间与余位。",
     exportHelp: "Apple 日历 / Outlook：直接打开下载的文件。Google 日历：在电脑上进入 设置 → 导入和导出 → 导入。",
@@ -453,7 +455,8 @@ export function WeeklyCalendar({ sections: courseSections, language, busyBlocks 
   </div>;
 }
 
-export function CalendarExport({ sections, term, termName, language, incomplete, children }: { sections: ScheduledSection[]; term: string; termName: string; language: Language; incomplete: boolean; children?: React.ReactNode }) {
+// `compact`: the button alone, for the planner's row of save and share buttons (its help is shown there).
+export function CalendarExport({ sections, term, termName, language, incomplete, children, compact = false }: { sections: ScheduledSection[]; term: string; termName: string; language: Language; incomplete: boolean; children?: React.ReactNode; compact?: boolean }) {
   const t = copy[language];
   const calendar = TERM_CALENDARS[term];
   const [skipped, setSkipped] = useState<string[]>([]);
@@ -491,9 +494,16 @@ export function CalendarExport({ sections, term, termName, language, incomplete,
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
+  const button = <button onClick={download} disabled={!calendar} className="rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:opacity-50">{t.exportCalendar}</button>;
+  // In a row of buttons, the notes go to their own line after the buttons.
+  if (compact) return <>
+    {button}
+    {!calendar && <p className="order-last basis-full text-[11px] leading-5 text-[#646c68]">{t.exportUnavailable}</p>}
+    {skipped.length > 0 && <p className="order-last basis-full text-[11px] text-[#745424]">{t.exportSkipped} {skipped.join(", ")}</p>}
+  </>;
   return <div className="mb-3 rounded-xl border border-[#e3e0d8] bg-white p-3 sm:p-4">
     <div className="flex flex-wrap items-center gap-3">
-      <button onClick={download} disabled={!calendar} className="rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c] disabled:opacity-50">{t.exportCalendar}</button>
+      {button}
       <p className="w-full text-[11px] leading-5 text-[#646c68] sm:w-auto sm:min-w-0 sm:flex-1">{calendar ? t.exportHelp : t.exportUnavailable}</p>
     </div>
     {calendar && <p className="mt-2 text-[11px] leading-5 text-[#646c68]">{t.exportNote}</p>}
@@ -819,22 +829,37 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
         <WorkloadCard courses={chosen.selectedSections.map((section) => ({ courseId: section.course_id, credits: section.credits }))} language={language} />
         <WeeklyCalendar sections={chosen.selectedSections} language={language} busyBlocks={busyBlocks} onSelectSection={(section) => { const control = document.getElementById(`section-swap-${section.section_id}`); control?.scrollIntoView({ block: "center", behavior: "smooth" }); control?.click(); }} />
         <button type="button" onClick={() => openFeedback({ kind: "problem", context: reportDetails({ term: termName, sectionIds: chosen.selectedSections.map((section) => section.section_id) }) })} className="mt-2 inline-block text-xs font-medium text-[#a34a39] hover:underline">{t.reportSchedule}</button>
-        {/* Saving and sharing come after the timetable, once the student has looked the schedule over. */}
-        <div className="mt-5"><h4 className="mb-2 font-semibold">{language === "zh" ? "保存和分享这份课表" : "Save or share this schedule"}</h4>
-        <CalendarExport key={chosen.selectedSections.map((section) => section.section_id).join("|")} sections={chosen.selectedSections} term={term} termName={termName} language={language} incomplete={chosenMissing.length > 0}>
-          <PrintSchedule option={chosen} busyBlocks={busyBlocks} request={{ ...scheduleRequest, selectedSectionIds: chosen.selectedSections.map((item) => item.section_id) }} termName={termName} language={language} canLoadBackups={!loading && upToDate && chosenMissing.length === 0} />
-        </CalendarExport>
-        <div className="mb-3 rounded-xl border border-[#e3e0d8] bg-white p-3 sm:p-4">
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3"><button type="button" onClick={() => void shareSchedule()} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]">{shareCopied ? t.shareCopied : t.shareSchedule}</button><p className="w-full text-[11px] leading-5 text-[#646c68] sm:w-auto sm:min-w-0 sm:flex-1">{t.shareHint}</p></div>
-          {shareUrl && <div className="mt-3"><label htmlFor="share-schedule-url" className="text-[11px] font-medium text-[#5d6561]">{shareCopied ? t.shareReady : t.shareCopyFailed}</label><input id="share-schedule-url" readOnly value={shareUrl} onFocus={(event) => event.target.select()} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-[#fbfaf8] px-3 py-2 text-xs text-[#273c38]" /></div>}
-        </div>
+        {/* Saving and sharing come after the timetable, once the student has looked the schedule over: one row of
+            buttons, with what each does folded away under it. Notes that follow a click (the share link, My week
+            saved) take their own line after the buttons. */}
         {(() => {
           const weekKey = requestKey + "|" + chosen.selectedSections.map((section) => section.section_id).join(",");
-          return <div className="mb-3 rounded-xl border border-[#e3e0d8] bg-white p-3 sm:p-4"><div className="flex flex-wrap items-center gap-2 sm:gap-3"><button type="button" onClick={() => { if (writeMyWeek(weekFromSections(chosen.selectedSections, term, termName))) { setWeekSavedFor(weekKey); countUse("week"); } }} className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]">{weekSavedFor === weekKey ? "✓ " : ""}{t.useWeek}</button>{weekSavedFor === weekKey ? <a href="/week" className="text-xs font-semibold text-[#a34a39] hover:underline">{t.weekSaved}</a> : <p className="w-full text-[11px] leading-5 text-[#646c68] sm:w-auto sm:min-w-0 sm:flex-1">{t.weekHint}</p>}</div></div>;
+          const button = "rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]";
+          const colon = language === "zh" ? "：" : ": ";
+          return <div className="mb-3 mt-5 rounded-xl border border-[#e3e0d8] bg-white p-3 sm:p-4">
+            <h4 className="font-semibold">{t.saveTitle}</h4>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <CalendarExport compact key={chosen.selectedSections.map((section) => section.section_id).join("|")} sections={chosen.selectedSections} term={term} termName={termName} language={language} incomplete={chosenMissing.length > 0} />
+              <PrintSchedule compact option={chosen} busyBlocks={busyBlocks} request={{ ...scheduleRequest, selectedSectionIds: chosen.selectedSections.map((item) => item.section_id) }} termName={termName} language={language} canLoadBackups={!loading && upToDate && chosenMissing.length === 0} />
+              <button type="button" onClick={() => void shareSchedule()} className={button}>{shareCopied ? "✓ " + t.shareCopied : t.shareSchedule}</button>
+              <button type="button" onClick={() => { if (writeMyWeek(weekFromSections(chosen.selectedSections, term, termName))) { setWeekSavedFor(weekKey); countUse("week"); } }} className={button}>{weekSavedFor === weekKey ? "✓ " : ""}{t.useWeek}</button>
+              {/* The registration checklist below keeps this schedule saved for /register. */}
+              <a href="/register" target="_blank" rel="noreferrer" className={button}>{t.registerView}</a>
+              {shareUrl && <div className="order-last basis-full"><label htmlFor="share-schedule-url" className="text-[11px] font-medium text-[#5d6561]">{shareCopied ? t.shareReady : t.shareCopyFailed}</label><input id="share-schedule-url" readOnly value={shareUrl} onFocus={(event) => event.target.select()} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-[#fbfaf8] px-3 py-2 text-xs text-[#273c38]" /></div>}
+              {weekSavedFor === weekKey && <a href="/week" className="order-last basis-full py-1 text-xs font-semibold text-[#a34a39] hover:underline">{t.weekSaved}</a>}
+            </div>
+            <details className="mt-3 text-[11px] leading-5 text-[#646c68]">
+              <summary className="min-h-6 cursor-pointer font-medium text-[#48534f]">{t.saveHelp}</summary>
+              <ul className="mt-1 list-disc space-y-1 pl-4">
+                <li><span className="font-semibold text-[#48534f]">{t.exportCalendar}</span>{colon}{TERM_CALENDARS[term] ? `${t.exportHelp} ${t.exportNote}` : t.exportUnavailable}</li>
+                <li><span className="font-semibold text-[#48534f]">{language === "zh" ? "打印 / 存为 PDF" : "Print / save as PDF"}</span>{colon}{printHint(language)}</li>
+                <li><span className="font-semibold text-[#48534f]">{t.shareSchedule}</span>{colon}{t.shareHint}</li>
+                <li><span className="font-semibold text-[#48534f]">{t.useWeek}</span>{colon}{t.weekHint}</li>
+                <li><span className="font-semibold text-[#48534f]">{t.registerView.replace(" ↗", "")}</span>{colon}{t.registerHint}</li>
+              </ul>
+            </details>
+          </div>;
         })()}
-        {/* The registration checklist below keeps this schedule saved for /register. */}
-        <div className="mb-3 rounded-xl border border-[#e3e0d8] bg-white p-3 sm:p-4"><div className="flex flex-wrap items-center gap-2 sm:gap-3"><a href="/register" target="_blank" rel="noreferrer" className="rounded-lg border border-[#536d64] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]">{language === "zh" ? "选课当天页面 ↗" : "Registration-day view ↗"}</a><p className="w-full text-[11px] leading-5 text-[#646c68] sm:w-auto sm:min-w-0 sm:flex-1">{language === "zh" ? "课号、班号、每门课的备选班次和倒计时都在一页，注册时开在 Testudo 旁边。首页顶部也有入口。" : "Course and section numbers, each course's backups and a countdown on one page to keep next to Testudo. It is also linked at the top of the home page."}</p></div></div>
-        </div>
         <div className="mt-4 space-y-2">{chosen.selectedSections.map((section) => <article key={section.section_id} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{section.course_id} · {section.course_title}</p><p className="mt-1 text-sm text-[#5d6561]">{section.section_id}</p>{/* One line per meeting (lecture, lab, discussion), so the times do not run together. */}<ul className="mt-1 space-y-0.5 text-sm text-[#5d6561]">{((section.meetings ?? []).length ? (section.meetings ?? []).map((meeting) => {
           const start = minutes(meeting.start_time), end = minutes(meeting.end_time);
           const kind = meetingType(meeting.classtype);

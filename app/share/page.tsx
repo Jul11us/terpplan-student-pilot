@@ -8,6 +8,7 @@ import { roomLabel } from "@/lib/room";
 import { isAsyncOnline } from "@/lib/meeting-time";
 import { formatSeatReadTime } from "@/lib/seat-time";
 import { parseSharedSchedule, type SharedSchedule } from "@/lib/shared-schedule";
+import { SiteHeader } from "@/app/components/site-header";
 
 type CoursePayload = {
   course?: { name?: string; title?: string; credits?: unknown };
@@ -116,7 +117,7 @@ export default function SharedSchedulePage() {
 
   const t = copy[language];
   return <main className="min-h-screen bg-[#f5f3ef] text-[#202728]">
-    <header className="border-b border-[#e0ddd5] bg-[#fbfaf8]"><div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-4 sm:px-8"><Link href="/" className="flex items-center gap-3 font-semibold"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#bc262a] font-serif text-xl text-white">T</span>TerpPlan</Link><button type="button" onClick={() => setLanguage(language === "en" ? "zh" : "en")} className="rounded-lg border border-[#dedbd3] px-3 py-2 text-xs font-medium">{language === "en" ? "中文" : "English"}</button></div></header>
+    <SiteHeader language={language} onLanguage={() => setLanguage(language === "en" ? "zh" : "en")} />
     <div className="mx-auto max-w-6xl px-5 py-10 sm:px-8">
       <p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">{t.pilot}</p>
       <div className="mt-3 flex flex-wrap items-end justify-between gap-4"><div><h1 className="font-serif text-4xl">{t.title}</h1>{shared && <p className="mt-2 text-sm text-[#5d6561]">{termName(shared.term, language)} · {shared.sectionIds.join(" · ")}</p>}</div><Link href="/plan" className="rounded-lg border border-[#d9d6ce] bg-white px-4 py-2.5 text-sm font-medium hover:bg-[#f7f5f0]">{t.home} →</Link></div>

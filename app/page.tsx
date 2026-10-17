@@ -11,6 +11,7 @@ import homeReviews from "@/data/home-reviews.json";
 import { readRegistrationDay, savedReminder } from "@/lib/registration-day";
 import { RegistrationCountdown } from "@/app/components/registration-countdown";
 import { TimetableSketch } from "@/app/components/timetable-sketch";
+import { SiteHeader } from "@/app/components/site-header";
 
 type Language = "en" | "zh";
 
@@ -54,7 +55,6 @@ if (typeof window !== "undefined") {
 
 const copy = {
   en: {
-    nav: { audit: "Degree audit", minor: "Minor / double major", hard: "Hardest courses", rooms: "Empty rooms" },
     eyebrow: "University of Maryland · Free, student-built",
     title: "Plan a semester you can actually get into.",
     lead: "Get conflict-free schedules built around your job, and an email the moment a full section opens.",
@@ -93,7 +93,6 @@ const copy = {
     ] as Array<[string, string]>,
   },
   zh: {
-    nav: { audit: "学位审计", minor: "辅修 / 双专业", hard: "最难抢的课", rooms: "空教室" },
     eyebrow: "马里兰大学 · 学生开发 · 免费",
     title: "排一份能上、也抢得到的课表",
     lead: "自动避开打工时间排课，满了的班一有空位就发邮件提醒你。",
@@ -201,20 +200,7 @@ export default function Home() {
   const secondary = "inline-flex items-center justify-center rounded-xl border border-[#d9d6ce] bg-white px-5 py-3 text-sm font-semibold text-[#273c38] hover:border-[#536d64] hover:bg-[#edf3ef]";
 
   return <main className="min-h-screen bg-[#f5f3ef] text-[#202728]">
-    <header className="border-b border-[#dedbd3] bg-[#fbfaf8]"><div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4 sm:px-8">
-      <Link href="/" className="flex items-center gap-3 font-semibold tracking-tight"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#bd302f] font-serif text-lg text-white">T</span>TerpPlan</Link>
-      <nav aria-label={language === "en" ? "Tools" : "工具"} className="order-last flex w-full items-center gap-4 overflow-x-auto text-xs font-medium text-[#48534f] sm:order-none sm:w-auto">
-        <Link href="/audit" className="inline-flex min-h-6 items-center whitespace-nowrap hover:text-[#a34a39]">{t.nav.audit}</Link>
-        <Link href="/minor" className="inline-flex min-h-6 items-center whitespace-nowrap hover:text-[#a34a39]">{t.nav.minor}</Link>
-        <Link href="/hard-courses" className="inline-flex min-h-6 items-center whitespace-nowrap hover:text-[#a34a39]">{t.nav.hard}</Link>
-        <Link href="/rooms" className="inline-flex min-h-6 items-center whitespace-nowrap hover:text-[#a34a39]">{t.nav.rooms}</Link>
-      </nav>
-      <div className="flex items-center gap-2">
-        {registration && <Link href="/register" className="whitespace-nowrap rounded-lg border border-[#cddbd1] bg-[#edf3ef] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#e2ece6]">📋 {t.registrationDay}</Link>}
-        <button type="button" onClick={switchLanguage} className="rounded-lg border border-[#dcd9d0] px-3 py-2 text-xs">{language === "en" ? "中文" : "English"}</button>
-        <Link href="/plan" className="whitespace-nowrap rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c]">{hasPlan ? t.continue : t.start} →</Link>
-      </div>
-    </div></header>
+    <SiteHeader language={language} onLanguage={switchLanguage} actions={<>{registration && <Link href="/register" className="hidden whitespace-nowrap rounded-lg border border-[#cddbd1] bg-[#edf3ef] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#e2ece6] sm:inline-flex">📋 {t.registrationDay}</Link>}<Link href="/plan" className="whitespace-nowrap rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c]">{hasPlan ? t.continue : t.start} →</Link></>} />
 
     <section className="mx-auto grid max-w-6xl items-center gap-10 px-5 pb-12 pt-12 sm:px-8 sm:pt-16 lg:grid-cols-[1.15fr_1fr]">
       <div>
@@ -269,7 +255,7 @@ export default function Home() {
 
     <footer className="border-t border-[#e0ddd5]"><div className="mx-auto max-w-6xl px-5 py-6 text-xs leading-5 text-[#646c68] sm:px-8">
       <p>{t.footer}</p>
-      <p className="mt-1">{t.contact} <button type="button" onClick={() => openFeedback({ kind: "idea" })} className="font-medium text-[#a34a39] hover:underline">{t.feedbackButton}</button> {t.orEmail} <a href={`mailto:${CONTACT_EMAIL}`} className="font-medium text-[#a34a39] hover:underline">{CONTACT_EMAIL}</a></p>
+      <p className="mt-1">{t.contact} <button type="button" onClick={() => openFeedback({ kind: "idea" })} className="-my-1 py-1 font-medium text-[#a34a39] hover:underline">{t.feedbackButton}</button> {t.orEmail} <a href={`mailto:${CONTACT_EMAIL}`} className="py-[5px] font-medium text-[#a34a39] hover:underline">{CONTACT_EMAIL}</a></p>
     </div></footer>
   </main>;
 }

@@ -59,7 +59,7 @@ export default function CourseRequirements({ requirements, description, language
       ? <dl className="space-y-1.5 rounded-xl border border-[#ead8b5] bg-[#fff8e8] px-4 py-3 text-xs leading-5 text-[#5d4a24]">{blocking.map((item, index) => <div key={index}><dt className="inline font-semibold">{label(item)}{colon}</dt><dd className="inline">{linkedText(item.text, currentCourseId, onCourseClick)}</dd></div>)}</dl>
       :<p className="text-xs text-[#646c68]">{t.none}</p>}
     {other.length > 0 && <dl className="space-y-1 text-xs leading-5 text-[#5d6561]">{other.map((item, index) => <div key={index}><dt className="inline font-medium text-[#48534f]">{label(item)}{colon}</dt><dd className="inline">{linkedText(item.text, currentCourseId, onCourseClick)}</dd></div>)}</dl>}
-    {description && <details className="text-xs leading-5 text-[#5d6561]"><summary className="cursor-pointer font-medium text-[#48534f] hover:text-[#a34a39]">{t.description}</summary><p className="mt-1">{description}</p></details>}
+    {description && <details className="text-xs leading-5 text-[#5d6561]"><summary className="cursor-pointer py-0.5 font-medium text-[#48534f] hover:text-[#a34a39]">{t.description}</summary><p className="mt-1">{description}</p></details>}
     {(blocking.length > 0 || other.length > 0) && <p className="text-[11px] text-[#646c68]">{t.source}</p>}
   </div>;
 }

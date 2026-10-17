@@ -56,7 +56,8 @@ test("the owner page lists every feature in order, with today, 7 and 30 days", a
 
 test("the owner page shows how fast courses filled and what moved in the last day", async () => {
   const fill = database.sqlite.prepare("INSERT INTO course_fill VALUES ('202701', ?, ?, ?, ?, ?, ?)");
-  const at = (hoursAgo) => new Date(Date.now() - hoursAgo * 3_600_000).toISOString();
+  const now = Date.now();
+  const at = (hoursAgo) => new Date(now - hoursAgo * 3_600_000).toISOString();
   fill.run("SLOW100", 10, 100, at(50), at(2), at(1));
   fill.run("FAST100", 0, 80, at(10), at(7), at(1));
   fill.run("SMALL10", 0, 20, at(10), at(9), at(1));
