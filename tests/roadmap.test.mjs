@@ -123,3 +123,10 @@ test("the catalog API covers courses listed in either Fall 2026 or Spring 2027",
   assert.ok((await ask({ q: "cmsc47" })).results.some((item) => item.course_id === "CMSC471"));
   assert.equal((await catalog(new Request("https://terpplan.test/api/catalog?ids=bad"))).status, 400);
 });
+
+test("the chosen major and track are kept with the plan; anything else is dropped", () => {
+  const base = { start: "202608", years: 4, terms: {}, earlier: [] };
+  assert.deepEqual(parseRoadmap({ ...base, major: { id: "CS", track: "data" } }).major, { id: "CS", track: "data" });
+  assert.equal(parseRoadmap({ ...base, major: { id: "CS", track: "art" } }).major, undefined);
+  assert.equal(parseRoadmap({ ...base, major: { id: "ENGL", track: "general" } }).major, undefined);
+});

@@ -3,6 +3,7 @@
 // Gen Ed requirements as the department graduation plan form lists them. A major's own requirements are not
 // checked here. Shared by the page and the tests, so it imports nothing from the server.
 
+import { CS_TRACKS, type CsTrack } from "@/lib/cs-major";
 import { DIVERSITY, fillOptions } from "@/lib/gened-plan";
 import { courseSet, unmetRequirements } from "@/lib/prereq-check";
 import type { PrereqNode } from "@/lib/programs";
@@ -17,6 +18,8 @@ export type SavedRoadmap = {
   earlier: string[];
   // Credits the student set for a course the catalog gives a range for, or nothing.
   credits?: Record<string, number>;
+  // The major whose requirements are checked (lib/cs-major.ts); only Computer Science so far.
+  major?: { id: "CS"; track: CsTrack };
 };
 
 export type TermSeason = "fall" | "spring" | "winter" | "summer";
@@ -100,7 +103,9 @@ export function parseRoadmap(value: unknown): SavedRoadmap | undefined {
       if (COURSE.test(id) && typeof amount === "number" && amount >= 0 && amount <= 20) credits[id] = Math.round(amount * 2) / 2;
     }
   }
-  return { start: record.start, years, terms, earlier: codes(record.earlier, MAX_EARLIER), ...(Object.keys(credits).length ? { credits } : {}) };
+  const major = record.major && typeof record.major === "object" ? record.major as Record<string, unknown> : null;
+  const track = major?.id === "CS" && CS_TRACKS.includes(major.track as CsTrack) ? major.track as CsTrack : null;
+  return { start: record.start, years, terms, earlier: codes(record.earlier, MAX_EARLIER), ...(Object.keys(credits).length ? { credits } : {}), ...(track ? { major: { id: "CS" as const, track } } : {}) };
 }
 
 // Where a course sits in the plan: a term, "earlier", or nowhere.

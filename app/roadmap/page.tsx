@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { SiteHeader } from "@/app/components/site-header";
+import { checkCsMajor, csBenchmarks, CS_TRACKS, TRACK_NAMES, type CsBenchmark, type CsCheck, type CsCourse, type CsTrack } from "@/lib/cs-major";
 import { useOfferingSeasons } from "@/app/components/season-note";
 import { useDocumentLanguage } from "@/lib/document-language";
 import { GEN_ED_CATEGORIES } from "@/lib/gened-categories";
@@ -34,6 +35,13 @@ const copy = {
     move: "Move to…", moveFor: "Move {id}", remove: "Remove {id}", creditsFor: "Credits for {id}", cr: "cr",
     issuePrereq: "Prerequisite not planned earlier: {list}", issueSeason: { fall: "Only offered in fall lately", spring: "Only offered in spring lately" }, issueRepeat: "Already planned earlier", and: "; ",
     orHigher: " or higher", sameTerm: " (can be same term)", of: (k: number) => `${k} of`,
+    majorTitle: "Major requirements", majorLabel: "Major", trackLabel: "Track", majorNone: "Not chosen", majorCs: "Computer Science",
+    majorPrompt: "Choose your major to check its requirements one by one. Computer Science (with its four specializations) is supported now; other majors come next.",
+    majorDone: "{n} of {m} met", majorShort: "Major: {n} of {m}", courseUnit: "courses", courseOne: "course", creditUnit: "credits", areaUnit: "areas", progress: "{have} / {need} {unit}",
+    groups: { core: "Required core courses", math: "Math and statistics", track: "Upper level CS · {track}", ulc: "Upper level concentration" },
+    benchmarkTitle: "LEP benchmarks (reviews at 45 and 75 credits)", benchmarkReached: "This plan reaches {at} credits in {term}.", benchmarkNotReached: "This plan does not reach {at} credits yet.",
+    benchmarkOk: "Everything it asks for is done by then.", benchmarkMissing: "Not done by then: {list}", benchmarkPlanned: "The courses it asks for are all in the plan.", benchmarkUnplanned: "Not in the plan yet: {list}",
+    majorNotes: "Rules from the 2026–2027 undergraduate catalog and the department's pages (undergrad.cs.umd.edu). Grades of C- or better, GPA and the concentration's average are not known here. Benchmark credits include AP and transfer credit, so the review may come later; your advisor knows when.",
     genEdTitle: "Gen Ed requirements", genEdHint: "Matched from the Gen Ed codes Testudo lists for each course; a course counts once in each of its Gen Ed groups.", genEdMissing: "Still needed", genEdBefore: "Before the plan",
     loading: "Loading…",
   },
@@ -52,6 +60,13 @@ const copy = {
     move: "移到…", moveFor: "移动 {id}", remove: "移除 {id}", creditsFor: "{id} 的学分", cr: "学分",
     issuePrereq: "先修课没排在前面：{list}", issueSeason: { fall: "最近只在秋季开", spring: "最近只在春季开" }, issueRepeat: "前面已经排过这门课", and: "；",
     orHigher: " 或更高", sameTerm: "（可同学期修）", of: (k: number) => `任选 ${k} 门：`,
+    majorTitle: "专业要求", majorLabel: "专业", trackLabel: "方向", majorNone: "未选择", majorCs: "计算机科学 Computer Science",
+    majorPrompt: "选你的专业，按专业要求逐项检查。目前支持计算机科学（含四个方向），其他专业之后支持。",
+    majorDone: "已满足 {n} / {m} 项", majorShort: "专业要求 {n} / {m} 项", courseUnit: "门", courseOne: "门", creditUnit: "学分", areaUnit: "个领域", progress: "{have} / {need} {unit}",
+    groups: { core: "必修基础课", math: "数学和统计", track: "高年级 CS 课 · {track}", ulc: "Upper Level Concentration" },
+    benchmarkTitle: "LEP Benchmark（45 学分和 75 学分时审核）", benchmarkReached: "按这份规划，{term} 达到 {at} 学分。", benchmarkNotReached: "按这份规划，还没到 {at} 学分。",
+    benchmarkOk: "届时要求的课都已修完。", benchmarkMissing: "届时还没修：{list}", benchmarkPlanned: "要求的课都已经排进去了。", benchmarkUnplanned: "还没排进去：{list}",
+    majorNotes: "规则来自 2026–2027 本科 catalog 和 CS 系官网（undergrad.cs.umd.edu）。C- 以上成绩、GPA 和 ULC 的平均分这里查不到。Benchmark 的学分把 AP 和转学分也算进去了，实际审核可能更晚，以 advisor 为准。",
     genEdTitle: "Gen Ed 要求", genEdHint: "按 Testudo 给每门课列出的 Gen Ed 类别自动对上；一门课在每一组类别里最多算一次。", genEdMissing: "还缺", genEdBefore: "之前修过",
     loading: "正在读取…",
   },
@@ -151,7 +166,8 @@ function CourseRow({ id, term, info, issues, roadmap, places, language, onRemove
 // The printout, in English and laid out like the department graduation plan form: each year's fall, spring, and
 // January and summer, with the course, its Gen Ed codes and credits, then the Gen Ed requirements. Like the form,
 // each term keeps a few blank lines to write in (six for fall and spring, two for January and summer).
-function RoadmapPrint({ roadmap, info, check, rows }: { roadmap: SavedRoadmap; info: Record<string, CourseInfo | null>; check: RoadmapCheck; rows: GenEdRow[] }) {
+function RoadmapPrint({ roadmap, info, check, rows, cs, benchmarks }: { roadmap: SavedRoadmap; info: Record<string, CourseInfo | null>; check: RoadmapCheck; rows: GenEdRow[]; cs: CsCheck | null; benchmarks: CsBenchmark[] }) {
+  const lastTerm = roadmapTerms(roadmap).filter((term) => roadmap.terms[term]?.length).pop();
   const name = (term: string) => `${{ fall: "FALL", spring: "SPRING", winter: "JANUARY", summer: "SUMMER" }[termSeason(term)]} ${termYear(term)}`;
   const termTable = (term: string) => <table className="w-full border-collapse border border-black">
     <thead><tr><th colSpan={3} className="border border-black bg-[#e5e5e5] py-0.5">{name(term)}</th></tr><tr className="italic"><th className="border border-black px-1 text-left font-normal">Course</th><th className="border border-black px-1 text-left font-normal">GenEd</th><th className="border border-black px-1 font-normal">Cr</th></tr></thead>
@@ -177,6 +193,12 @@ function RoadmapPrint({ roadmap, info, check, rows }: { roadmap: SavedRoadmap; i
       <thead><tr className="bg-[#e5e5e5]"><th className="border border-black px-1 text-left">GEN ED</th><th className="border border-black px-1 text-left">COURSE</th><th className="border border-black px-1 text-left">SEMESTER COMPLETED OR TO BE COMPLETED</th></tr></thead>
       <tbody>{rows.map((row, index) => <tr key={index}><td className="border border-black px-1">{genEdName(row.need, "en")}</td><td className="border border-black px-1">{row.id ?? ""}</td><td className="border border-black px-1">{row.id ? row.term ? termLabel(row.term, "en") : "Before Year 1" : ""}</td></tr>)}</tbody>
     </table>
+    {cs && roadmap.major && <div className="mt-2 border border-black p-1" style={{ breakInside: "avoid" }}>
+      <p><b>Computer Science · {TRACK_NAMES[roadmap.major.track].en}</b> · requirements met: {cs.done} of {cs.lines.length}{lastTerm ? ` · Anticipated graduation: ${termLabel(lastTerm, "en")}` : ""}</p>
+      <p>Upper Level Concentration: {cs.ulc.discipline ?? "none yet"} ({cs.ulc.credits} credits planned)</p>
+      {benchmarks.map((item) => <p key={item.at}>Benchmark at {item.at} credits: {item.term ? `reached in ${termLabel(item.term, "en")}` : "not reached in this plan"}{item.missing.length ? `; ${item.term ? "not done by then" : "not in the plan yet"}: ${item.missing.map((text) => text.en).join(", ")}` : item.term ? "; done by then" : "; its courses are in the plan"}</p>)}
+      {cs.lines.some((item) => !item.ok) && <p>Still needed: {cs.lines.filter((item) => !item.ok).map((item) => `${item.label.en} (${item.have}/${item.need})`).join("; ")}</p>}
+    </div>}
     <p className="mt-2">Made with TerpPlan (terpplan.com). Check it against your uAchieve degree audit.</p>
   </div>;
 }
@@ -230,6 +252,18 @@ export default function RoadmapPage() {
     ...roadmap.earlier.map((id) => ({ id, term: null, groups: info[id]?.ge ?? [] })),
     ...Object.entries(roadmap.terms).flatMap(([term, list]) => list.map((id) => ({ id, term, groups: info[id]?.ge ?? [] }))),
   ]) : [], [roadmap, info]);
+
+  const csCourses = useMemo<CsCourse[]>(() => {
+    if (!roadmap) return [];
+    const placed = [
+      ...roadmap.earlier.map((id) => ({ id, term: null })),
+      ...roadmapTerms(roadmap).flatMap((term) => (roadmap.terms[term] ?? []).map((id) => ({ id, term }))),
+    ];
+    return placed.filter((course, index) => placed.findIndex((other) => other.id === course.id) === index)
+      .map((course) => ({ ...course, credits: courseCredits(course.id, info[course.id], roadmap) }));
+  }, [roadmap, info]);
+  const cs = useMemo(() => roadmap?.major ? checkCsMajor(roadmap.major.track, csCourses, info) : null, [roadmap, csCourses, info]);
+  const benchmarks = useMemo(() => roadmap?.major ? csBenchmarks(csCourses, roadmapTerms(roadmap)) : [], [roadmap, csCourses]);
 
   const switchLanguage = () => { const next = language === "en" ? "zh" : "en"; setLanguage(next); writeSavedState({ language: next }); };
   if (!roadmap || !check) return <main className="min-h-screen bg-[#f5f3ef] text-[#202728]"><SiteHeader language={language} onLanguage={switchLanguage} current="roadmap" /><p className="mx-auto max-w-6xl px-5 py-10 text-sm text-[#646c68] sm:px-8">{t.loading}</p></main>;
@@ -326,6 +360,7 @@ export default function RoadmapPage() {
         <p className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm">
           <span className={`font-semibold ${check.total >= DEGREE_CREDITS ? "text-[#315c43]" : "text-[#24312d]"}`}>{fill(t.total, { n: check.total })}</span>
           <span className="text-[#48534f]">{fill(t.genEdDone, { n: filledRows, m: rows.length })}</span>
+          {cs && <span className="text-[#48534f]">{fill(t.majorShort, { n: cs.done, m: cs.lines.length })}</span>}
           <span className={issueCount ? "text-[#8a5a17]" : "text-[#315c43]"}>{issueCount ? fill(t.issues, { n: issueCount }) : t.noIssues}</span>
         </p>
         {notice && <p role="status" className="mt-2 text-xs text-[#315c43]">{notice}</p>}
@@ -352,6 +387,39 @@ export default function RoadmapPage() {
       })}
 
       <section className="mt-8 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-4 sm:p-5">
+        <h2 className="font-serif text-2xl">{t.majorTitle}</h2>
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="grid gap-1 text-xs font-medium text-[#5d6561]">{t.majorLabel}<select value={roadmap.major ? "CS" : ""} onChange={(event) => update({ ...roadmap, major: event.target.value === "CS" ? { id: "CS", track: roadmap.major?.track ?? "general" } : undefined })} className="min-h-9 rounded-lg border border-[#dedbd3] bg-white px-2 text-sm text-[#202728]"><option value="">{t.majorNone}</option><option value="CS">{t.majorCs}</option></select></label>
+          {roadmap.major && <label className="grid gap-1 text-xs font-medium text-[#5d6561]">{t.trackLabel}<select value={roadmap.major.track} onChange={(event) => update({ ...roadmap, major: { id: "CS", track: event.target.value as CsTrack } })} className="min-h-9 rounded-lg border border-[#dedbd3] bg-white px-2 text-sm text-[#202728]">{CS_TRACKS.map((track) => <option key={track} value={track}>{TRACK_NAMES[track][language]}</option>)}</select></label>}
+          {cs && <span className={`pb-2 text-sm font-semibold ${cs.done === cs.lines.length ? "text-[#315c43]" : "text-[#24312d]"}`}>{fill(t.majorDone, { n: cs.done, m: cs.lines.length })}</span>}
+        </div>
+        {!cs && <p className="mt-3 text-xs leading-5 text-[#646c68]">{t.majorPrompt}</p>}
+        {cs && <>
+          <ul className="mt-3 divide-y divide-[#ece9e2] border-y border-[#ece9e2]">{cs.lines.map((item, index) => <li key={item.key} className="py-2.5">
+            {(index === 0 || cs.lines[index - 1]!.group !== item.group) && <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[.08em] text-[#9a5040]">{fill(t.groups[item.group], { track: TRACK_NAMES[roadmap.major!.track][language] })}</p>}
+            <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-[#24312d]"><span aria-hidden="true" className={`mr-1.5 font-semibold ${item.ok ? "text-[#315c43]" : item.have > 0 ? "text-[#8a5a17]" : "text-[#b0aca3]"}`}>{item.ok ? "✓" : item.have > 0 ? "◐" : "○"}</span>{item.label[language]}</p>
+              {item.courses.length > 0 && <p className="mt-0.5 text-xs text-[#5d6561]">{item.courses.map((course) => `${course.id} · ${course.term ? termLabel(course.term, language) : t.genEdBefore}`).join(language === "zh" ? "，" : ", ")}</p>}
+              {item.note && <p className="mt-0.5 text-[11px] text-[#646c68]">{item.note[language]}</p>}
+            </div>
+            <span className={`shrink-0 text-xs tabular-nums ${item.ok ? "text-[#315c43]" : "text-[#8a5a17]"}`}>{fill(t.progress, { have: item.have, need: item.need, unit: item.unit === "credits" ? t.creditUnit : item.unit === "areas" ? t.areaUnit : item.need === 1 ? t.courseOne : t.courseUnit })}</span>
+            </div>
+          </li>)}</ul>
+          <h3 className="mt-5 text-sm font-semibold">{t.benchmarkTitle}</h3>
+          <ul className="mt-2 space-y-2">{benchmarks.map((item) => {
+            const list = item.missing.map((text) => text[language]).join(language === "zh" ? "、" : ", ");
+            const tone = item.missing.length ? "border-[#ead8b5] bg-[#fff8e8] text-[#745424]" : item.term ? "border-[#cddbd1] bg-[#edf3ef] text-[#315c43]" : "border-[#e0ddd5] bg-white text-[#48534f]";
+            return <li key={item.at} className={`rounded-lg border px-3 py-2 text-xs leading-5 ${tone}`}>
+              <span className="font-semibold">{item.at} {t.creditUnit}</span> · {item.term ? fill(t.benchmarkReached, { at: item.at, term: termLabel(item.term, language) }) : fill(t.benchmarkNotReached, { at: item.at })}{" "}
+              {item.term ? (item.missing.length ? fill(t.benchmarkMissing, { list }) : t.benchmarkOk) : (item.missing.length ? fill(t.benchmarkUnplanned, { list }) : t.benchmarkPlanned)}
+            </li>;
+          })}</ul>
+          <p className="mt-3 text-[11px] leading-5 text-[#646c68]">{t.majorNotes}</p>
+        </>}
+      </section>
+
+      <section className="mt-8 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-4 sm:p-5">
         <h2 className="font-serif text-2xl">{t.genEdTitle}</h2>
         <p className="mt-1 text-[11px] leading-5 text-[#646c68]">{t.genEdHint}</p>
         <ul className="mt-3 divide-y divide-[#ece9e2] border-y border-[#ece9e2]">{rows.map((row, index) => <li key={index} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 py-2 text-sm">
@@ -360,6 +428,6 @@ export default function RoadmapPage() {
         </li>)}</ul>
       </section>
     </div>
-    <RoadmapPrint roadmap={roadmap} info={info} check={check} rows={rows} />
+    <RoadmapPrint roadmap={roadmap} info={info} check={check} rows={rows} cs={cs} benchmarks={benchmarks} />
   </main>;
 }
