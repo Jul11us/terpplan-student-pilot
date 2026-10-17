@@ -45,7 +45,7 @@ export type CourseStatus = "done" | "inProgress" | "planned";
 
 // /api/programs responses are cached by the browser for an hour; bump this when the snapshot's shape or content
 // changes (pages add it to the URL).
-export const PROGRAMS_DATA_VERSION = 6;
+export const PROGRAMS_DATA_VERSION = 7;
 
 // The audit page hands its course lists to the minor page through sessionStorage (this tab only).
 export const AUDIT_HANDOFF_KEY = "terpplan:audit-courses";

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   addCourses, checkRoadmap, courseCredits, emptyRoadmap, fallOf, GEN_ED_ROWS, genEdTable, moveCourse, parseRoadmap, removeCourse,
-  roadmapHasCourses, roadmapTerms, termAt, termYear, yearTerms,
+  roadmapHasCourses, roadmapTerms, termAt, termChoices, termYear, yearTerms,
 } from "../lib/roadmap.ts";
 import { parseDegreeAudit } from "../lib/degree-audit.ts";
 import { parseTaken } from "../lib/taken-courses.ts";
@@ -122,6 +122,17 @@ test("the catalog API covers courses listed in either Fall 2026 or Spring 2027",
   assert.equal(courses.NOPE999, null);
   assert.ok((await ask({ q: "cmsc47" })).results.some((item) => item.course_id === "CMSC471"));
   assert.equal((await catalog(new Request("https://terpplan.test/api/catalog?ids=bad"))).status, 400);
+});
+
+test("a requirement's course can go into any term from now on, marked when full or before its prerequisites", () => {
+  const full = Array.from({ length: 12 }, (_, index) => `ENGL${300 + index}`);
+  const roadmap = { start: "202608", years: 4, earlier: ["MATH140"], terms: { 202608: ["CMSC131"], 202701: ["CMSC132"], 202708: full } };
+  const choices = termChoices(roadmap, { name: "Systems", credits: "4", ge: [], pr: "CMSC132", terms: [] }, "202701");
+  assert.deepEqual(choices.map((choice) => choice.term), roadmapTerms(roadmap).filter((term) => term >= "202701"), "from this term on");
+  assert.deepEqual(choices[0].missing, ["CMSC132"], "CMSC132 in the same term is not before it");
+  assert.deepEqual(choices[1].missing, [], "summer 2027 comes after it");
+  assert.equal(choices.find((choice) => choice.term === "202708").full, true);
+  assert.deepEqual(termChoices(roadmap, undefined, "202701")[0].missing, [], "without catalog details nothing is marked");
 });
 
 test("the chosen major and track are kept with the plan; anything else is dropped", () => {

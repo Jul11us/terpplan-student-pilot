@@ -1,33 +1,59 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { FIRST_DEMO_WEEK, nextDemoWeek, PERSONAL_COMMITMENTS, PREFERENCES, weekBlocks, weekExplanation, weekSignature, type DemoWeek, type Meeting } from "@/lib/home-timetable";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { FIRST_DEMO_WEEK, nextDemoWeek, PERSONAL_COMMITMENTS, PREFERENCES, weekBlocks, weekExplanation, weekSignature, type DemoWeek, type Meeting, type Preference } from "@/lib/home-timetable";
 
 type Language = "en" | "zh";
-// Each course: a soft fill, its text colour and a darker stripe down the left edge, like a calendar event.
+// Course colours, muted to sit with the page's greens and brick reds: a soft fill, a deeper accent and dark text from
+// one hue. The week's courses take them in order, so no two share a colour, and a course that replaces another
+// takes its colour.
 const TONES = [
-  "bg-[#fbe3e0] text-[#7c2f27] border-[#d9786a]", "bg-[#dcf0e9] text-[#24524a] border-[#5fae96]", "bg-[#f7ebc6] text-[#5f4316] border-[#d1a23c]", "bg-[#e5e0f4] text-[#3e3470] border-[#8b7fd0]",
-  "bg-[#e0ecf8] text-[#24496b] border-[#6d9ccc]", "bg-[#fbe5d2] text-[#7a3f12] border-[#e08c4c]", "bg-[#e8f1da] text-[#3d5520] border-[#8db45a]",
+  { fill: "#f8e6e0", accent: "#c4624b", text: "#6f2a1c" },
+  { fill: "#e2eee6", accent: "#5b9474", text: "#21493a" },
+  { fill: "#e4e9f3", accent: "#6782b3", text: "#24395e" },
+  { fill: "#f6ecd3", accent: "#c99a32", text: "#5b4110" },
+  { fill: "#eee4f1", accent: "#94689e", text: "#4b2a55" },
+  { fill: "#dfeeed", accent: "#3f8f8c", text: "#1c4a48" },
 ];
-const toneOf = (id: string) => TONES[[...id].reduce((sum, char) => sum + char.charCodeAt(0), 0) % TONES.length]!;
-// A job or practice is time that is taken, not a class: grey stripes inside a dashed outline.
-const OWN_TONE = "border-transparent text-[#5d6561] outline-dashed outline-1 -outline-offset-1 outline-[#bdb8ad]";
-const OWN_FILL = { backgroundImage: "repeating-linear-gradient(135deg, #ece9e2 0 6px, #e4e0d8 6px 12px)" };
+const toneFor = (week: DemoWeek, id: string) => TONES[Math.max(0, week.courses.indexOf(id)) % TONES.length]!;
+// A job or practice is time that is taken, not a class: soft stripes inside a dashed outline.
+const HATCH = "repeating-linear-gradient(135deg, rgba(120, 113, 100, .11) 0 4px, transparent 4px 9px)";
+const OWN_STYLE: CSSProperties = { backgroundColor: "#f4f2ed", backgroundImage: HATCH, color: "#56605b", outline: "1px dashed #c9c3b7", outlineOffset: "-1px" };
 const at = (hour: number) => ((hour - 8) / 10) * 100;
-// Every two hours from 8am to 6pm; lines between, labels on all.
+// Labels every two hours from 8am to 6pm; a hairline every hour inside each day.
 const TIME_MARKS = [8, 10, 12, 14, 16, 18];
+const HOUR_LINES = [9, 10, 11, 12, 13, 14, 15, 16, 17];
 const hourLabel = (hour: number, language: Language) => language === "zh" ? `${hour}:00` : hour === 12 ? "12pm" : hour < 12 ? `${hour}am` : `${hour - 12}pm`;
 const minutes = (hour: number) => Math.round((hour % 1) * 60);
-// "9:30–10:45" / "1–4pm" in English, "13:00–16:00" in Chinese.
+// "9:30–10:45" / "1–4" in English (the hours beside the grid say am or pm), "13:00–16:00" in Chinese.
 function timeRange(start: number, end: number, language: Language) {
   if (language === "zh") return [start, end].map((hour) => `${Math.floor(hour)}:${String(minutes(hour)).padStart(2, "0")}`).join("–");
   const short = (hour: number) => `${((Math.floor(hour) + 11) % 12) + 1}${minutes(hour) ? `:${String(minutes(hour)).padStart(2, "0")}` : ""}`;
-  return `${short(start)}–${short(end)}${end >= 12 ? "pm" : "am"}`;
+  return `${short(start)}–${short(end)}`;
 }
 // Long enough (75-minute classes, jobs) to show the time under the name.
 const showsTime = (meeting: Meeting) => meeting.end - meeting.start >= 1.2;
-const position = (meeting: Meeting) => ({ left: `calc(${meeting.day} * (100% + 6px) / 5)`, width: "calc((100% - 24px) / 5)", top: `${at(meeting.start)}%`, height: `${at(meeting.end) - at(meeting.start)}%` });
+// Inside its day, with a little air around it.
+const position = (meeting: Meeting): CSSProperties => ({
+  left: `calc(${meeting.day} * (100% + 6px) / 5 + 2px)`, width: "calc((100% - 24px) / 5 - 4px)",
+  top: `calc(${at(meeting.start)}% + 1px)`, height: `calc(${at(meeting.end) - at(meeting.start)}% - 2px)`,
+});
+// The time a preference keeps free, shaded in the green of its chip.
+const keptFree = (preference: Preference, day: number): { top: number; bottom: number } | null =>
+  preference === "earlyEnd" ? { top: at(15), bottom: 100 } : preference === "lateStart" ? { top: 0, bottom: at(10) } : preference === "noFriday" && day === 4 ? { top: 0, bottom: 100 } : null;
 const EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
+
+// Small line drawings for the personal commitments, by kind.
+function CommitmentIcon({ kind }: { kind: string }) {
+  const paths: Record<string, ReactNode> = {
+    Job: <><rect x="2.5" y="5" width="11" height="8" rx="1.5" /><path d="M6 5V3.8A1.3 1.3 0 0 1 7.3 2.5h1.4A1.3 1.3 0 0 1 10 3.8V5M2.5 8.5h11" /></>,
+    Gym: <path d="M1.5 8h13M4 4.5v7M12 4.5v7M2 6v4M14 6v4" />,
+    Club: <><circle cx="6" cy="5.5" r="2.2" /><path d="M2 13c.4-2.3 2-3.6 4-3.6s3.6 1.3 4 3.6" /><path d="M10.5 3.6a2 2 0 0 1 0 3.9M12 9.6c1.2.5 2 1.6 2.2 3.4" /></>,
+    Lunch: <><path d="M3 6.5h8.5v3A3.5 3.5 0 0 1 8 13H6.5A3.5 3.5 0 0 1 3 9.5z" /><path d="M11.5 7.5h.8a1.8 1.8 0 0 1 0 3.6h-1" /><path d="M6 2.5v2M8.5 2.5v2" /></>,
+    Practice: <path d="M4 14V2.5M4 3h8l-1.6 3L12 9H4" />,
+  };
+  return <svg aria-hidden="true" viewBox="0 0 16 16" className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">{paths[kind] ?? paths.Job}</svg>;
+}
 
 export function TimetableSketch({ language }: { language: Language }) {
   const days = language === "zh" ? ["周一", "周二", "周三", "周四", "周五"] : ["Mon", "Tue", "Wed", "Thu", "Fri"];
@@ -102,9 +128,30 @@ export function TimetableSketch({ language }: { language: Language }) {
     return () => animations.current.forEach((animation) => animation.cancel());
   }, [week, preview.before]);
 
-  return <figure ref={figure} className="timetable-sketch rounded-2xl border border-[#e0ddd5] bg-white p-3 shadow-sm">
+  // One block: a class (its colour, an accent bar, the code and, when there is room, the time) or a commitment.
+  const block = (item: ReturnType<typeof weekBlocks>[number], owner: DemoWeek, extra: { className?: string; sketchKey?: string }) => {
+    const { label, personal, meeting } = item;
+    const tone = personal ? null : toneFor(owner, label);
+    const short = !showsTime(meeting);
+    const style: CSSProperties = { ...position(meeting), ...(tone ? { backgroundColor: tone.fill, color: tone.text, outline: `1px solid ${tone.accent}26`, outlineOffset: "-1px" } : OWN_STYLE) };
+    return <div key={extra.sketchKey ?? `exit-${preview.step}-${item.key}`} data-sketch-block={extra.sketchKey} style={style}
+      className={`absolute flex origin-top-left flex-col overflow-hidden rounded-[7px] leading-tight shadow-[0_1px_2px_rgba(32,39,40,.06)] ${personal ? "items-center justify-center px-1 text-center" : `pl-[9px] pr-1 sm:pl-[10px] ${short ? "justify-center" : "justify-start pt-1"}`} ${extra.className ?? ""}`}>
+      {tone && <span aria-hidden="true" className="absolute bottom-[3px] left-[3px] top-[3px] w-[3px] rounded-full" style={{ backgroundColor: tone.accent }} />}
+      {personal ? <>
+        <span className="flex items-center gap-1 text-[9px] font-semibold sm:text-[10.5px]"><CommitmentIcon kind={PERSONAL_COMMITMENTS[owner.own]!.label.en} /><span className="truncate">{label}</span></span>
+        {!short && <span className="mt-0.5 hidden truncate text-[9.5px] font-medium opacity-75 sm:block">{timeRange(meeting.start, meeting.end, language)}</span>}
+      </> : <>
+        {/* Phone columns are too narrow for "CMSC132" on one line: department over number there. */}
+        <span className="text-[9px] font-semibold leading-[1.05] sm:hidden">{label.slice(0, 4)}<br />{label.slice(4)}</span>
+        <span className="hidden truncate text-[11px] font-semibold tracking-[.01em] sm:block">{label}</span>
+        {!short && <span className="mt-0.5 hidden truncate text-[9.5px] font-medium tabular-nums opacity-75 sm:block">{timeRange(meeting.start, meeting.end, language)}</span>}
+      </>}
+    </div>;
+  };
+
+  return <figure ref={figure} className="timetable-sketch rounded-2xl border border-[#e4e0d8] bg-white p-3 shadow-[0_1px_2px_rgba(32,39,40,.04),0_18px_40px_-22px_rgba(32,39,40,.28)] sm:p-4">
     <div className="mb-2 flex items-center justify-between gap-2 px-1">
-      <span className="text-[10px] font-semibold tracking-wide text-[#7a817d]">{language === "zh" ? "示例课表 · 5 门课" : "Sample schedule · 5 courses"}</span>
+      <span className="text-[11px] font-semibold tracking-wide text-[#5d6561]">{language === "zh" ? "示例课表 · 5 门课" : "Sample schedule · 5 courses"}</span>
       <div className="flex items-center gap-1">
         <button type="button" aria-label={language === "zh" ? paused ? "继续课表动画" : "暂停课表动画" : paused ? "Resume schedule animation" : "Pause schedule animation"} aria-pressed={paused} onClick={() => setPaused((value) => !value)} className="sketch-control flex h-8 w-8 items-center justify-center rounded-full text-[#646c68] hover:bg-[#f1efe9] hover:text-[#273c38] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#536d64]">
           <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="currentColor">{paused ? <path d="M4 2.5 13 8l-9 5.5z" /> : <><rect x="4" y="3" width="3" height="10" rx=".6" /><rect x="9" y="3" width="3" height="10" rx=".6" /></>}</svg>
@@ -114,32 +161,37 @@ export function TimetableSketch({ language }: { language: Language }) {
         </button>
       </div>
     </div>
+    {/* What the schedule was built around, keyed like the grid: hatched for a commitment, green for a preference. */}
     <div aria-hidden="true" className="mb-3 flex min-h-7 content-start flex-wrap items-start gap-1.5 px-1 text-[11px] font-semibold">
-      <span key={`own-${week.own}`} className="sketch-copy rounded-full bg-[#f1efe9] px-2.5 py-1 text-[#48534f]">{own.text[language]}</span>
-      {preference && <span key={week.preference} className="sketch-copy rounded-full bg-[#edf3ef] px-2.5 py-1 text-[#273c38]">{preference[language]}</span>}
+      <span key={`own-${week.own}`} className="sketch-copy inline-flex items-center gap-1.5 rounded-full border border-[#e6e2da] bg-[#faf9f6] px-2.5 py-1 text-[#48534f]">
+        <span className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ backgroundColor: "#f4f2ed", backgroundImage: HATCH, outline: "1px dashed #b9b2a5", outlineOffset: "-1px" }} />{own.text[language]}
+      </span>
+      {preference && <span key={week.preference} className="sketch-copy inline-flex items-center gap-1.5 rounded-full border border-[#d3e2d8] bg-[#f1f6f2] px-2.5 py-1 text-[#273c38]">
+        <span className="h-2.5 w-2.5 shrink-0 rounded-[3px] border border-[#8fb19c] bg-[#d9e8de]" />{preference[language]}
+      </span>}
     </div>
-    <div aria-hidden="true" className="grid grid-cols-[24px_minmax(0,1fr)] gap-x-1.5 gap-y-2 sm:grid-cols-[28px_minmax(0,1fr)] sm:gap-x-2">
+    <div aria-hidden="true" className="grid grid-cols-[24px_minmax(0,1fr)] gap-x-1.5 gap-y-2 sm:grid-cols-[30px_minmax(0,1fr)] sm:gap-x-2">
       <span />
-      <div className="grid grid-cols-5 gap-1.5 text-center text-[10px] font-semibold text-[#646c68]">{days.map((day, index) => <span key={day} className={`transition-opacity duration-500 motion-reduce:transition-none ${week.preference === "noFriday" && index === 4 ? "opacity-40" : ""}`}>{day}</span>)}</div>
-      <div className="relative h-64 text-[9px] tabular-nums text-[#858d87] sm:h-72 sm:text-[10px]">
+      <div className="grid grid-cols-5 gap-1.5 text-center text-[10px] font-semibold text-[#5d6561]">{days.map((day, index) => <span key={day} className={`transition-opacity duration-500 motion-reduce:transition-none ${language === "en" ? "uppercase tracking-[.08em]" : ""} ${week.preference === "noFriday" && index === 4 ? "opacity-40" : ""}`}>{day}</span>)}</div>
+      <div className="relative h-64 text-[9px] tabular-nums text-[#959b96] sm:h-[19rem] sm:text-[10px]">
         {TIME_MARKS.map((hour) => <span key={hour} data-sketch-time={hour} className="absolute right-0 -translate-y-1/2 whitespace-nowrap" style={{ top: `${at(hour)}%` }}>{hourLabel(hour, language)}</span>)}
       </div>
-      <div ref={grid} className="relative grid h-64 grid-cols-5 gap-1.5 overflow-hidden rounded-md sm:h-72">
-        {days.map((day, index) => <div key={day} className={`rounded-md transition-colors duration-500 motion-reduce:transition-none ${week.preference === "noFriday" && index === 4 ? "bg-[#efece6]" : "bg-[#f7f5f0]"}`} />)}
-        {TIME_MARKS.slice(1, -1).map((hour) => <span key={hour} className="pointer-events-none absolute inset-x-0 border-t border-dashed border-[#e4e0d8]" style={{ top: `${at(hour)}%` }} />)}
-        {exiting.map(({ key, label, personal, meeting }) => <div key={`exit-${preview.step}-${key}`} className={`sketch-out pointer-events-none absolute flex flex-col justify-center overflow-hidden rounded-md border-l-[3px] px-1 text-[9px] font-semibold leading-tight sm:px-1.5 sm:text-[10px] ${personal ? OWN_TONE : toneOf(label)}`} style={{ ...position(meeting), ...(personal ? OWN_FILL : {}) }}>{label}</div>)}
-        {blocks.map(({ key, label, personal, meeting }) => <div key={key} data-sketch-block={key} className={`absolute flex origin-top-left flex-col justify-center overflow-hidden rounded-md border-l-[3px] px-1 text-[9px] font-semibold leading-tight sm:px-1.5 shadow-[0_1px_2px_rgba(32,39,40,.06)] ${personal ? `${OWN_TONE} items-center` : toneOf(label)}`} style={{ ...position(meeting), ...(personal ? OWN_FILL : {}) }}>
-          {personal ? <span className="truncate sm:text-[10px]">{label}</span> : <>
-            {/* Phone columns are too narrow for "CMSC132" on one line: department over number there. */}
-            <span className="text-[9px] leading-[1.05] sm:hidden">{label.slice(0, 4)}<br />{label.slice(4)}</span>
-            <span className="hidden truncate text-[10px] sm:block">{label}</span>
-          </>}
-          {showsTime(meeting) && <span className="mt-0.5 hidden truncate text-[9px] font-medium opacity-75 sm:block">{timeRange(meeting.start, meeting.end, language)}</span>}
-        </div>)}
+      <div ref={grid} className="relative grid h-64 grid-cols-5 gap-1.5 sm:h-[19rem]">
+        {days.map((day, index) => {
+          const free = (["earlyEnd", "lateStart", "noFriday"] as const).map((kind) => ({ kind, span: keptFree(kind, index) }));
+          return <div key={day} className="relative overflow-hidden rounded-lg bg-[#f8f6f2]">
+            {HOUR_LINES.map((hour) => <span key={hour} className="absolute inset-x-0 h-px" style={{ top: `${at(hour)}%`, backgroundColor: hour % 2 ? "rgba(32, 39, 40, .035)" : "rgba(32, 39, 40, .07)" }} />)}
+            {/* Every kind of kept-free time is drawn, and the one in use fades in. */}
+            {free.map(({ kind, span }) => span && <span key={kind} className={`absolute inset-x-0 transition-opacity duration-500 motion-reduce:transition-none ${week.preference === kind ? "opacity-100" : "opacity-0"}`}
+              style={{ top: `${span.top}%`, bottom: `${100 - span.bottom}%`, backgroundColor: "rgba(83, 129, 104, .09)", borderTop: span.top > 0 ? "1px dashed rgba(83, 129, 104, .45)" : undefined, borderBottom: span.bottom < 100 ? "1px dashed rgba(83, 129, 104, .45)" : undefined }} />)}
+          </div>;
+        })}
+        {exiting.map((item) => block(item, preview.before!, { className: "sketch-out pointer-events-none" }))}
+        {blocks.map((item) => block(item, week, { sketchKey: item.key }))}
       </div>
     </div>
     <figcaption className="mt-3 flex min-h-14 items-start gap-2 border-t border-[#eeece6] px-1 pt-3 text-xs leading-5 text-[#48534f]">
-      <span aria-hidden="true" className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#edf3ef] text-[10px] font-bold text-[#315c43]">✓</span>
+      <span aria-hidden="true" className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#315c43] text-[9px] font-bold text-white">✓</span>
       <span key={`${preview.step}-${language}`} className="sketch-copy">{explanation}</span>
     </figcaption>
   </figure>;

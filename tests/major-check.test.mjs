@@ -50,6 +50,10 @@ test("listed courses are checked, notes are left out, and only the tables that a
   assert.equal(line(track, "CCCC100").ok, true, "a switched-on table is checked; unknown tables are ignored");
   assert.equal(line(track, "Select two of the following").have, 0);
   assert.deepEqual(line(track, "Select two of the following").options.slice(0, 3), [["AAAA301"], ["AAAA302"], ["AAAA303"]]);
+  assert.deepEqual(line(track, "Select two of the following").place, ["AAAA301", "AAAA302", "AAAA303"], "each course can be added to a term");
+  assert.deepEqual(line(track, "AAAA100").place, ["AAAA100", "AAAA101"]);
+  assert.deepEqual(line(check, "AAAA100").place, [], "met: nothing to add");
+  assert.deepEqual(line(check, "Select two 300 or 400").place, [], "a rule in words offers no course");
 });
 
 test("rules written as text show the plan's courses in their subject and level, narrower rules first", () => {
@@ -92,7 +96,7 @@ test("text rules read subjects and levels the way the catalog writes them", () =
   assert.equal(textRule("Completion of a foreign language through the elementary level", subjects), null);
 });
 
-test("on the catalog snapshot: Biological Sciences takes one of its three math pairs", () => {
+test("on the catalog snapshot: Biological Sciences takes one of its three math pairs, and both labs for BSCI180", () => {
   const data = JSON.parse(readFileSync(new URL("../data/umd-programs.json", import.meta.url), "utf8"));
   const biology = data.programs.find((item) => item.slug === "computer-mathematical-natural-sciences--biological-sciences");
   const known = {};
@@ -103,4 +107,10 @@ test("on the catalog snapshot: Biological Sciences takes one of its three math p
   assert.equal(math.length, 1, "the catalog's \"or\" rows are one requirement");
   assert.equal(math[0].ok, true);
   assert.deepEqual(ids(math[0].courses), ["MATH140", "MATH141"]);
+  // "( BSCI161 and BSCI171 may count for BSCI180 )": the two labs together, not either one.
+  const lab = check.lines.find((item) => item.label.startsWith("BSCI180"));
+  assert.deepEqual(lab.listed, [["BSCI180"], ["BSCI161", "BSCI171"]]);
+  assert.equal(lab.ok, false, "BSCI171 alone is not enough");
+  const both = checkCatalogMajor(biology, known, plan({ 202608: ["BSCI171"], 202701: ["BSCI161"] }), "202608");
+  assert.deepEqual(ids(both.lines.find((item) => item.label.startsWith("BSCI180")).courses), ["BSCI161", "BSCI171"]);
 });

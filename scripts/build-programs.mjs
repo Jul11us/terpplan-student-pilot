@@ -16,17 +16,20 @@ async function page(url) {
   const cached = cacheDir && join(cacheDir, name);
   if (cached && existsSync(cached)) return readFileSync(cached, "utf8");
   let html = "";
-  // The catalog server sometimes drops a connection mid-page; a few tries, further apart each time.
+  // The catalog server sometimes drops a connection mid-page or answers with a server error: a few tries, further
+  // apart each time. A missing page (404) is final.
   for (let attempt = 1; ; attempt++) {
     await sleep(250 * attempt * attempt);
+    let response;
     try {
-      const response = await fetch(url, { headers: { "user-agent": "TerpPlan catalog snapshot (terpplan@proton.me)" } });
-      if (!response.ok) throw new Error(`${url} returned ${response.status}`);
-      html = await response.text();
-      break;
+      response = await fetch(url, { headers: { "user-agent": "TerpPlan catalog snapshot (terpplan@proton.me)" } });
+      html = response.ok ? await response.text() : "";
     } catch (error) {
       if (attempt >= 4) throw error;
+      continue;
     }
+    if (response.ok) break;
+    if (response.status < 500 || attempt >= 4) throw new Error(`${url} returned ${response.status}`);
   }
   if (cached) writeFileSync(cached, html);
   return html;
@@ -171,8 +174,19 @@ function parseTable(table) {
       }
       if (!codes.length) continue;
       const rowText = text(row);
+      // A note like "( BSCI161 and BSCI171 may count for BSCI180 )" or "( BSCI330 may count for BSCI331 & BSCI332 )":
+      // the courses before "count for" together stand in for the ones after it. The row's own courses are the rest.
+      const swap = /\(\s*([^()]*?)\s+(?:may|can)\s+count\s+for\s+([^()]*?)\s*\)/i.exec(rowText);
+      const ownText = swap ? rowText.replace(swap[0], " ") : rowText;
+      const ownCodes = swap ? codes.filter((code) => ownText.includes(code)) : codes;
       // "GEOL100 & GEOL110" must be taken together; other multi-code rows list alternatives.
-      const options = /&/.test(rowText) ? [codes] : codes.map((code) => [code]);
+      const options = /&/.test(ownText) ? [ownCodes] : ownCodes.map((code) => [code]);
+      if (swap) {
+        const instead = swap[1].match(/[A-Z]{4}\d{3}[A-Z]?/g) ?? [];
+        const replaced = new Set(swap[2].match(/[A-Z]{4}\d{3}[A-Z]?/g) ?? []);
+        const bundle = /&/.test(ownText) ? ownCodes : [...replaced];
+        if (instead.length && replaced.size) options.push([...bundle.filter((code) => !replaced.has(code)), ...instead]);
+      }
       if (orNext) {
         orNext = false;
         const last = group ?? items.at(-1);

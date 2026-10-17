@@ -31,6 +31,8 @@ export type MajorLine = {
   courses: PlanCourse[];
   // What would still fill it, easiest first; each option is a bundle taken together.
   options: string[][];
+  // The courses of those options that are not in the plan, one by one, to add to a term.
+  place: string[];
   // For a rule written as text: plan courses in the subject and level it names, which may count, and how much of
   // it they would cover (courses, or credits when the rule gives only credits).
   maybe: PlanCourse[];
@@ -158,6 +160,7 @@ export function checkCatalogMajor(raw: Program, facts: Record<string, CourseFact
       have: result.open ? Number(result.complete) : Math.min(result.met.length, result.needed), need: result.open ? 1 : result.needed,
       courses: result.met.flatMap((entry) => entry.option.map((code) => byCode.get(code) ?? { id: code, term: null, credits: facts[code]?.c ?? null })),
       options: result.complete ? [] : result.suggestions,
+      place: result.complete || result.open ? [] : [...new Set(result.suggestions.flat())].filter((code) => !byCode.has(code)),
       maybe: guess?.courses ?? [], maybeHave: guess?.have ?? 0, maybeNeed: guess?.need ?? 0, maybeUnit: guess?.unit ?? "courses",
     };
   });

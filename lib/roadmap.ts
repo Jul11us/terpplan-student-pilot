@@ -167,6 +167,20 @@ export function courseCredits(id: string, info: CourseInfo | null | undefined, r
 
 export const variableCredits = (info: CourseInfo | null | undefined) => Boolean(info?.credits && /\d\s*[–-]\s*\d/.test(info.credits));
 
+// The terms from `now` on that a course could be added to: whether the term is full, and which of its prerequisites
+// would not be planned before it (or in it, where the catalog allows the same term).
+export type TermChoice = { term: string; full: boolean; missing: PrereqNode[] };
+export function termChoices(roadmap: SavedRoadmap, info: CourseInfo | null | undefined, now: string): TermChoice[] {
+  const before = new Set(roadmap.earlier);
+  const choices: TermChoice[] = [];
+  for (const term of roadmapTerms(roadmap)) {
+    const list = roadmap.terms[term] ?? [];
+    if (term >= now) choices.push({ term, full: list.length >= MAX_PER_TERM, missing: unmetRequirements(info?.pr, courseSet(before), courseSet(list)) });
+    for (const id of list) before.add(id);
+  }
+  return choices;
+}
+
 export type CourseIssue =
   // Prerequisites not taken in an earlier term (top-level requirements, as lib/prereq-check describes them).
   | { kind: "prereq"; missing: PrereqNode[] }

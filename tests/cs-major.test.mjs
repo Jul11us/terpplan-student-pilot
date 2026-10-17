@@ -83,3 +83,16 @@ test("machine learning's numerical option is one choice, whichever course fills 
   const check = checkCsMajor("ml", plan([], { 202808: [["CMSC460", 3], ["MATH401", 3], ["CMSC472", 3]] }), {});
   assert.deepEqual(ids(line(check, "mlTwo")), ["CMSC460", "CMSC472"]);
 });
+
+test("a rule not met offers the courses that would count, leaving out what the plan has", () => {
+  const check = checkCsMajor("data", plan([["MATH140", 4]], { 202608: [["CMSC131", 4]], 202808: [["CMSC414", 3]] }), {});
+  assert.deepEqual(line(check, "CMSC216").options, ["CMSC216"]);
+  assert.deepEqual(line(check, "CMSC131").options, [], "met");
+  assert.deepEqual(line(check, "MATHSTAT").options, ["MATH240", "MATH341", "MATH461"]);
+  assert.deepEqual(line(check, "dataTwo").options, ["CMSC411", "CMSC412", "CMSC417", "CMSC430", "CMSC433", "CMSC434", "CMSC435"], "CMSC414 is in the plan");
+  assert.deepEqual(line(check, "ulc").options, [], "any discipline will do: nothing to offer");
+  const general = checkCsMajor("general", plan([], { 202808: [["CMSC411", 3], ["CMSC420", 3]] }), {});
+  const areas = line(general, "areas").options;
+  assert.equal(areas.includes("CMSC411"), false);
+  assert.ok(["CMSC430", "CMSC451", "CMSC460"].every((code) => areas.indexOf(code) < areas.indexOf("CMSC412")), "areas not covered yet come first");
+});

@@ -144,6 +144,9 @@ export type CsLine = {
   // Met: enough courses or credits, and (for the distributive areas) enough areas.
   ok: boolean;
   note?: Text;
+  // For a rule not met: courses not in the plan that would count, the likeliest first (empty where any course of a
+  // kind counts: electives, the concentration).
+  options: string[];
 };
 export type CsBenchmark = {
   at: 45 | 75;
@@ -163,9 +166,12 @@ export type CsCheck = {
   done: number;
 };
 
-type NewLine = Omit<CsLine, "ok" | "group"> & { ok?: boolean };
+type NewLine = Omit<CsLine, "ok" | "group" | "options"> & { ok?: boolean; options?: string[] };
 const groupOf = (key: string): CsLine["group"] => key === "ulc" ? "ulc" : key === "STAT4XX" || key === "MATHSTAT" ? "math" : LOWER.some((rule) => rule.key === key) ? "core" : "track";
-const line = (item: NewLine): CsLine => ({ ...item, group: groupOf(item.key), ok: item.ok ?? item.have >= item.need });
+const line = (item: NewLine): CsLine => {
+  const ok = item.ok ?? item.have >= item.need;
+  return { ...item, group: groupOf(item.key), ok, options: ok ? [] : item.options ?? [] };
+};
 
 const AREA_RULE_AREAS = 3;
 
@@ -210,6 +216,9 @@ export function checkCsMajor(track: CsTrack, courses: CsCourse[], info: Record<s
   const lines: CsLine[] = [];
   const free = () => courses.filter((course) => !used.has(course.id));
   const take = (course: CsCourse) => { used.add(course.id); return course; };
+  // What a rule could still use: courses the plan does not have (under any listing).
+  const planned = new Set(courses.flatMap((course) => [course.id, csCode(course.id)]));
+  const notPlanned = (codes: string[]) => [...new Set(codes)].filter((code) => !planned.has(code) && !planned.has(csCode(code)));
 
   // Requirements met by named courses: each option used once, earliest course first.
   const fill = (rule: Pick) => {
@@ -219,7 +228,7 @@ export function checkCsMajor(track: CsTrack, courses: CsCourse[], info: Record<s
       const course = free().find((item) => option.includes(csCode(item.id)));
       if (course) found.push(take(course));
     }
-    lines.push(line({ key: rule.key, label: rule.label, need: rule.count, have: found.length, unit: "courses", courses: found }));
+    lines.push(line({ key: rule.key, label: rule.label, need: rule.count, have: found.length, unit: "courses", courses: found, options: notPlanned(rule.options.filter((option) => !option.some((code) => planned.has(code))).flat()) }));
   };
   for (const rule of LOWER) fill(rule);
 
@@ -227,11 +236,11 @@ export function checkCsMajor(track: CsTrack, courses: CsCourse[], info: Record<s
   // learning and quantum tracks need linear algebra for the second.
   const statLabel: Text = track === "data" ? { en: "STAT400 Applied Probability and Statistics I", zh: "STAT400 应用概率与统计 I" } : { en: "STAT4XX with a MATH141 prerequisite", zh: "STAT4XX（先修课含 MATH141）" };
   const stat = free().find((course) => track === "data" ? csCode(course.id) === "STAT400" : isStat4xx(course.id));
-  lines.push(line({ key: "STAT4XX", label: statLabel, need: 1, have: stat ? 1 : 0, unit: "courses", courses: stat ? [take(stat)] : [] }));
+  lines.push(line({ key: "STAT4XX", label: statLabel, need: 1, have: stat ? 1 : 0, unit: "courses", courses: stat ? [take(stat)] : [], options: notPlanned(["STAT400"]) }));
   const linear = track === "data" || track === "ml" || track === "quantum";
   const second = free().find((course) => linear ? LINEAR_ALGEBRA.includes(csCode(course.id)) : isMathStat(course.id));
   lines.push(line({
-    key: "MATHSTAT", need: 1, have: second ? 1 : 0, unit: "courses", courses: second ? [take(second)] : [],
+    key: "MATHSTAT", need: 1, have: second ? 1 : 0, unit: "courses", courses: second ? [take(second)] : [], options: notPlanned(linear ? LINEAR_ALGEBRA : ["MATH240", "MATH241", "MATH246", "STAT401"]),
     label: linear ? { en: "Linear algebra: MATH240, MATH341 or MATH461", zh: "线性代数：MATH240、MATH341 或 MATH461" } : { en: "MATH/AMSC/STAT course with a MATH141 prerequisite", zh: "MATH/AMSC/STAT 课（先修课含 MATH141）" },
   }));
 
@@ -251,11 +260,15 @@ export function checkCsMajor(track: CsTrack, courses: CsCourse[], info: Record<s
     }
     chosen.forEach(take);
     const covered = Math.max(0, spread);
+    // Courses from areas not covered yet come first.
+    const coveredAreas = new Set(chosen.flatMap(areasOf));
+    const fresh = (code: string) => Number(AREAS[code]!.some((area) => coveredAreas.has(area)));
+    const areaOptions = notPlanned(Object.keys(AREAS).filter((code) => AREAS[code]!.some((area) => allowed.includes(area))).sort((a, b) => fresh(a) - fresh(b) || a.localeCompare(b)));
     const areaNote = track === "quantum"
       ? { en: `From at least ${minAreas} of areas 1, 2, 3 and 5, no more than three in one area (${covered} covered)`, zh: `至少覆盖领域 1、2、3、5 中的 ${minAreas} 个，同一领域最多算 3 门（已覆盖 ${covered} 个）` }
       : { en: `From at least ${minAreas} areas, no more than three in one area (${covered} covered)`, zh: `至少覆盖 ${minAreas} 个领域，同一领域最多算 3 门（已覆盖 ${covered} 个）` };
     lines.push(line({
-      key: "areas", need: count, have: chosen.length, unit: "courses", courses: chosen, note: areaNote, ok: chosen.length >= count && covered >= minAreas,
+      key: "areas", need: count, have: chosen.length, unit: "courses", courses: chosen, note: areaNote, ok: chosen.length >= count && covered >= minAreas, options: areaOptions,
       label: track === "quantum" ? { en: "Four 400-level courses outside area 4 (Theory)", zh: "4 门 400 级 CS 课（不含领域 4 理论）" } : { en: "Five 400-level courses from the distributive areas", zh: "5 门分布在各领域的 400 级 CS 课" },
     }));
   }
