@@ -1,6 +1,6 @@
 # Cloudflare seat-check scheduler
 
-This independent Worker calls the existing authenticated Site endpoint every ten
+This independent Worker calls the existing authenticated Site endpoint every two
 minutes. The Site continues to own student watches, D1, and email delivery.
 The scheduler has no public URL or public HTTP trigger. Logs contain aggregate
 counts only. Partial course/email failures mark the Cron invocation as failed.
@@ -19,7 +19,7 @@ preview account. Do not change the Site's main Worker configuration.
    the background-run recording feature has been published.
 6. Only after a successful Cron invocation, remove the obsolete
    `.github/workflows/seat-check.yml` workflow.
-   Verify two consecutive Cron runs approximately ten minutes apart.
+   Verify two consecutive Cron runs approximately two minutes apart.
 
 The scheduler's `WATCH_RUNNER_SECRET` must match the Site's runtime secret. Never
 commit this value or paste it into a shell command. Cloudflare's first deploy
