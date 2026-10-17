@@ -7,7 +7,7 @@ import AboutDialog from "@/app/components/about-dialog";
 import CourseRequirements, { type CourseRequirement } from "@/app/components/course-requirements";
 import GenEdFinder, { type ReferenceSchedule } from "@/app/components/gened-finder";
 import { isAsyncOnline } from "@/lib/meeting-time";
-import { parseGenEdParam } from "@/lib/gened-categories";
+import { parseGenEdParam, TWO_COURSE_CODES } from "@/lib/gened-categories";
 import type { SectionPreferences } from "@/lib/section-preferences";
 import { creditMeter, creditRange, creditWarning, formatCreditTotal, totalPlanCredits, type CreditRange } from "@/lib/plan-credits";
 import { planKey } from "@/lib/plan-key";
@@ -27,7 +27,7 @@ import { SEAT_CHECK_MINUTES } from "@/lib/seat-cadence";
 import SectionProfessors from "@/app/components/section-professors";
 import type { ProfessorSummary } from "@/lib/planetterp";
 import { roomLabel } from "@/lib/room";
-import { readSavedState, STORAGE_KEY, swapPlans, writeSavedState } from "@/lib/saved-state";
+import { readSavedState, STORAGE_KEY, swapPlans, writeSavedState, type SavedGenEd } from "@/lib/saved-state";
 import { enterDemo, isDemo, leaveDemo, startDemoFromUrl, storageKey } from "@/lib/demo";
 import { PERSONAL_KEYS } from "@/lib/plan-sync";
 import { fittingSections, openingPath, parseOpening, scheduleWithout, type Opening } from "@/lib/seat-swap";
@@ -180,6 +180,12 @@ const MAX_RESULTS = 120;
 
 const zhDays: Record<string, string> = { Mon: "周一", Tue: "周二", Wed: "周三", Thu: "周四", Fri: "周五", Sat: "周六", Sun: "周日" };
 
+// Whether two Gen Ed selections name the same categories and counts (the audit's note shows only while they do).
+function sameGenEd(a: SavedGenEd | null, b: SavedGenEd | null) {
+  const content = (value: SavedGenEd) => JSON.stringify([[...value.codes].sort(), Object.entries(value.counts).sort()]);
+  return Boolean(a && b) && content(a!) === content(b!);
+}
+
 function displayTime(meeting: Meeting, language: "en" | "zh") {
   const start = minutes(meeting.start_time), end = minutes(meeting.end_time), days = dayNames(meeting.days);
   if (isAsyncOnline(meeting)) return language === "en" ? "Online · no set time" : "线上 · 无固定时间";
@@ -271,9 +277,10 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [findMode, setFindMode] = useState<"search" | "gened">("search");
   const searchPlaceholder = useTypingPlaceholder(t.searchHint, !query);
-  // Gen Ed categories handed over from the degree audit page (?gened=DSHU:2,DVUP), with how many courses each
-  // still needs; key remounts the finder.
-  const [genEdPreset, setGenEdPreset] = useState<{ key: number; codes: string[]; counts: Record<string, number> } | null>(null);
+  // The Gen Ed requirements still needed, as last picked in the Gen Ed finder (saved, and synced with the
+  // account), and the ones the degree audit page sent (?gened=DSHU:2,DVUP), while the student keeps them.
+  const [genEdSelection, setGenEdSelection] = useState<SavedGenEd | null>(null);
+  const [auditGenEd, setAuditGenEd] = useState<SavedGenEd | null>(null);
   // Step 02's preferences that rule sections out, for the Gen Ed finder.
   const [schedulePrefs, setSchedulePrefs] = useState<SectionPreferences | null>(null);
   const rememberPrefs = useCallback((preferences: SectionPreferences) => setSchedulePrefs(preferences), []);
@@ -325,6 +332,12 @@ export default function Home() {
     setOtherPlanCount(saved.otherPlans?.[forTerm]?.length ?? 0);
   }, []);
   const [restored, setRestored] = useState(false);
+  // The Gen Ed finder's picks, saved once this browser's state has been restored (not the empty start before it).
+  const rememberGenEd = useCallback((selection: SavedGenEd | null) => {
+    if (!restored) return;
+    setGenEdSelection(selection);
+    writeSavedState({ genEd: selection ?? undefined });
+  }, [restored]);
   // A plan arriving in a "continue on another device" link (#move=...), waiting for the student to accept.
   const [transferOffer, setTransferOffer] = useState<Transfer | "invalid" | null>(null);
   const [transferLink, setTransferLink] = useState("");
@@ -413,8 +426,17 @@ export default function Home() {
       if (saved.term) switchTerm(saved.term);
       // Only Gen Ed category codes and course counts travel in this link; nothing else from the audit does.
       const preset = parseGenEdParam(new URLSearchParams(window.location.search).get("gened"));
+      setGenEdSelection(saved.genEd ?? null);
       if (preset.codes.length) {
-        setGenEdPreset({ key: Date.now(), ...preset });
+        // Two DVUP courses still needed means none taken toward Diversity yet.
+        const fromAudit: SavedGenEd = {
+          codes: preset.codes,
+          counts: Object.fromEntries(Object.keys(preset.counts).filter((code) => TWO_COURSE_CODES.includes(code)).map((code) => [code, 2])),
+          ...(preset.counts.DVUP ? { diversity: "none" as const } : {}),
+        };
+        setAuditGenEd(fromAudit);
+        setGenEdSelection(fromAudit);
+        writeSavedState({ genEd: fromAudit });
         setFindMode("gened");
         setStep("find");
         window.history.replaceState(null, "", window.location.pathname);
@@ -1044,7 +1066,7 @@ export default function Home() {
           <div className="course-search-panel min-w-0 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:overscroll-contain"><div className="mb-5 flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">01 · {t.find}</p><h2 className="mt-2 font-serif text-2xl">{t.results}</h2></div><label className="grid w-full gap-1.5 text-xs text-[#646c68]">{t.term}<select value={term} onChange={(event) => switchTerm(event.target.value)} className="w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-sm text-[#202728]">{(terms.length ? terms : [term]).map((item) => <option key={item} value={item}>{termLabel(item, language)}</option>)}</select></label></div>
             <div role="tablist" className="mb-4 inline-flex rounded-xl border border-[#e0ddd5] bg-[#f2f0eb] p-1 text-xs font-medium">{(["search", "gened"] as const).map((mode) => <button key={mode} type="button" role="tab" aria-selected={findMode === mode} onClick={() => setFindMode(mode)} className={`rounded-lg px-3 py-1.5 ${findMode === mode ? "bg-white text-[#202728] shadow-sm" : "text-[#5d6561] hover:text-[#202728]"}`}>{mode === "search" ? t.searchMode : t.genEdMode}</button>)}</div>
             {/* Kept mounted while hidden so the chosen category and loaded list survive switching modes. */}
-            <div hidden={findMode !== "gened"}><GenEdFinder key={genEdPreset?.key ?? 0} takenCodes={takenCodes} initialCodes={genEdPreset?.codes} initialCounts={genEdPreset?.counts} fromAudit={Boolean(genEdPreset)} preferences={schedulePrefs} planCredits={planCreditTotal.pending.length ? null : planCreditTotal.min} onAddCourse={(course) => quickAdd(course)} term={term} language={language} reference={referenceSchedule?.planKey === planKey(planCourses, term) ? referenceSchedule : null} referenceStale={referenceSchedule?.term === term && referenceSchedule.planKey !== planKey(planCourses, term)} planCourseIds={planCourses.map((course) => course.courseId)} onOpenCourse={(course) => void openCourse(course)} /></div>
+            <div hidden={findMode !== "gened"}><GenEdFinder key={restored ? "restored" : "loading"} takenCodes={takenCodes} initialSelection={genEdSelection} onSelectionChange={rememberGenEd} fromAudit={sameGenEd(genEdSelection, auditGenEd)} preferences={schedulePrefs} planCredits={planCreditTotal.pending.length ? null : planCreditTotal.min} onAddCourse={(course) => quickAdd(course)} term={term} language={language} reference={referenceSchedule?.planKey === planKey(planCourses, term) ? referenceSchedule : null} referenceStale={referenceSchedule?.term === term && referenceSchedule.planKey !== planKey(planCourses, term)} planCourseIds={planCourses.map((course) => course.courseId)} onOpenCourse={(course) => void openCourse(course)} /></div>
             {findMode === "search" && <>
             <label id="course-search" className="block scroll-mt-6"><span className="sr-only">{t.search}</span><div className="flex items-center gap-3 rounded-xl border border-[#d9d6ce] bg-white px-4 py-3 focus-within:border-[#a34a39] focus-within:ring-2 focus-within:ring-[#a34a39]/30"><span aria-hidden="true" className="text-lg text-[#646c68]">⌕</span><input value={query} onChange={(event) => changeSearchQuery(event.target.value)} aria-label={t.search} placeholder={searchPlaceholder} className="w-full bg-transparent text-sm outline-none placeholder:text-[#646c68]" /><kbd title={language === "en" ? "Press / to search" : "按 / 快速搜索"} className="hidden rounded border border-[#dedbd3] px-1.5 text-[11px] text-[#646c68] sm:inline">/</kbd></div></label>
             {!query && <Link href="/hard-courses" className="mt-2 inline-block text-xs font-medium text-[#a34a39] hover:underline">{language === "en" ? "See the courses that fill up every semester →" : "看看往年最难抢的课 →"}</Link>}

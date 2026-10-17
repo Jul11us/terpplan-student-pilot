@@ -1,25 +1,25 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { GEN_ED_CATEGORIES, genEdCoverage } from "@/lib/gened-categories";
+import { GEN_ED_CATEGORIES, genEdCoverage, TWO_COURSE_CODES } from "@/lib/gened-categories";
 import { hasUnknownTime, isAsyncOnline, isOnlineOnly, meetingDays, meetingMinutes, meetingsConflict, type MeetingTime } from "@/lib/meeting-time";
 import { formatSeatReadTime } from "@/lib/seat-time";
 import { courseSet, unmetRequirements } from "@/lib/prereq-check";
 import type { PrereqNode } from "@/lib/programs";
-import { crossListGroups, diversityDefault, diversityNeeds, planGenEds, type DiversityTaken, type NeedLine, type PlanCandidate } from "@/lib/gened-plan";
+import { applyPickSwaps, crossListGroups, diversityDefault, diversityNeeds, planGenEds, replacementsFor, type DiversityTaken, type NeedLine, type PlanCandidate } from "@/lib/gened-plan";
 import { activePreferences, preferenceMiss, type ActivePreferences, type SectionPreferences } from "@/lib/section-preferences";
 import { creditWarning } from "@/lib/plan-credits";
+import type { ProfessorSummary } from "@/lib/planetterp";
+import type { SavedGenEd } from "@/lib/saved-state";
 
 type Language = "en" | "zh";
-type GenEdSection = { section_id?: string; open_seats?: string | number | null; meetings?: MeetingTime[] };
+type GenEdSection = { section_id?: string; open_seats?: string | number | null; instructors?: string[]; meetings?: MeetingTime[] };
 // crossListed / creditOnlyFor: other listings of the same class, and courses Testudo credits only once together
 // with this one (missing from lists cached before they were read).
 type GenEdCourse = { course_id: string; name: string; credits: string | null; genEd: string[]; genEdGroups?: string[][]; hasPrerequisite?: boolean; hasRestriction?: boolean; programOnly?: boolean; crossListed?: string[]; creditOnlyFor?: string[]; pr?: PrereqNode | null; sections: GenEdSection[] };
 
 // Historical averages are looked up for at most this many listed courses (in requests of up to 30).
 const GPA_LOOKUP_LIMIT = 90;
-// Categories students take two courses in (Distributive Studies areas, Big Question). Diversity has its own choice.
-const TWO_COURSE_CODES = ["DSHS", "DSHU", "DSNS", "DSSP", "SCIS"];
 // The two kinds of Diversity course, shown side by side as "DVUP or DVCC".
 const DIVERSITY_CODES = ["DVUP", "DVCC"];
 const DIVERSITY_TAKEN: DiversityTaken[] = ["none", "DVUP", "DVCC"];
@@ -89,6 +89,13 @@ function meetingsLabel(meetings: MeetingTime[], language: Language) {
   return parts.length && !hasUnknownTime(meetings) ? parts.slice(0, 3).join(language === "zh" ? "；" : "; ") : language === "zh" ? "时间待定" : "Time TBA";
 }
 
+// Instructor names as PlanetTerp ratings are keyed (lower case, single spaces), and placeholders for "not named yet"
+// (Testudo writes "Instructor: TBA").
+const professorKey = (name: string) => name.trim().replace(/\s+/g, " ").toLocaleLowerCase("en-US");
+const isTba = (name: string) => ["TBA", "T.B.A", "TO BE ANNOUNCED", "TO BE ARRANGED"].includes(name.trim().replace(/^instructor:\s*/i, "").replace(/\s+/g, " ").toUpperCase().replace(/\.$/, ""));
+// Ratings are fetched per course and per set of instructors (a swap or another section can change them).
+const ratingKey = (courseId: string, names: string[]) => `${courseId}|${[...names].sort().join("|")}`;
+
 // The step 02 preferences being followed, in a few words ("no class on Fri, nothing before 10:00am").
 function preferencesLabel(active: ActivePreferences, language: Language) {
   const zh = language === "zh";
@@ -129,6 +136,12 @@ const copy = {
     followPrefs: (what: string) => `Follow my step 02 preferences: ${what}`, taken: "Taken", takenAs: (id: string) => `You took ${id}: no credit for both`,
     alsoListed: (ids: string) => `Also listed as ${ids} (same class)`, sectionCount: (n: number) => `${n} sections to choose from`,
     setCredits: (n: number) => `${n} credit${n === 1 ? "" : "s"} in all`, afterAdding: (n: number) => `${n} with your plan`,
+    swap: "Swap this course", swapBack: (id: string) => `Back to ${id}`, useThis: "Use this",
+    swapTitle: (codes: string) => `Other courses that count for ${codes} and fit with the rest of this set:`, swapNone: "No other course this term counts for the same and fits with the rest of this set.",
+    instructor: (who: string) => `Instructor: ${who}`, instructorTba: "Instructor: not announced yet", rating: (n: number) => `${n.toFixed(1)}/5 on PlanetTerp`,
+    gave: (n: number, scope: string) => `avg GPA ${n.toFixed(2)}${scope === "all" ? " (all their courses)" : ""}`, withDetails: (name: string, parts: string) => `${name} (${parts})`,
+    filters: "Filters", filtersShow: "Show", filtersHide: "Hide",
+    short: { fits: "fits my schedule", prefs: "my preferences", open: "open seats", honors: "no Honors", twoForOne: "counts twice", noPrereq: "no prerequisites", lowerLevel: "100–200 level", prereqsMet: "prerequisites met", sortGpa: "sorted by GPA" },
     gpaUpdating: "Reading average GPAs; the options may shift a little.", manyCourses: "That is more than one term's load: take some now and the rest in later terms.",
     optimizeRules: "Check your degree audit too: one DSSP course must be outside your major, and AP credit cannot count for Big Question (I-Series).",
   },
@@ -158,6 +171,12 @@ const copy = {
     followPrefs: (what: string) => `按「02 排课」的偏好：${what}`, taken: "已修过", takenAs: (id: string) => `已修过 ${id}，不能重复拿学分`,
     alsoListed: (ids: string) => `也叫 ${ids}（同一门课）`, sectionCount: (n: number) => `共 ${n} 个班可选`,
     setCredits: (n: number) => `共 ${n} 学分`, afterAdding: (n: number) => `加入后方案共 ${n} 学分`,
+    swap: "换一门", swapBack: (id: string) => `换回 ${id}`, useThis: "换成这门",
+    swapTitle: (codes: string) => `同样能抵 ${codes}、时间也和这组其他课排得开的课：`, swapNone: "这学期没有别的课能抵同样几项、又和这组其他课时间不冲突。",
+    instructor: (who: string) => `老师：${who}`, instructorTba: "老师：还没公布", rating: (n: number) => `评分 ${n.toFixed(1)}/5`,
+    gave: (n: number, scope: string) => `平均给分 ${n.toFixed(2)}${scope === "all" ? "（所有课程）" : ""}`, withDetails: (name: string, parts: string) => `${name}（${parts}）`,
+    filters: "筛选条件", filtersShow: "展开", filtersHide: "收起",
+    short: { fits: "不和课表冲突", prefs: "排课偏好", open: "有空位", honors: "不含荣誉课", twoForOne: "一门抵两项", noPrereq: "无先修", lowerLevel: "100–200 级", prereqsMet: "先修已满足", sortGpa: "按 GPA 排序" },
     gpaUpdating: "正在读取历史平均 GPA，组合可能会微调。", manyCourses: "一学期修不完这么多，可以先选一部分，其余留到以后的学期。",
     optimizeRules: "最后请以学位审计为准：DSSP 至少要有一门在本专业之外，AP 学分不能抵 Big Question（I-Series）。",
   },
@@ -170,7 +189,7 @@ function NeedLines({ lines, t }: { lines: NeedLine[]; t: { needLabel: (need: str
   return <div className="mt-2 flex flex-wrap gap-1.5 border-t border-[#f0ede6] pt-2 text-[11px]">{lines.map((line, index) => <span key={index} className={`rounded px-1.5 py-0.5 ${line.id ? "bg-[#edf3ef] text-[#315c43]" : "bg-[#fff8e8] text-[#745424]"}`}>{line.id ? "✓" : "✕"} {t.needLabel(line.need)}{line.id ? ` · ${line.id}` : ""}{line.fromPlan ? ` (${t.lineFromPlan})` : ""}</span>)}</div>;
 }
 
-export default function GenEdFinder({ term, language, reference, referenceStale, planCourseIds, takenCodes = null, onOpenCourse, onAddCourse, initialCodes = [], initialCounts = {}, fromAudit = false, preferences = null, planCredits = null }: {
+export default function GenEdFinder({ term, language, reference, referenceStale, planCourseIds, takenCodes = null, onOpenCourse, onAddCourse, initialSelection = null, onSelectionChange, fromAudit = false, preferences = null, planCredits = null }: {
   term: string;
   language: Language;
   // Only passed when it matches the current plan; referenceStale says an older one was dropped.
@@ -181,10 +200,11 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
   takenCodes?: string[] | null;
   onOpenCourse: (course: { course_id: string; name: string }) => void;
   onAddCourse: (course: { course_id: string; name: string }) => void;
-  // Categories chosen elsewhere (the degree audit page), with how many courses each still needs; the parent
-  // remounts this finder when they change.
-  initialCodes?: string[];
-  initialCounts?: Record<string, number>;
+  // What the student picked last time (or what the degree audit page sent), used when the finder opens; every
+  // change is reported back so it can be saved.
+  initialSelection?: SavedGenEd | null;
+  onSelectionChange?: (selection: SavedGenEd | null) => void;
+  // The selection is still the one the degree audit sent.
   fromAudit?: boolean;
   // Step 02's preferences that rule sections out (days off, earliest start, ...), or null before it has loaded.
   preferences?: SectionPreferences | null;
@@ -192,18 +212,17 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
   planCredits?: number | null;
 }) {
   const t = copy[language];
-  const [codes, setCodes] = useState<string[]>(initialCodes);
+  const [codes, setCodes] = useState<string[]>(initialSelection?.codes ?? []);
   // How many courses each selected category still needs (1 unless the student says 2), and whether the
   // "fewest courses" sets are showing.
-  const [needCounts, setNeedCounts] = useState<Record<string, number>>(() => Object.fromEntries(Object.entries(initialCounts)
+  const [needCounts, setNeedCounts] = useState<Record<string, number>>(() => Object.fromEntries(Object.entries(initialSelection?.counts ?? {})
     .filter(([code]) => TWO_COURSE_CODES.includes(code)).map(([code, n]) => [code, Math.min(2, n)])));
-  const [optimizing, setOptimizing] = useState(false);
+  const [optimizing, setOptimizing] = useState(Boolean(initialSelection?.optimizing));
   // The sets can also be made as if the plan were empty: its courses count like any other, and no section is
   // checked against the schedule.
   const [ignorePlan, setIgnorePlan] = useState(false);
   // What the student has taken toward Diversity, once they say; until then it follows the selected codes.
-  // An audit asking for two DVUP courses means none taken yet.
-  const [diversityTaken, setDiversityTaken] = useState<DiversityTaken | null>((initialCounts.DVUP ?? 1) > 1 ? "none" : null);
+  const [diversityTaken, setDiversityTaken] = useState<DiversityTaken | null>(initialSelection?.diversity ?? null);
   const diversity = diversityDefault(codes) && diversityTaken ? diversityTaken : diversityDefault(codes);
   const [matchAll, setMatchAll] = useState(false);
   // Loaded category lists, keyed by term|code, so adding or removing a category never reloads the others.
@@ -218,6 +237,18 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
   const [twoForOne, setTwoForOne] = useState(false);
   const [prereqsMet, setPrereqsMet] = useState(false);
   const [followPrefs, setFollowPrefs] = useState(true);
+  // The filters are folded away under one line that names the ones on; each browser remembers if they were open.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  useEffect(() => {
+    try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (window.localStorage.getItem("terpplan:gened-filters-open") === "1") setFiltersOpen(true);
+    } catch { /* storage blocked: stays folded */ }
+  }, []);
+  const toggleFilters = (open: boolean) => {
+    setFiltersOpen(open);
+    try { window.localStorage.setItem("terpplan:gened-filters-open", open ? "1" : "0"); } catch { /* not remembered */ }
+  };
   const activePrefs = useMemo(() => activePreferences(preferences), [preferences]);
   const prefsOn = followPrefs ? activePrefs : null;
   const canCheckPrereqs = term === "202701" && Boolean(takenCodes?.length);
@@ -376,13 +407,73 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
       .finally(() => setGpaLoading(false));
   }, [gpaWanted]);
 
+  // The selection is reported on every change, so the page can save it (and sync it with the account).
+  useEffect(() => {
+    onSelectionChange?.(codes.length ? {
+      codes,
+      counts: Object.fromEntries(codes.filter((code) => TWO_COURSE_CODES.includes(code) && needCounts[code] === 2).map((code) => [code, 2])),
+      ...(diversityTaken && diversityDefault(codes) ? { diversity: diversityTaken } : {}),
+      ...(optimizing ? { optimizing: true } : {}),
+    } : null);
+  }, [onSelectionChange, codes, needCounts, diversityTaken, optimizing]);
+
+  // Courses swapped in by the student ("swap this course"), per set (keyed by its original courses) and position.
+  const [swaps, setSwaps] = useState<Record<string, Record<number, string>>>({});
+  const [swapOpen, setSwapOpen] = useState<string | null>(null);
+  const shownPlans = useMemo(() => (genEdPlan?.plans ?? []).map((original) => {
+    const key = original.picks.map((pick) => pick.id).join(",");
+    // Check the final set together: later swaps may only fit because an earlier course was moved.
+    const plan = applyPickSwaps(original, swaps[key] ?? {}, candidates) ?? original;
+    return { key, original, plan };
+  }), [genEdPlan, swaps, candidates]);
+
+  // PlanetTerp ratings for the instructors of the section each set uses, by course and instructors.
+  const [ratings, setRatings] = useState<Record<string, Record<string, ProfessorSummary>>>({});
+  const ratingsRequested = useRef(new Set<string>());
+  const ratingWanted = useMemo(() => {
+    const wanted = new Map<string, { courseId: string; names: string[] }>();
+    for (const { plan } of shownPlans) for (const pick of plan.picks) {
+      const section = pick.section === undefined ? undefined : pool.sectionsOf.get(pick.id)?.[pick.section];
+      const names = (section?.instructors ?? []).filter((name) => !isTba(name));
+      if (names.length) wanted.set(ratingKey(pick.id, names), { courseId: pick.id, names });
+    }
+    return [...wanted];
+  }, [shownPlans, pool]);
+  useEffect(() => {
+    for (const [key, { courseId, names }] of ratingWanted) {
+      if (ratingsRequested.current.has(key)) continue;
+      ratingsRequested.current.add(key);
+      fetch("/api/professor-ratings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ names, courseId }) })
+        .then(async (response) => {
+          if (!response.ok) throw new Error("ratings");
+          const payload = await response.json() as { ratings?: Record<string, ProfessorSummary> };
+          setRatings((current) => ({ ...current, [key]: payload.ratings ?? {} }));
+        })
+        .catch(() => { ratingsRequested.current.delete(key); });
+    }
+  }, [ratingWanted]);
+  // "Instructor: Name (4.2/5 on PlanetTerp · avg GPA 3.40)" for a section, as far as the ratings are known.
+  const instructorLine = (courseId: string, names: string[]) => {
+    const named = names.filter((name) => !isTba(name));
+    if (!named.length) return names.length ? t.instructorTba : "";
+    const found = ratings[ratingKey(courseId, named)];
+    return t.instructor(named.slice(0, 2).map((name) => {
+      const rating = found?.[professorKey(name)];
+      const parts = [typeof rating?.averageRating === "number" ? t.rating(rating.averageRating) : "", rating?.gpa ? t.gave(rating.gpa.gpa, rating.gpa.scope) : ""].filter(Boolean);
+      return parts.length ? t.withDetails(name, parts.join(" · ")) : name;
+    }).join(language === "zh" ? "、" : ", "));
+  };
+  // The filters that are on, named in the folded line.
+  const activeFilters = [fitsOnly && t.short.fits, activePrefs && followPrefs && t.short.prefs, openOnly && t.short.open, hideHonors && t.short.honors, twoForOne && t.short.twoForOne,
+    noPrereq && t.short.noPrereq, lowerLevel && t.short.lowerLevel, prereqsMet && canCheckPrereqs && t.short.prereqsMet, sortByGpa && t.short.sortGpa].filter((label) => typeof label === "string") as string[];
+
   const categoryButton = (item: (typeof GEN_ED_CATEGORIES)[number]) => {
     const on = codes.includes(item.code);
     return <button key={item.code} type="button" aria-pressed={on} title={item[language]} onClick={() => toggleCode(item.code)} className={`rounded-lg border px-2.5 py-1.5 text-left text-xs transition ${on ? "border-[#273c38] bg-[#273c38] text-white" : "border-[#dedbd3] bg-white text-[#48534f] hover:border-[#9aa8a1]"}`}><span className="font-semibold">{item.code}</span><span className={`ml-1 ${on ? "text-white/80" : "text-[#646c68]"}`}>{item[language]}</span></button>;
   };
 
   return <div>
-    {fromAudit && initialCodes.length > 0 && <p className="mb-3 rounded-lg bg-[#edf3ef] px-3 py-2 text-xs leading-5 text-[#315c43]">{t.fromAudit(initialCodes.map((code) => (initialCounts[code] ?? 1) > 1 ? `${code} ×${initialCounts[code]}` : code).join(", "))}</p>}
+    {fromAudit && codes.length > 0 && <p className="mb-3 rounded-lg bg-[#edf3ef] px-3 py-2 text-xs leading-5 text-[#315c43]">{t.fromAudit(codes.map((code) => needCounts[code] === 2 ? `${code} ×2` : code).join(", "))}</p>}
     <div className="flex items-center justify-between gap-3"><p className="text-xs font-medium text-[#5d6561]">{t.category}</p>{codes.length > 0 && <button type="button" onClick={() => setCodes([])} className="text-[11px] font-medium text-[#8b5148] hover:underline">{t.clear}</button>}</div>
     <div className="mt-2 flex flex-wrap gap-1.5">{GEN_ED_CATEGORIES.filter((item) => !DIVERSITY_CODES.includes(item.code)).map(categoryButton)}
       <span className="inline-flex flex-wrap items-center gap-1.5 rounded-lg border border-dashed border-[#cfcac0] p-1" title={t.divRule}>{DIVERSITY_CODES.map((code, index) => <span key={code} className="inline-flex items-center gap-1.5">{index > 0 && <span className="text-[11px] text-[#646c68]">{t.or.trim()}</span>}{categoryButton(GEN_ED_CATEGORIES.find((item) => item.code === code)!)}</span>)}</span>
@@ -400,20 +491,20 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
           {genEdPlan.plans.length > 0 ? <>
             <p className="font-semibold text-[#273c38]">{t.fewest(genEdPlan.plans[0]!.picks.length, genEdPlan.total - genEdPlan.uncovered.length, genEdPlan.total, genEdPlan.fromPlan.length)}</p>
             {genEdPlan.plans[0]!.picks.length >= 5 && <p className="mt-1 text-[11px] text-[#646c68]">{t.manyCourses}</p>}
-            <ol className="mt-2 grid gap-2">{genEdPlan.plans.map((plan, index) => {
+            <ol className="mt-2 grid gap-2">{shownPlans.map(({ key, original, plan }, index) => {
               const missing = plan.picks.filter((pick) => !planCourseIds.includes(pick.id));
               const over = planCourseIds.length + missing.length > PLAN_LIMIT;
               const setCredits = plan.picks.reduce((total, pick) => total + (creditsOf(courseById.get(pick.id)) ?? 0), 0);
               // What the plan would add up to, when its own credits are known and something would be added.
               const after = planCourseIds.length && planCredits !== null && missing.length ? planCredits + missing.reduce((total, pick) => total + (creditsOf(courseById.get(pick.id)) ?? 0), 0) : null;
               const afterWarning = after === null ? "" : creditWarning({ min: after, max: after, unknown: [], pending: [] }, term, language);
-              return <li key={plan.picks.map((pick) => pick.id).join()} className="rounded-lg border border-[#e0ddd5] bg-white p-3">
+              return <li key={key} className="rounded-lg border border-[#e0ddd5] bg-white p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-[11px] font-semibold uppercase tracking-[.08em] text-[#9a5040]">{t.option(index + 1)}</span>
                   {missing.length ? <button type="button" disabled={over} title={over ? t.overLimit : undefined} onClick={() => missing.forEach((pick) => onAddCourse({ course_id: pick.id, name: courseById.get(pick.id)?.name ?? pick.id }))} className="rounded-lg border border-[#536d64] px-2.5 py-1 text-[11px] font-semibold text-[#273c38] hover:bg-[#edf3ef] disabled:cursor-not-allowed disabled:opacity-50">+ {t.addAll}</button> : <span className="text-[11px] font-semibold text-[#315c43]">✓ {t.allInPlan}</span>}</div>
                 {setCredits > 0 && <p className="mt-1 text-[11px] text-[#646c68]">{t.setCredits(setCredits)}{after !== null ? ` · ${t.afterAdding(after)}` : ""}</p>}
                 {afterWarning && <p className="mt-1 text-[11px] leading-5 text-[#8f4538]">⚠ {afterWarning}</p>}
                 {over && missing.length > 0 && <p className="mt-1 text-[11px] text-[#8f4538]">{t.overLimit}</p>}
-                <ul className="mt-1 divide-y divide-[#f0ede6]">{plan.picks.map((pick) => {
+                <ul className="mt-1 divide-y divide-[#f0ede6]">{plan.picks.map((pick, at) => {
                   const course = courseById.get(pick.id);
                   const sections = pool.sectionsOf.get(pick.id) ?? [];
                   const section = pick.section === undefined ? undefined : sections[pick.section];
@@ -427,6 +518,26 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
                       <span className="flex flex-wrap items-center gap-1 text-[11px]">{typeof gpa[pick.id] === "number" && <span className="text-[#536d64]">GPA {gpa[pick.id]!.toFixed(2)}</span>}<span className="text-[#646c68]">{t.coversLabel}</span>{pick.covers.map((code) => <span key={code} className="rounded bg-[#273c38] px-1.5 py-0.5 font-semibold text-white">{code}</span>)}{planCourseIds.includes(pick.id) && <span className="text-[#315c43]">· {t.inPlanShort}</span>}</span>
                     </div>
                     {details.length > 0 && <p className="mt-0.5 text-[11px] leading-5 text-[#646c68]">{details.join(" · ")}</p>}
+                    {section && instructorLine(pick.id, section.instructors ?? []) && <p className="mt-0.5 text-[11px] leading-5 text-[#646c68]">{instructorLine(pick.id, section.instructors ?? [])}</p>}
+                    <div className="mt-1 flex flex-wrap gap-x-3 text-[11px]">
+                      <button type="button" aria-expanded={swapOpen === `${key}:${at}`} onClick={() => setSwapOpen(swapOpen === `${key}:${at}` ? null : `${key}:${at}`)} className="font-medium text-[#536d64] underline underline-offset-2 hover:text-[#273c38]">{t.swap}</button>
+                      {original.picks[at] && original.picks[at]!.id !== pick.id && <button type="button" onClick={() => setSwaps((current) => { const next = { ...current[key] }; delete next[at]; return { ...current, [key]: next }; })} className="font-medium text-[#8b5148] hover:underline">{t.swapBack(original.picks[at]!.id)}</button>}
+                    </div>
+                    {swapOpen === `${key}:${at}` && (() => {
+                      const options = replacementsFor(plan, at, candidates).slice(0, 5);
+                      return <div className="mt-1.5 rounded-md border border-[#e3e0d8] bg-[#f6f4ef] p-2">
+                        <p className="text-[11px] text-[#646c68]">{t.swapTitle(pick.covers.join(" + "))}</p>
+                        {options.length ? <ul className="mt-1 divide-y divide-[#e3e0d8]">{options.map(({ course: option, section: optionAt }) => {
+                          const info = courseById.get(option.id);
+                          const optionSection = (pool.sectionsOf.get(option.id) ?? [])[optionAt];
+                          const facts = [typeof gpa[option.id] === "number" ? `GPA ${gpa[option.id]!.toFixed(2)}` : "", optionSection ? meetingsLabel(optionSection.meetings ?? [], language) : "", info?.credits ? `${info.credits} ${t.credits}` : ""].filter(Boolean);
+                          return <li key={option.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1.5">
+                            <span className="min-w-0"><span className="font-semibold">{option.id}</span> <span className="text-[#606966]">{info?.name}</span>{facts.length > 0 && <span className="block text-[11px] text-[#646c68]">{facts.join(" · ")}</span>}</span>
+                            <button type="button" onClick={() => { setSwaps((current) => ({ ...current, [key]: { ...current[key], [at]: option.id } })); setSwapOpen(null); }} className="shrink-0 rounded-md border border-[#536d64] bg-white px-2 py-0.5 text-[11px] font-semibold text-[#273c38] hover:bg-[#edf3ef]">{t.useThis}</button>
+                          </li>;
+                        })}</ul> : <p className="mt-1 text-[11px] text-[#745424]">{t.swapNone}</p>}
+                      </div>;
+                    })()}
                   </li>;
                 })}</ul>
                 <NeedLines lines={plan.lines} t={t} />
@@ -442,6 +553,8 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
         </>}
       </div>}
     </div>}
+    <button type="button" onClick={() => toggleFilters(!filtersOpen)} aria-expanded={filtersOpen} aria-controls="gened-filters" className="mt-3 flex w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-[#e3e0d8] bg-white px-3 py-2 text-left text-xs text-[#48534f] hover:border-[#b9c5be]"><span className="font-semibold">{t.filters}</span>{activeFilters.length > 0 && <span className="min-w-0 flex-1 text-[11px] leading-5 text-[#5d6561]">{activeFilters.join(language === "zh" ? "、" : ", ")}</span>}<span className="ml-auto whitespace-nowrap rounded-md border border-[#d9d6ce] px-2 py-0.5 text-[11px] font-medium">{filtersOpen ? t.filtersHide : t.filtersShow} <span aria-hidden="true">{filtersOpen ? "▲" : "▼"}</span></span></button>
+    <div id="gened-filters" hidden={!filtersOpen}>
     <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-[#5d6561]">
       <label className="inline-flex items-center gap-2"><input type="checkbox" checked={fitsOnly} onChange={(event) => setFitsOnly(event.target.checked)} />{t.fitsOnly}</label>
       {activePrefs && <label className="inline-flex items-start gap-2"><input type="checkbox" className="mt-0.5" checked={followPrefs} onChange={(event) => setFollowPrefs(event.target.checked)} />{t.followPrefs(preferencesLabel(activePrefs, language))}</label>}
@@ -459,6 +572,7 @@ export default function GenEdFinder({ term, language, reference, referenceStale,
       {!canCheckPrereqs && <p className="mt-1.5 text-[11px] leading-5 text-[#646c68]">{term !== "202701" ? t.prereqsMetNoRules : t.prereqsMetNeedTaken}</p>}
       <button type="button" aria-pressed={sortByGpa} onClick={() => setSortByGpa((value) => !value)} className={`mt-2 rounded-lg border px-2.5 py-1.5 font-medium ${sortByGpa ? "border-[#273c38] bg-[#273c38] text-white" : "border-[#d9d6ce] bg-white text-[#273c38]"}`}>{sortByGpa ? t.sortDefault : t.sortGpa}</button>
       {sortByGpa && <p className="mt-2 text-[11px] leading-5 text-[#646c68]">{gpaLoading ? t.gpaLoading : gpaError ? t.gpaError : t.gpaNote}</p>}
+    </div>
     </div>
     <p className="mt-2 text-[11px] leading-5 text-[#646c68]">{referenceStale && !referenceForTerm ? <span className="font-medium text-[#745424]">{t.staleReference}</span> : referenceForTerm ? <>{t.against} <span className="font-medium text-[#48534f]">{referenceForTerm.sectionIds.join(" · ")}</span></> : t.noReference} {t.fcNote}</p>
 

@@ -17,6 +17,9 @@ export const GEN_ED_CATEGORIES = [
   { code: "DVUP", en: "Understanding Plural Societies", zh: "理解多元社会" },
 ] as const;
 
+// Categories students take two courses in (Distributive Studies areas, Big Question). Diversity has its own choice.
+export const TWO_COURSE_CODES = ["DSHS", "DSHU", "DSNS", "DSSP", "SCIS"];
+
 // The degree audit opens the Gen Ed finder with ?gened=DSHU:2,SCIS,DVUP: categories, each with how many courses
 // it still needs when that is more than one.
 export function genEdParam(needs: { code: string; count: number }[]) {

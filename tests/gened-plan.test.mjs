@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { crossListGroups, DIVERSITY, diversityDefault, diversityNeeds, fillOptions, fitSections, needSlots, planGenEds, sectionsFit } from "../lib/gened-plan.ts";
+import { applyPickSwaps, crossListGroups, DIVERSITY, diversityDefault, diversityNeeds, fillOptions, fitSections, needSlots, planGenEds, replacementsFor, replacePick, sectionsFit } from "../lib/gened-plan.ts";
 
 const mwf = (start, end) => [{ days: "MWF", start_time: start, end_time: end }];
 const course = (id, groups, score, sections = [[]], extra = {}) => ({ id, groups, score, sections, ...extra });
@@ -151,4 +151,59 @@ test("listings are one class when Testudo cross-lists them or they meet at the s
   assert.equal(groups.get("CINE282"), groups.get("AMST213"), "same title, same times and rooms");
   assert.notEqual(groups.get("HIST200"), groups.get("AMST213"), "another time is another class");
   assert.notEqual(groups.get("ENGL468"), groups.get("ARHU468"), "no set time says nothing");
+});
+
+test("swapping a course offers others that count the same and fit the rest of the set, one listing per class", () => {
+  const pool = [
+    course("A", [["DSHU"], ["DVUP"]], 3.9, [mwf("10:00am", "10:50am")]),
+    course("B", [["DSNS"]], 3.8, [mwf("11:00am", "11:50am")]),
+    course("C", [["DSHU"], ["DVUP"]], 3.5, [mwf("11:00am", "11:50am"), mwf("1:00pm", "1:50pm")]),
+    course("D", [["DSHU"], ["DVUP"]], 3.4, [mwf("11:00am", "11:50am")]),
+    course("E1", [["DSHU"], ["DVUP"]], 3.3, [[]], { sameAs: "E1" }),
+    course("E2", [["DSHU"], ["DVUP"]], 3.2, [[]], { sameAs: "E1" }),
+    course("F", [["DSHU"]], 4, [[]]),
+    course("G", [["DSHU"], ["DVUP"]], 3.1, [[]], { notWith: ["B"] }),
+  ];
+  const plan = planGenEds({ DSHU: 1, DVUP: 1, DSNS: 1 }, pool).plans[0];
+  assert.deepEqual(ids(plan), ["A", "B"]);
+  const at = plan.picks.findIndex((pick) => pick.id === "A");
+  const options = replacementsFor(plan, at, pool);
+  // D only meets when B does; F counts for DSHU alone; G is credited only once with B; E2 is E1 under another number.
+  assert.deepEqual(options.map((item) => item.course.id), ["C", "E1"]);
+  assert.equal(options[0].section, 1, "C's 1pm section, since B takes 11am");
+  const swapped = replacePick(plan, at, options[0].course, pool);
+  assert.deepEqual(ids(swapped), ["B", "C"]);
+  assert.deepEqual(swapped.picks[at].needs, plan.picks[at].needs);
+  assert.equal(swapped.picks[at].section, 1);
+  assert.ok(swapped.lines.every((line) => line.id !== "A"), "the need lines name the new course");
+  assert.deepEqual(replacementsFor(swapped, at, pool).map((item) => item.course.id), ["A", "E1"], "and the old one can come back");
+});
+
+test("consecutive swaps keep the final set when each move relies on the previous one", () => {
+  const pool = [
+    course("A", [["DSHU"]], 4, [mwf("11:00am", "11:50am")]),
+    course("B", [["DSNS"]], 4, [mwf("1:00pm", "1:50pm")]),
+    course("C", [["DSHU"]], 3, [mwf("10:00am", "10:50am")]),
+    course("D", [["DSNS"]], 3, [mwf("11:00am", "11:50am")]),
+    course("E", [["DSHU"]], 2, [mwf("1:00pm", "1:50pm")]),
+  ];
+  const original = planGenEds({ DSHU: 1, DSNS: 1 }, pool).plans[0];
+  assert.deepEqual(ids(original), ["A", "B"]);
+  const a = original.picks.findIndex((pick) => pick.id === "A");
+  const b = original.picks.findIndex((pick) => pick.id === "B");
+  const swaps = { [a]: "C" };
+  let shown = applyPickSwaps(original, swaps, pool);
+  assert.ok(replacementsFor(shown, b, pool).some((item) => item.course.id === "D"));
+  swaps[b] = "D";
+  shown = applyPickSwaps(original, swaps, pool);
+  assert.deepEqual(ids(shown), ["C", "D"]);
+  assert.ok(replacementsFor(shown, a, pool).some((item) => item.course.id === "E"));
+  swaps[a] = "E";
+  shown = applyPickSwaps(original, swaps, pool);
+  assert.deepEqual(ids(shown), ["D", "E"], "E conflicts with original B, but B has already moved to D");
+  assert.deepEqual(shown.lines.map((line) => line.id).sort(), ["D", "E"]);
+  assert.ok(shown.picks.every((pick) => pick.section === 0));
+  assert.equal(applyPickSwaps(original, swaps, pool.filter((item) => item.id !== "E")), null, "a changed filter cannot retain an unavailable swap");
+  assert.equal(applyPickSwaps(original, { [a]: "E" }, pool), null, "without moving B, E still conflicts");
+  assert.equal(applyPickSwaps(original, { [a]: "D" }, pool), null, "a replacement must still cover the original needs");
 });

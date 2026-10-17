@@ -5,6 +5,7 @@
 
 import { normalizeBusyBlocks, validBuffer, type BusyBlock } from "@/lib/personal-schedule";
 import { CAMPUS_AREA_KEYS } from "@/lib/campus-walk";
+import { GEN_ED_CATEGORIES } from "@/lib/gened-categories";
 import { storageKey } from "@/lib/demo";
 import { markLocalChange } from "@/lib/sync-meta";
 
@@ -36,6 +37,16 @@ export type SavedPreferences = {
   bufferMinutes?: number;
 };
 
+// The Gen Ed requirements a student still needs, as picked in the Gen Ed finder: the categories, how many
+// courses each when that is two, what they have taken toward Diversity (when they said), and whether the
+// "fewest courses" sets were showing. Not tied to a term.
+export type SavedGenEd = {
+  codes: string[];
+  counts: Record<string, number>;
+  diversity?: "none" | "DVUP" | "DVCC";
+  optimizing?: boolean;
+};
+
 export type SavedState = {
   language?: "en" | "zh";
   term?: string;
@@ -46,6 +57,7 @@ export type SavedState = {
   otherPlans?: Record<string, SavedPlanCourse[]>;
   showingB?: Record<string, true>;
   preferences?: SavedPreferences;
+  genEd?: SavedGenEd;
 };
 
 const strings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
@@ -93,6 +105,17 @@ function preferences(value: unknown): SavedPreferences | undefined {
   };
 }
 
+function genEd(value: unknown): SavedGenEd | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  const codes = [...new Set(strings(record.codes).filter((code) => GEN_ED_CATEGORIES.some((item) => item.code === code)))];
+  if (!codes.length) return undefined;
+  const rawCounts = record.counts && typeof record.counts === "object" ? record.counts as Record<string, unknown> : {};
+  const counts = Object.fromEntries(codes.filter((code) => rawCounts[code] === 2).map((code) => [code, 2]));
+  const diversity = record.diversity === "none" || record.diversity === "DVUP" || record.diversity === "DVCC" ? record.diversity : undefined;
+  return { codes, counts, ...(diversity ? { diversity } : {}), ...(record.optimizing === true ? { optimizing: true } : {}) };
+}
+
 // Checks every field of a stored (or transferred) state; anything unusable is dropped.
 export function parseSavedState(value: unknown): SavedState {
   if (!value || typeof value !== "object") return { plans: {} };
@@ -109,6 +132,7 @@ export function parseSavedState(value: unknown): SavedState {
   const showingB = parsed.showingB && typeof parsed.showingB === "object"
     ? Object.fromEntries(Object.entries(parsed.showingB as Record<string, unknown>).filter(([term, value]) => /^\d{6}$/.test(term) && value === true).map(([term]) => [term, true as const]))
     : {};
+  const savedGenEd = genEd(parsed.genEd);
   return {
     language: parsed.language === "zh" || parsed.language === "en" ? parsed.language : undefined,
     term: typeof parsed.term === "string" && /^\d{6}$/.test(parsed.term) ? parsed.term : undefined,
@@ -116,6 +140,7 @@ export function parseSavedState(value: unknown): SavedState {
     otherPlans: byTerm(parsed.otherPlans),
     showingB,
     preferences: preferences(parsed.preferences),
+    ...(savedGenEd ? { genEd: savedGenEd } : {}),
   };
 }
 

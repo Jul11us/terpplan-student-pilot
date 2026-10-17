@@ -180,6 +180,69 @@ export function crossListGroups(courses: Listing[]): Map<string, string> {
   return new Map(courses.map((course) => [course.course_id, find(course.course_id)]));
 }
 
+// Courses that can take one pick's place in a set ("swap this course"): they fill every need that pick fills,
+// are none of the set's other classes (nor credited only once with one), and fit alongside the rest of the set.
+// One listing per class, best score first, each with the section it would be taken in.
+export function replacementsFor(plan: GenEdPlan, index: number, candidates: PlanCandidate[]) {
+  const target = plan.picks[index];
+  const byId = new Map(candidates.map((course) => [course.id, course]));
+  const rest = plan.picks.filter((_, at) => at !== index).map((pick) => byId.get(pick.id));
+  if (!target || rest.some((course) => !course)) return [];
+  const others = rest as PlanCandidate[];
+  // The pick's own class (under any of its numbers) is not a replacement for it.
+  const current = byId.get(target.id);
+  const found = new Map<string, { course: PlanCandidate; section: number }>();
+  for (const course of [...candidates].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))) {
+    if (course.inPlan || course.id === target.id || (current && classKey(course) === classKey(current)) || found.has(classKey(course))) continue;
+    if (!fillOptions(course.groups, target.needs).some((option) => option.length === target.needs.length)) continue;
+    if (!others.every((other) => apart(other, course))) continue;
+    const sections = fitSections([...others, course]);
+    if (sections) found.set(classKey(course), { course, section: sections[sections.length - 1]! });
+  }
+  return [...found.values()];
+}
+
+// The set with one pick replaced by a course from replacementsFor: the same needs (shown as the new course's
+// own codes), every section checked again, and the need lines pointing at the new course.
+export function replacePick(plan: GenEdPlan, index: number, course: PlanCandidate, candidates: PlanCandidate[]): GenEdPlan {
+  const byId = new Map(candidates.map((item) => [item.id, item]));
+  const old = plan.picks[index]!;
+  const chosen = plan.picks.map((pick, at) => at === index ? course : byId.get(pick.id)!);
+  const sections = fitSections(chosen);
+  const picks = plan.picks.map((pick, at) => {
+    const next: GenEdPick = at === index ? { id: course.id, needs: old.needs, covers: old.needs.map((need) => shownCode(need, course.groups)) } : { id: pick.id, needs: pick.needs, covers: pick.covers };
+    return sections ? { ...next, section: sections[at] } : next;
+  });
+  return {
+    picks,
+    score: chosen.reduce((total, item) => total + item.score, 0),
+    lines: plan.lines.map((line) => line.id === old.id && !line.fromPlan ? { ...line, id: course.id } : line),
+  };
+}
+
+// Restore all of a student's swaps together. A later swap can rely on an earlier one having moved out of
+// its time slot, so checking each swap against the original set can reject a valid final set.
+// Null means the saved set no longer fits the current filters, categories or available sections.
+export function applyPickSwaps(plan: GenEdPlan, swaps: Record<number, string>, candidates: PlanCandidate[]): GenEdPlan | null {
+  if (!Object.keys(swaps).length) return plan;
+  const byId = new Map(candidates.map((course) => [course.id, course]));
+  const chosen: PlanCandidate[] = [];
+  for (const [at, pick] of plan.picks.entries()) {
+    const course = byId.get(swaps[at] ?? pick.id);
+    if (!course || course.inPlan || !fillOptions(course.groups, pick.needs).some((option) => option.length === pick.needs.length)
+      || !chosen.every((other) => apart(other, course))) return null;
+    chosen.push(course);
+  }
+  const sections = fitSections(chosen);
+  if (!sections) return null;
+  const replacements = new Map(plan.picks.map((pick, at) => [pick.id, chosen[at]!.id]));
+  return {
+    picks: plan.picks.map((pick, at) => ({ id: chosen[at]!.id, needs: pick.needs, covers: pick.needs.map((need) => shownCode(need, chosen[at]!.groups)), section: sections[at] })),
+    score: chosen.reduce((total, course) => total + course.score, 0),
+    lines: plan.lines.map((line) => !line.fromPlan && line.id ? { ...line, id: replacements.get(line.id) ?? line.id } : line),
+  };
+}
+
 export function planGenEds(needs: GenEdNeeds, candidates: PlanCandidate[], maxPlans = 3): GenEdPlanResult {
   const slots = needSlots(needs);
   const order = Object.keys(slots);

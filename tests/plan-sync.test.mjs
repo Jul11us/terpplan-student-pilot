@@ -80,3 +80,25 @@ test("the question shows the term's courses and how many commitments each copy h
   // "Sign out and clear" removes every key that holds the student's own planner data.
   for (const key of ["terpplan:v1", "terpplan:taken", "terpplan:registration-time", "terpplan:registration-day", "terpplan:my-week", "terpplan:sync-meta"]) assert.ok(PERSONAL_KEYS.includes(key), key);
 });
+
+test("the Gen Ed needs picked in the finder travel with the account, and bad values are dropped", () => {
+  const withGenEd = (genEd) => parseSyncState({ ...plan("MATH141"), saved: { ...plan("MATH141").saved, genEd } }).saved.genEd;
+  assert.deepEqual(withGenEd({ codes: ["SCIS", "DVUP", "DVCC"], counts: { SCIS: 2 }, diversity: "none", optimizing: true }),
+    { codes: ["SCIS", "DVUP", "DVCC"], counts: { SCIS: 2 }, diversity: "none", optimizing: true });
+  assert.deepEqual(withGenEd({ codes: ["XXXX", "DSHU", "DSHU"], counts: { DSHU: 3, XXXX: 2 }, diversity: "maybe" }), { codes: ["DSHU"], counts: {} });
+  assert.equal(withGenEd({ codes: [] }), undefined);
+  assert.equal(withGenEd(undefined), undefined);
+  assert.equal("genEd" in state("MATH141").saved, false, "nothing saved, nothing added");
+});
+
+test("Gen Ed needs sync before any course is added, and are not silently replaced by the account", () => {
+  const local = parseSyncState({ saved: { plans: {}, genEd: { codes: ["SCIS"], counts: { SCIS: 2 }, optimizing: true } } });
+  assert.equal(syncStateEmpty(local), false);
+  assert.equal(decideSync({ local, server: null, lastSynced: null, localChanged: true }), "askUpload", "ask before saving a new device's needs to an empty account");
+  assert.equal(decideSync({ local, server: null, lastSynced: "2026-10-01T10:00:00.000Z", localChanged: true }), "upload", "upload changes to the same account even without plan courses");
+  const server = { state: state("CMSC132"), updatedAt: "2026-10-08T12:00:00.000Z" };
+  assert.equal(decideSync({ local, server, lastSynced: null, localChanged: true }), "conflict", "preserve the choice when the account has a different copy");
+  const empty = parseSyncState({ saved: { plans: {}, genEd: { codes: [] } } });
+  assert.equal(syncStateEmpty(empty), true);
+  assert.equal(decideSync({ local: empty, server: null, lastSynced: null, localChanged: true }), "inSync", "a cleared selection stays empty");
+});

@@ -34,6 +34,7 @@ export function parseSyncState(value: unknown): SyncState | null {
 export function syncStateEmpty(state: SyncState) {
   return !Object.values(state.saved.plans).some((courses) => courses.length)
     && !Object.values(state.saved.otherPlans ?? {}).some((courses) => courses.length)
+    && !(state.saved.genEd?.codes.length)
     && !state.taken && !(state.saved.preferences?.busyBlocks?.length);
 }
 
