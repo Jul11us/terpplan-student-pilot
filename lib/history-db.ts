@@ -20,40 +20,47 @@ import hardCourseData from "@/data/hard-courses.json";
 
 const HISTORY_WINDOW_DAYS = 14;
 const POPULAR_LIMIT = 20;
+const SNAPSHOT_EVERY_MS = 30 * 60 * 1000;
+// D1 takes at most 100 bound values in one statement.
+const IDS_PER_QUERY = 90;
 
-/**
- * Record a seat snapshot for historical tracking
- */
-export async function recordSeatSnapshot(
-  term: string,
-  sectionId: string,
-  courseId: string,
-  seats: number,
-  openSeats: number,
-  waitlist: number,
-) {
+// One real observation per section per half hour, even if a page is repeatedly refreshed. The sections
+// already observed in that time are found in one query and the rest are written in one batch, so a course
+// with 90 sections costs two round trips to the database rather than 90.
+async function recordSeatSnapshots(term: string, courseId: string, sections: UmdSection[], now: Date) {
+  const readings = sections.flatMap((section) => {
+    const seats = parseCount(section.seats), open = parseCount(section.open_seats);
+    return section.section_id && seats !== null && open !== null ? [{ sectionId: section.section_id, seats, open, waitlist: parseCount(section.waitlist) ?? 0 }] : [];
+  });
+  if (!readings.length) return;
   const db = getDb();
-  const checkedAt = new Date().toISOString();
-  const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-  // One real observation per half hour, even if a page is repeatedly refreshed.
-  await db.run(sql`INSERT INTO seat_history (term, section_id, course_id, seats, open_seats, waitlist, checked_at)
-    SELECT ${term}, ${sectionId}, ${courseId}, ${seats}, ${openSeats}, ${waitlist}, ${checkedAt}
-    WHERE NOT EXISTS (SELECT 1 FROM seat_history WHERE term = ${term} AND section_id = ${sectionId} AND checked_at >= ${cutoff})`);
+  const checkedAt = now.toISOString();
+  const cutoff = new Date(now.getTime() - SNAPSHOT_EVERY_MS).toISOString();
+  const chunks = Array.from({ length: Math.ceil(readings.length / IDS_PER_QUERY) }, (_, index) => readings.slice(index * IDS_PER_QUERY, (index + 1) * IDS_PER_QUERY));
+  const found = await Promise.all(chunks.map((chunk) => db.all<{ section_id: string }>(sql`SELECT DISTINCT section_id FROM seat_history
+    WHERE term = ${term} AND checked_at >= ${cutoff} AND section_id IN (${sql.join(chunk.map((reading) => sql`${reading.sectionId}`), sql`, `)})`)));
+  const recent = new Set(found.flat().map((row) => row.section_id));
+  const due = readings.filter((reading) => !recent.has(reading.sectionId));
+  if (!due.length) return;
+  // Drizzle cannot batch raw SQL with values, so the batch goes to D1 itself. Each insert checks again, so
+  // two requests at the same moment still store one observation.
+  const insert = db.$client.prepare(`INSERT INTO seat_history (term, section_id, course_id, seats, open_seats, waitlist, checked_at)
+    SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE NOT EXISTS (SELECT 1 FROM seat_history WHERE term = ?1 AND section_id = ?2 AND checked_at >= ?8)`);
+  await db.$client.batch(due.map((reading) => insert.bind(term, reading.sectionId, courseId, reading.seats, reading.open, reading.waitlist, checkedAt, cutoff)));
 }
 
-export async function recordCourseHistory(term: string, courseId: string, sections: UmdSection[]) {
+// The course's totals (when every section's capacity is known) and its sections' seats, written side by side.
+export async function recordCourseHistory(term: string, courseId: string, sections: UmdSection[], now = new Date()) {
   if (!sections.length) return;
-  const capacities = sections.map((section) => parseCount(section.seats));
-  if (capacities.every((count) => count !== null)) {
+  const totals = async () => {
+    if (sections.some((section) => parseCount(section.seats) === null)) return;
     const summary = summarizeSections(sections);
-    await recordCourseOffering(courseId, term, summary.sectionCount, summary.totalSeats, summary.openSeats, summary.fullSections);
-    if (termStatus(term) !== "past") await recordCourseSeatReading(term, courseId, summary);
-  }
-  for (const section of sections) {
-    const seats = parseCount(section.seats), open = parseCount(section.open_seats);
-    if (!section.section_id || seats === null || open === null) continue;
-    await recordSeatSnapshot(term, section.section_id, courseId, seats, open, parseCount(section.waitlist) ?? 0);
-  }
+    await Promise.all([
+      recordCourseOffering(courseId, term, summary.sectionCount, summary.totalSeats, summary.openSeats, summary.fullSections),
+      termStatus(term) !== "past" ? recordCourseSeatReading(term, courseId, summary, now) : null,
+    ]);
+  };
+  await Promise.all([totals(), recordSeatSnapshots(term, courseId, sections, now)]);
 }
 
 export async function syncPlanActivity(term: string, courseIds: string[], userHash: string, withdraw = false) {
@@ -417,6 +424,12 @@ export async function getPopularCourses(term: string, limit = POPULAR_LIMIT): Pr
       trendDirection,
     };
   });
+}
+
+// How many browsers share a plan for the term right now.
+export async function countSharers(term: string) {
+  const [row] = await getDb().all<{ n: number }>(sql`SELECT COUNT(DISTINCT user_hash) AS n FROM plan_activity WHERE term = ${term} AND removed_at IS NULL`);
+  return Number(row?.n ?? 0);
 }
 
 /**

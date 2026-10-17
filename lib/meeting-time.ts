@@ -15,8 +15,23 @@ export function isOnlineOnly(meetings: MeetingTime[]) {
 
 const DAY_TOKENS: Array<[string, string]> = [["TH", "Thu"], ["TU", "Tue"], ["SA", "Sat"], ["SU", "Sun"], ["M", "Mon"], ["W", "Wed"], ["F", "Fri"], ["T", "Tue"]];
 
+// Schedules repeat the same few day and time strings, so each is parsed once.
+const parsedDays = new Map<string, string[]>();
+const parsedMinutes = new Map<string, number | null>();
+
 export function meetingDays(raw: string | null | undefined) {
-  if (!raw || /^(TBA|TBD|ARRANGED)$/i.test(raw.trim())) return [] as string[];
+  if (!raw) return [] as string[];
+  let days = parsedDays.get(raw);
+  if (!days) {
+    if (parsedDays.size > 2000) parsedDays.clear();
+    days = parseDays(raw);
+    parsedDays.set(raw, days);
+  }
+  return [...days];
+}
+
+function parseDays(raw: string) {
+  if (/^(TBA|TBD|ARRANGED)$/i.test(raw.trim())) return [] as string[];
   const text = raw.toUpperCase().replace(/[^A-Z]/g, "");
   const found: string[] = [];
   for (let index = 0; index < text.length;) {
@@ -27,7 +42,18 @@ export function meetingDays(raw: string | null | undefined) {
 }
 
 export function meetingMinutes(raw: string | null | undefined): number | null {
-  if (!raw || /tba|tbd/i.test(raw)) return null;
+  if (!raw) return null;
+  let value = parsedMinutes.get(raw);
+  if (value === undefined) {
+    if (parsedMinutes.size > 2000) parsedMinutes.clear();
+    value = parseMinutes(raw);
+    parsedMinutes.set(raw, value);
+  }
+  return value;
+}
+
+function parseMinutes(raw: string): number | null {
+  if (/tba|tbd/i.test(raw)) return null;
   const match = raw.trim().match(/^(\d{1,2}):(\d{2})\s*([ap]m)?$/i);
   if (!match) return null;
   let hour = Number(match[1]);

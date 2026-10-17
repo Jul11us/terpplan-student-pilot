@@ -204,10 +204,10 @@ export default function Home() {
     <header className="border-b border-[#dedbd3] bg-[#fbfaf8]"><div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4 sm:px-8">
       <Link href="/" className="flex items-center gap-3 font-semibold tracking-tight"><span className="grid h-9 w-9 place-items-center rounded-xl bg-[#bd302f] font-serif text-lg text-white">T</span>TerpPlan</Link>
       <nav aria-label={language === "en" ? "Tools" : "工具"} className="order-last flex w-full items-center gap-4 overflow-x-auto text-xs font-medium text-[#48534f] sm:order-none sm:w-auto">
-        <Link href="/audit" className="whitespace-nowrap hover:text-[#a34a39]">{t.nav.audit}</Link>
-        <Link href="/minor" className="whitespace-nowrap hover:text-[#a34a39]">{t.nav.minor}</Link>
-        <Link href="/hard-courses" className="whitespace-nowrap hover:text-[#a34a39]">{t.nav.hard}</Link>
-        <Link href="/rooms" className="whitespace-nowrap hover:text-[#a34a39]">{t.nav.rooms}</Link>
+        <Link href="/audit" className="inline-flex min-h-6 items-center whitespace-nowrap hover:text-[#a34a39]">{t.nav.audit}</Link>
+        <Link href="/minor" className="inline-flex min-h-6 items-center whitespace-nowrap hover:text-[#a34a39]">{t.nav.minor}</Link>
+        <Link href="/hard-courses" className="inline-flex min-h-6 items-center whitespace-nowrap hover:text-[#a34a39]">{t.nav.hard}</Link>
+        <Link href="/rooms" className="inline-flex min-h-6 items-center whitespace-nowrap hover:text-[#a34a39]">{t.nav.rooms}</Link>
       </nav>
       <div className="flex items-center gap-2">
         {registration && <Link href="/register" className="whitespace-nowrap rounded-lg border border-[#cddbd1] bg-[#edf3ef] px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#e2ece6]">📋 {t.registrationDay}</Link>}

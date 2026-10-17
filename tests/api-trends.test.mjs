@@ -72,6 +72,36 @@ test("real migrated tables store observations once per half hour and keep unknow
   assert.equal(history.terms[0].sectionCount, 1);
 });
 
+test("a course with many sections is recorded in a few round trips, and again only after half an hour", async () => {
+  // Count the calls that reach the database: a batch is one, the statements inside it are not.
+  let roundTrips = 0;
+  const batched = new WeakSet();
+  const counted = (statement) => {
+    const wrapped = {
+      bind(...values) { assert.ok(values.length <= 100, "D1 takes at most 100 values per statement"); return counted(statement.bind(...values)); },
+      async first(column) { if (!batched.has(wrapped)) roundTrips += 1; return statement.first(column); },
+      async all() { if (!batched.has(wrapped)) roundTrips += 1; return statement.all(); },
+      async raw() { if (!batched.has(wrapped)) roundTrips += 1; return statement.raw(); },
+      async run() { if (!batched.has(wrapped)) roundTrips += 1; return statement.run(); },
+    };
+    return wrapped;
+  };
+  globalThis.__trendTestDb = { ...database, prepare: (query) => counted(database.prepare(query)), batch(statements) { roundTrips += 1; for (const statement of statements) batched.add(statement); return database.batch(statements); } };
+  const sections = Array.from({ length: 92 }, (_, index) => ({ section_id: `ENGL101-${String(index + 1).padStart(4, "0")}`, seats: 19, open_seats: index % 3, waitlist: 0 }));
+  const snapshots = () => database.sqlite.prepare("SELECT count(*) AS n FROM seat_history WHERE course_id = 'ENGL101'").get().n;
+  const start = new Date("2026-11-02T14:00:00Z");
+  await recordCourseHistory("202701", "ENGL101", sections, start);
+  assert.equal(snapshots(), 92);
+  assert.ok(roundTrips <= 8, `${roundTrips} round trips (it used to be one per section)`);
+  roundTrips = 0;
+  await recordCourseHistory("202701", "ENGL101", sections, new Date(start.getTime() + 10 * 60_000));
+  assert.equal(snapshots(), 92, "nothing new within half an hour");
+  assert.ok(roundTrips <= 4, `${roundTrips} round trips for a repeat view`);
+  await recordCourseHistory("202701", "ENGL101", sections.slice(0, 50), new Date(start.getTime() + 31 * 60_000));
+  assert.equal(snapshots(), 142, "half an hour on, each section is observed again");
+  assert.equal(database.sqlite.prepare("SELECT count(*) AS n FROM course_seat_history WHERE course_id = 'ENGL101'").get().n, 2);
+});
+
 test("offering history reads earlier fall and spring terms once, keeping 'not offered' and retrying failures", async () => {
   await recordCourseHistory("202701", "CMSC131", [{ section_id: "CMSC131-0101", seats: 20, open_seats: 8, waitlist: 0 }]);
   const history = await (await offerings(request("offerings", { id: "CMSC131", lang: "en" }))).json();
@@ -168,15 +198,21 @@ test("sharing counts deduplicate, preserve active plans, and withdraw across all
   assert.equal(database.sqlite.prepare("SELECT count(*) AS n FROM plan_activity").get().n, 2);
   assert.equal(database.sqlite.prepare("SELECT added_at FROM plan_activity WHERE course_id = 'CMSC131'").get().added_at, first);
   await activity(shared({ ...body, courseIds: ["CMSC131"] }));
+  // One person's plan is not a ranking: the list waits for five people, and a course for two plans.
+  const early = await (await popular(request("popular", { term: "202701", limit: "20" }))).json();
+  assert.deepEqual([early.courses, early.sharers], [[], 1]);
+  const others = ["22222222-2222-4222-8222-222222222222", "33333333-3333-4333-8333-333333333333", "44444444-4444-4444-8444-444444444444", "55555555-5555-4555-8555-555555555555"];
+  for (const [index, other] of others.entries()) await activity(shared({ term: "202701", id: other, courseIds: index ? ["CMSC131"] : ["CMSC131", "MATH140"] }));
   const result = await popular(request("popular", { term: "202701", limit: "20" }));
   assert.equal(result.status, 200);
   const ranking = await result.json();
-  assert.deepEqual(ranking.courses.map((course) => course.courseId), ["CMSC131"]);
-  assert.equal(ranking.courses[0].activeCount, 1);
+  assert.equal(ranking.sharers, 5);
+  assert.deepEqual(ranking.courses.map((course) => course.courseId), ["CMSC131"], "MATH140 is in one plan only");
+  assert.equal(ranking.courses[0].activeCount, 5);
   assert.equal(ranking.courses[0].courseTitle, "Fixture course");
   await activity(shared({ ...body, term: "202608" }));
   await activity(shared({ ...body, courseIds: [], withdraw: true }));
-  assert.equal(database.sqlite.prepare("SELECT count(*) AS n FROM plan_activity").get().n, 0);
+  assert.equal(database.sqlite.prepare("SELECT count(*) AS n FROM plan_activity").get().n, 5, "only this browser's shares are withdrawn, in every term");
 });
 
 test("popular counts retain long-standing active plans and compare against the actual previous week", async () => {

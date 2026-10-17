@@ -238,7 +238,7 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
               <p className="flex flex-wrap items-center gap-x-2 text-xs text-[#646c68]">
                 {entry.distance !== null && <span className="font-semibold text-[#273c38]">{t.walk(walkMinutesFrom(entry.distance))}</span>}
                 <span>{t.counts(entry.free.length, entry.busy)}</span>
-                <a href={mapsUrl(building)} target="_blank" rel="noreferrer" className="font-medium text-[#a34a39] hover:underline">{t.map} ↗</a>
+                <a href={mapsUrl(building)} target="_blank" rel="noreferrer" className="inline-flex min-h-6 items-center font-medium text-[#a34a39] hover:underline">{t.map} ↗</a>
               </p>
             </div>
             {/* One line per room on phones; on wider screens a grid of two-line cells. 🔒 marks rooms that may be locked. */}
@@ -250,7 +250,7 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
                 <span className={`text-xs ${long ? "font-medium text-[#315c43]" : "text-[#646c68]"}`}>{status(item)}</span>
               </li>;
             })}</ul>
-            {entry.free.length > ROOMS_SHOWN && <button type="button" onClick={() => setExpanded((current) => open ? current.filter((code) => code !== entry.code) : [...current, entry.code])} className="mt-2 text-xs font-semibold text-[#273c38] hover:underline">{open ? t.fewerRooms : t.showRooms(entry.free.length)}</button>}
+            {entry.free.length > ROOMS_SHOWN && <button type="button" onClick={() => setExpanded((current) => open ? current.filter((code) => code !== entry.code) : [...current, entry.code])} className="mt-2 min-h-6 text-xs font-semibold text-[#273c38] hover:underline">{open ? t.fewerRooms : t.showRooms(entry.free.length)}</button>}
           </li>;
         })}</ul> : <p className="mt-4 rounded-xl border border-[#e0ddd5] bg-[#fbfaf8] px-4 py-3 text-sm text-[#5d6561]">{t.none}</p>}
         {list.length > buildingsShown && <button type="button" onClick={() => setBuildingsShown((value) => value + BUILDINGS_SHOWN)} className="mt-4 rounded-lg border border-[#d9d6ce] bg-white px-4 py-2 text-sm font-semibold text-[#273c38] hover:bg-[#edf3ef]">{t.moreBuildings}</button>}

@@ -23,6 +23,7 @@ import type { SeatSummary } from "@/lib/seat-summary";
 import { filterResults, filtersActive, NO_FILTERS, sortResults, type CreditFilter, type ResultFilters, type ResultSort } from "@/lib/result-filters";
 import SchedulePlanner from "@/app/components/schedule-planner";
 import SeatEmailToggle from "@/app/components/seat-email-toggle";
+import { WatchPreview } from "@/app/components/watch-preview";
 import { SEAT_CHECK_MINUTES } from "@/lib/seat-cadence";
 import SectionProfessors from "@/app/components/section-professors";
 import type { ProfessorSummary } from "@/lib/planetterp";
@@ -234,13 +235,13 @@ const DEMO_COPY = {
   en: {
     title: "You are trying a sample plan",
     body: "A sophomore's spring plan: 5 courses, a campus job Tuesday and Thursday 1–4pm, MATH140 and CMSC131 already done. Change anything; your own plan is kept aside and comes back when you leave.",
-    steps: ["Open Schedule to see ranked options", "Change a preference (no Friday classes, a longer shift) and see what changes", "Click a class in the timetable to swap sections", "See why COMM107 is worth a seat alert"],
+    steps: ["Open Schedule to see ranked options", "Change a preference (no Friday classes, a longer shift) and see what changes", "Click a class in the timetable to swap sections", "Open Watch seats to see why COMM107 is worth a seat alert"],
     schedule: "Go to Schedule", leave: "Leave sample",
   },
   zh: {
     title: "你正在试用示例课表",
     body: "一位大二学生的春季计划：5 门课，周二、周四下午 1–4 点要打工，已修 MATH140 和 CMSC131。可以随便改，你自己的课表已经单独保存好，退出示例后就会回来。",
-    steps: ["打开“排课”看排好序的方案", "改一个偏好（比如周五不上课、打工时间更长），看看结果怎么变", "点课表里的一门课换班次", "看看为什么 COMM107 值得开余位提醒"],
+    steps: ["打开“排课”看排好序的方案", "改一个偏好（比如周五不上课、打工时间更长），看看结果怎么变", "点课表里的一门课换班次", "打开“关注余位”，看看为什么 COMM107 值得开余位提醒"],
     schedule: "去排课", leave: "退出示例",
   },
 } as const;
@@ -381,6 +382,8 @@ export default function Home() {
   const [emailCode, setEmailCode] = useState("");
   // "Email me when a seat opens" on the sign-in form, ticked unless the student unticks it.
   const [alertsOptIn, setAlertsOptIn] = useState(true);
+  // Sections picked to watch while signed out, watched as soon as the student signs in.
+  const [pendingWatches, setPendingWatches] = useState<Array<{ term: string; courseId: string; sectionId: string }>>([]);
   const [codeSent, setCodeSent] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -871,6 +874,22 @@ export default function Home() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : t.error); }
   };
 
+  // A section from "Which sections to watch". Signed out, it waits until the student signs in below.
+  const watchChosen = async (courseId: string, id: string, watchTerm = term) => {
+    setError("");
+    try {
+      const response = await fetch("/api/watches", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ courseId, term: watchTerm, sectionId: id }) });
+      const payload = await response.json() as ApiError;
+      if (response.status === 401) {
+        setAuthenticated(false); setAuthProvider(null);
+        setPendingWatches((current) => current.some((item) => item.sectionId === id && item.term === watchTerm) ? current : [...current, { term: watchTerm, courseId, sectionId: id }]);
+        return;
+      }
+      if (!response.ok) throw new Error(payload.code === "watchLimit" ? t.watchLimit : payload.error || t.error);
+      setMessage("watched"); countUse("alert"); await loadWatches();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t.error); }
+  };
+
   const makeTransferLink = async () => {
     setTransferCopied(false);
     const link = window.location.origin + "/plan" + TRANSFER_PREFIX + await encodeTransfer(readSavedState(), readTaken());
@@ -941,6 +960,9 @@ export default function Home() {
       const payload = await response.json() as ApiError;
       if (!response.ok) throw new Error(payload.error || t.wrongCode);
       setAuthenticated(true); setAuthProvider("email"); setEmailCode(""); countUse("signin");
+      const waiting = pendingWatches;
+      setPendingWatches([]);
+      for (const item of waiting) await watchChosen(item.courseId, item.sectionId, item.term);
       await loadWatches();
     } catch (cause) { setError(cause instanceof Error ? cause.message : t.wrongCode); }
     finally { setAuthBusy(false); }
@@ -1027,7 +1049,7 @@ export default function Home() {
         <PlanSync active={restored && authenticated === true && !demo} language={language} onApplied={reloadAfterSync} />
         {restored && <RegistrationDayLink term={term} language={language} />}
         {opening && <OpeningCheck opening={opening} planCourseIds={opening.term === term ? planCourses.map((course) => course.courseId) : []} planFull={planCourses.length >= 10} reference={opening.term === term ? fitReference : null} language={language} onPin={pinOpening} onClose={() => setOpening(null)} />}
-        <div className="mb-5 grid gap-4 sm:mb-8 sm:gap-6 lg:grid-cols-[1fr_auto] lg:items-end"><div><p className="mb-2 text-[11px] font-semibold uppercase tracking-[.17em] text-[#a34a39] sm:mb-3">{t.eyebrow}</p><h1 className="font-serif text-3xl leading-tight tracking-[-.03em] sm:text-5xl">{t.title}</h1>{/* The step buttons below say the same thing; on a phone the room goes to the search box. */}<p className="mt-3 hidden max-w-xl text-sm leading-6 text-[#5d6561] sm:block">{t.subtitle}</p>{restored && !demo && !planCourses.length && <button type="button" onClick={enterDemo} className="mt-2 block text-left text-xs font-semibold text-[#a34a39] hover:underline">{language === "en" ? "First time here? Try a sample schedule →" : "第一次来？先试试示例课表 →"}</button>}</div>
+        <div className="mb-5 grid gap-4 sm:mb-8 sm:gap-6 lg:grid-cols-[1fr_auto] lg:items-end"><div><p className="mb-2 text-[11px] font-semibold uppercase tracking-[.17em] text-[#a34a39] sm:mb-3">{t.eyebrow}</p><h1 className="font-serif text-3xl leading-tight tracking-[-.03em] sm:text-5xl">{t.title}</h1>{/* The step buttons below say the same thing; on a phone the room goes to the search box. */}<p className="mt-3 hidden max-w-xl text-sm leading-6 text-[#5d6561] sm:block">{t.subtitle}</p>{restored && !demo && !planCourses.length && <button type="button" onClick={enterDemo} className="mt-2 flex min-h-6 items-center text-left text-xs font-semibold text-[#a34a39] hover:underline">{language === "en" ? "First time here? Try a sample schedule →" : "第一次来？先试试示例课表 →"}</button>}</div>
           <nav aria-label="Planning steps" className="grid grid-cols-3 gap-1 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-1.5 sm:flex sm:flex-wrap sm:gap-2 sm:p-2">{(["find", "schedule", "watch"] as const).map((item, index) => <button key={item} onClick={() => setStep(item)} aria-current={step === item ? "step" : undefined} className={`flex items-center justify-center gap-2 rounded-xl px-1.5 py-2 text-xs transition sm:justify-start sm:px-3 sm:text-sm ${step === item ? "bg-[#273c38] text-white" : "text-[#5d6561] hover:bg-[#eeece6]"}`}><span className="hidden h-5 w-5 place-items-center rounded-full bg-white/15 text-[10px] sm:grid">0{index + 1}</span>{t[item]}</button>)}</nav>
         </div>
 
@@ -1041,13 +1063,13 @@ export default function Home() {
             <div className="flex min-w-0 basis-full flex-wrap gap-2 sm:basis-auto sm:flex-1">
               {planCourses.length ? planCourses.map((course) => { const needs = prereqNeeds(course.courseId); const missing = Boolean(needs?.length); return <span key={course.courseId} title={`${course.courseId} · ${course.courseTitle}${missing ? " · " + t.prereqNeeds.replace("{needs}", needs!.join("; ")) : ""}`} className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${missing ? "border-[#ead8b5] bg-[#fff8e8] text-[#745424]" : "border-[#cddbd1] bg-[#edf3ef] text-[#315c43]"}`}>{missing ? "⚠ " : ""}{course.courseId}</span>; }) : <p className="text-xs text-[#646c68]">{t.noSelectedCourses}</p>}
             </div>
-            <Link href="/audit" className="basis-full text-xs font-medium text-[#a34a39] hover:underline sm:shrink-0 sm:basis-auto">{language === "en" ? "Not sure what you still need? Check your degree audit →" : "不确定还缺哪些课？查看学位审计 →"}</Link>
+            <Link href="/audit" className="inline-flex min-h-6 basis-full items-center text-xs font-medium text-[#a34a39] hover:underline sm:shrink-0 sm:basis-auto">{language === "en" ? "Not sure what you still need? Check your degree audit →" : "不确定还缺哪些课？查看学位审计 →"}</Link>
           </div>
           <div className="mt-2">{planSwitch}</div>
           {planCreditWarning && <p role="status" className="mt-2 rounded-lg bg-[#fff8e8] px-3 py-2 text-xs leading-5 text-[#745424]">⚠ {planCreditWarning}</p>}
           <div className="mt-2 border-t border-[#ece9e2] pt-2"><TestudoImport term={term} terms={terms} termName={(item, lang = language) => termLabel(item, lang)} planCount={planCourses.length} language={language} onImport={importSchedule} /></div>
           <div className="mt-2 border-t border-[#ece9e2] pt-2"><TakenCoursesEditor taken={taken} language={language} /></div>
-          <div className="mt-2 border-t border-[#ece9e2] pt-2 text-xs"><button type="button" onClick={() => void makeTransferLink()} className="font-medium text-[#a34a39] hover:underline">{t.transferButton} →</button>
+          <div className="mt-2 border-t border-[#ece9e2] pt-2 text-xs"><button type="button" onClick={() => void makeTransferLink()} className="min-h-6 font-medium text-[#a34a39] hover:underline">{t.transferButton} →</button>
             {transferLink && <div className="mt-2"><p className="text-[#48534f]">{transferCopied ? "✓ " + t.transferCopied : t.transferReady}</p><input readOnly value={transferLink} onFocus={(event) => event.target.select()} aria-label={t.transferButton} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-xs text-[#273c38]" /><p className="mt-1 text-[11px] leading-5 text-[#646c68]">{t.transferPrivacy}</p></div>}
           </div>
         </section>}
@@ -1069,7 +1091,7 @@ export default function Home() {
             <div hidden={findMode !== "gened"}><GenEdFinder key={restored ? "restored" : "loading"} takenCodes={takenCodes} initialSelection={genEdSelection} onSelectionChange={rememberGenEd} fromAudit={sameGenEd(genEdSelection, auditGenEd)} preferences={schedulePrefs} planCredits={planCreditTotal.pending.length ? null : planCreditTotal.min} onAddCourse={(course) => quickAdd(course)} term={term} language={language} reference={referenceSchedule?.planKey === planKey(planCourses, term) ? referenceSchedule : null} referenceStale={referenceSchedule?.term === term && referenceSchedule.planKey !== planKey(planCourses, term)} planCourseIds={planCourses.map((course) => course.courseId)} onOpenCourse={(course) => void openCourse(course)} /></div>
             {findMode === "search" && <>
             <label id="course-search" className="block scroll-mt-6"><span className="sr-only">{t.search}</span><div className="flex items-center gap-3 rounded-xl border border-[#d9d6ce] bg-white px-4 py-3 focus-within:border-[#a34a39] focus-within:ring-2 focus-within:ring-[#a34a39]/30"><span aria-hidden="true" className="text-lg text-[#646c68]">⌕</span><input value={query} onChange={(event) => changeSearchQuery(event.target.value)} aria-label={t.search} placeholder={searchPlaceholder} className="w-full bg-transparent text-sm outline-none placeholder:text-[#646c68]" /><kbd title={language === "en" ? "Press / to search" : "按 / 快速搜索"} className="hidden rounded border border-[#dedbd3] px-1.5 text-[11px] text-[#646c68] sm:inline">/</kbd></div></label>
-            {!query && <Link href="/hard-courses" className="mt-2 inline-block text-xs font-medium text-[#a34a39] hover:underline">{language === "en" ? "See the courses that fill up every semester →" : "看看往年最难抢的课 →"}</Link>}
+            {!query && <Link href="/hard-courses" className="mt-2 inline-flex min-h-6 items-center text-xs font-medium text-[#a34a39] hover:underline">{language === "en" ? "See the courses that fill up every semester →" : "看看往年最难抢的课 →"}</Link>}
             {!query && <p className="mt-1 text-[11px] text-[#646c68]">{t.instructorTip}</p>}
             {instructorResults.length > 0 && <div className="mt-3 rounded-xl border border-[#e0ddd5] bg-white px-3 py-2">
               <p className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#9a5040]">{t.instructorsLabel}</p>
@@ -1210,6 +1232,12 @@ export default function Home() {
         {restored && <div hidden={step !== "schedule"}><SchedulePlanner onChosenChange={rememberSchedule} onPreferencesChange={rememberPrefs} courses={planCourses} prereqNeeds={Object.fromEntries(planCourses.map((course) => [course.courseId, prereqNeeds(course.courseId) ?? []]))} takenEditor={<TakenCoursesEditor taken={taken} language={language} />} creditsLabel={planCreditLabel} creditWarning={planCreditWarning} creditMeter={planCreditMeter} planSwitch={planSwitch} term={term} termName={termLabel(term, "en")} language={language} onUpdateCourse={(courseId, patch) => setPlanCourses((current) => current.map((course) => course.courseId === courseId ? { ...course, ...patch } : course))} onRemove={(courseId) => setPlanCourses((current) => current.filter((course) => course.courseId !== courseId))} onRestoreCourse={(course, index) => setPlanCourses((current) => current.some((item) => item.courseId === course.courseId) ? current : [...current.slice(0, index), course, ...current.slice(index)])} onBack={() => setStep("find")} /></div>}
 
         {step === "watch" && <section className="mx-auto max-w-4xl rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-8"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">03 · {t.watch}</p><h2 className="mt-2 font-serif text-3xl">{t.watchesTitle}</h2><p className="mt-2 max-w-xl text-xs leading-5 text-[#5d6561]">{t.watchCadence}</p></div><button onClick={() => void refreshWatches()} disabled={checking || !watches.length} className="rounded-lg bg-[#273c38] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{checking ? t.checking : t.refresh}</button></div>
+          {/* The plan's courses, how full they got in past semesters, and the chosen sections to watch, before signing in too. */}
+          {planCourses.length > 0 && <WatchPreview term={term} language={language} courses={planCourses.map((course) => ({ courseId: course.courseId, courseTitle: course.courseTitle }))}
+            chosen={Object.fromEntries((fitReference?.sectionIds ?? []).map((id) => [id.slice(0, id.lastIndexOf("-")), id]))}
+            watchedIds={new Set(watches.filter((watch) => watch.term === term).map((watch) => watch.sectionId))}
+            pendingIds={pendingWatches.filter((item) => item.term === term).map((item) => item.sectionId)}
+            onWatch={(courseId, id) => void watchChosen(courseId, id)} />}
           {authenticated === false && <div className="mt-6 rounded-xl border border-[#e3dfd6] bg-white p-5"><p className="text-sm font-medium">{t.signIn}</p><label className="mt-4 grid gap-1.5 text-xs font-medium text-[#5d6561]">{t.email}<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm text-[#202728] outline-none focus:border-[#a34a39] focus:ring-2 focus:ring-[#a34a39]/30" /></label>{codeSent && <label className="mt-3 grid gap-1.5 text-xs font-medium text-[#5d6561]">{t.emailCode}<input type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={emailCode} onChange={(event) => setEmailCode(event.target.value.replace(/\D/g, "").slice(0, 6))} className="rounded-lg border border-[#dedbd3] bg-white px-3 py-2.5 text-sm tracking-[.2em] text-[#202728] outline-none focus:border-[#a34a39] focus:ring-2 focus:ring-[#a34a39]/30" /></label>}<label className="mt-3 flex items-start gap-2.5 rounded-lg bg-[#f6f4ef] px-3 py-2.5 text-xs leading-5 text-[#48534f]"><input type="checkbox" checked={alertsOptIn} onChange={(event) => setAlertsOptIn(event.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-[#273c38]" /><span><span className="font-semibold text-[#273c38]">{t.alertsOptIn}</span><span className="block text-[11px] text-[#646c68]">{t.alertsOptInNote}</span></span></label><p className="mt-2 text-xs leading-5 text-[#646c68]">{t.emailPrivacy}</p><div className="mt-4 flex flex-wrap gap-2">{!codeSent ? <button onClick={() => void requestEmailCode()} disabled={authBusy || !email.trim()} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.sendCode}</button> : <><button onClick={() => void verifyEmailCode()} disabled={authBusy || emailCode.length !== 6} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{authBusy ? t.loading : t.verifyCode}</button><button onClick={() => void requestEmailCode()} disabled={authBusy || resendWait > 0} className="rounded-lg border border-[#dedbd3] px-4 py-2.5 text-sm font-medium text-[#5d6561] disabled:opacity-50">{resendWait > 0 ? t.resendIn.replace("{s}", String(resendWait)) : t.resendCode}</button></>}</div>{codeSent && <p className="mt-2 text-xs leading-5 text-[#745424]">{t.codeSpam}</p>}</div>}
           {authenticated === true && authProvider === "email" && <div className="mt-6 flex items-center justify-between rounded-xl border border-[#e3dfd6] bg-white px-4 py-3"><span className="text-xs text-[#5d6561]">{t.emailSignedIn}<span className="mt-0.5 block text-[11px] text-[#646c68]">{t.syncNote} <button type="button" onClick={() => void deleteSynced()} className="font-medium text-[#8b5148] underline underline-offset-2">{t.syncDelete}</button></span></span><span className="flex shrink-0 flex-col items-end gap-1"><button onClick={() => void signOutEmail()} className="text-xs font-medium text-[#8b5148] hover:underline">{t.signOut}</button><button type="button" onClick={() => void signOutAndClear()} className="text-[11px] text-[#646c68] hover:underline">{t.signOutClear}</button></span></div>}
           {authenticated === true && authProvider === "email" && <SeatEmailToggle language={language} defaultEmail={email} watchCount={watches.length} />}

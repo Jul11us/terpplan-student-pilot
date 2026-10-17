@@ -2,6 +2,7 @@ import { areaFor, buildingFor, longWalkMinutes, sectionAreas, tightWalks, weekly
 import { isAsyncOnline } from "@/lib/meeting-time";
 import { isInstructorTba, normalizeProfessorName, type ProfessorSummary } from "@/lib/planetterp";
 import { normalizeBusyBlocks, validBuffer, type BusyBlock } from "@/lib/personal-schedule";
+import { shownScore } from "@/lib/score-display";
 
 export type PlanMeeting = {
   days?: string | null;
@@ -149,8 +150,10 @@ export const REPAIR_COST: Record<PlanRepair["kind"], number> = {
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 const MAX_NODES = 160_000;
 const MAX_OPTIONS = 3;
-// Keep a wider pool while searching so the final picks can differ in more than a discussion slot.
-const CANDIDATE_POOL = 60;
+// The best schedules kept while searching, for the final picks to choose from, at most PER_MIX of them with
+// one set of instructors: enough for three sets, so the picks can differ in more than a discussion slot.
+const CANDIDATE_POOL = 12;
+const PER_MIX = 4;
 // A full section cannot be registered for, so it should only win when nothing open fits.
 const FULL_SECTION_PENALTY = 2.5;
 // Back-to-back classes whose buildings are further apart than the gap allows (estimated walk, see campus-walk).
@@ -190,8 +193,23 @@ export function sectionId(section: PlanSection, courseId: string) {
   return String(section.section_id || (section.number ? courseId + "-" + section.number : "")).trim().toUpperCase();
 }
 
+// The search reads the same few day and time strings many thousands of times, so each is parsed once.
+const parsedDays = new Map<string, string[]>();
+const parsedMinutes = new Map<string, number | null>();
+
 export function dayNames(raw: string | null | undefined) {
-  if (!raw || /^(TBA|TBD|ARRANGED)$/i.test(raw.trim())) return [] as string[];
+  if (!raw) return [] as string[];
+  let days = parsedDays.get(raw);
+  if (!days) {
+    if (parsedDays.size > 2000) parsedDays.clear();
+    days = parseDayNames(raw);
+    parsedDays.set(raw, days);
+  }
+  return [...days];
+}
+
+function parseDayNames(raw: string) {
+  if (/^(TBA|TBD|ARRANGED)$/i.test(raw.trim())) return [] as string[];
   const text = raw.toUpperCase().replace(/[^A-Z]/g, "");
   const result: string[] = [];
   for (let index = 0; index < text.length;) {
@@ -207,7 +225,18 @@ export function dayNames(raw: string | null | undefined) {
 }
 
 export function minutes(raw: string | null | undefined) {
-  if (!raw || /tba|tbd/i.test(raw)) return null;
+  if (!raw) return null;
+  let value = parsedMinutes.get(raw);
+  if (value === undefined) {
+    if (parsedMinutes.size > 2000) parsedMinutes.clear();
+    value = parseMinutes(raw);
+    parsedMinutes.set(raw, value);
+  }
+  return value;
+}
+
+function parseMinutes(raw: string) {
+  if (/tba|tbd/i.test(raw)) return null;
   const match = raw.trim().match(/^(\d{1,2}):(\d{2})\s*([ap]m)?$/i);
   if (!match) return null;
   let hour = Number(match[1]);
@@ -482,6 +511,91 @@ function formatClock(value: number) {
   return (hour % 12 || 12) + ":" + String(minute).padStart(2, "0") + suffix;
 }
 
+// A section as the search sees it, with what it needs worked out once: the meetings with a known day and
+// time ([days as bits, start, end]) for the conflict test, and the parts of the score that belong to the
+// section alone (see summarize). `own` is early classes, unknown times and ratings, time outside the
+// window and a full section, which add up across sections; rating and GPA are averaged over the schedule.
+type Choice = {
+  section: ScheduledSection;
+  index: number;
+  mix: string;
+  slots: Array<[number, number, number]>;
+  own: number;
+  rating: number | null;
+  gpa: number | null;
+  days: number;
+  full: boolean;
+};
+
+type Found = { option: ScheduleOption; full: number; shown: number; walk: number; gap: number; key: string; mix: string };
+
+// Fewer full sections first, then the score as shown; schedules that show the same score are ranked by
+// walking, then by time between classes, so the order among them is not arbitrary.
+function rankFound(a: Found, b: Found) {
+  return a.full - b.full || b.shown - a.shown || a.walk - b.walk || a.gap - b.gap || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+}
+
+const dayBits = (raw: string | null | undefined) => dayNames(raw).reduce((bits, day) => bits | (1 << DAYS.indexOf(day as (typeof DAYS)[number])), 0);
+
+function bitCount(bits: number) {
+  let count = 0;
+  for (let rest = bits; rest; rest &= rest - 1) count += 1;
+  return count;
+}
+
+function ownPoints(section: ScheduledSection, preferences: ReturnType<typeof parsePrefs>) {
+  const meetings = section.meetings ?? [];
+  let early = 0, outside = 0;
+  for (const meeting of meetings) {
+    if (!hasKnownTime(meeting)) continue;
+    const start = minutes(meeting.start_time) as number, end = minutes(meeting.end_time) as number;
+    if (preferences.earlyBefore !== null && start < preferences.earlyBefore) early += 1;
+    if (preferences.interval) outside += end - start - Math.max(0, Math.min(end, preferences.interval[1]) - Math.max(start, preferences.interval[0]));
+  }
+  const unknownTime = hasUnknownTime(section);
+  const unknown = (meetings.length ? meetings.filter((meeting) => !hasKnownTime(meeting) && !isAsyncOnline(meeting)).length : 1)
+    + section.instructorRatings.filter((rating) => !rating.matched || rating.averageRating === null).length
+    + (preferences.interval && unknownTime ? 1 : 0);
+  return (preferences.earlyBefore !== null ? -0.7 * early : 0) - 0.35 * unknown
+    - (preferences.interval ? 0.05 * (outside + 90 * Number(unknownTime)) : 0) - (isFull(section) ? FULL_SECTION_PENALTY : 0);
+}
+
+// Sections of a course that differ only in room or section number (same instructors, same days, times and
+// buildings, all open or all full) score and conflict alike, so the search tries one of them: the one with
+// the most open seats.
+function distinctSections(sections: ScheduledSection[]) {
+  const kept = new Map<string, ScheduledSection>();
+  for (const section of sections) {
+    const key = JSON.stringify([
+      (section.instructors ?? []).map(normalizeProfessorName).sort(),
+      isFull(section),
+      (section.meetings ?? []).map((meeting) => [meeting.days ?? "", meeting.start_time ?? "", meeting.end_time ?? "", (meeting.building ?? "").trim().toUpperCase(), meeting.classtype ?? "", isAsyncOnline(meeting)].join("|")).sort(),
+    ]);
+    const other = kept.get(key);
+    if (!other || (openSeatCount(section) ?? -1) > (openSeatCount(other) ?? -1)) kept.set(key, section);
+  }
+  return [...kept.values()];
+}
+
+// The highest average of the values chosen so far and one value from each group still to choose. A group
+// whose every section has a value must add one (its highest at best); a group with a section without a
+// value may add nothing, so its highest is added only while it raises the average. Null: no value at all.
+type AverageRest = { sum: number; count: number; optional: number[] };
+
+function bestAverage(sum: number, count: number, rest: AverageRest) {
+  let total = sum + rest.sum, counted = count + rest.count;
+  for (const value of rest.optional) {
+    if (counted && value <= total / counted) break;
+    total += value;
+    counted += 1;
+  }
+  return counted ? total / counted : null;
+}
+
+// With nothing rated (or no GPA) chosen yet and no course still to choose that must add one, the schedule
+// may end up with none at all, which counts as 0.
+const mayHaveNone = (count: number, rest: AverageRest) => count === 0 && rest.count === 0;
+
 function searchOptions(
   courses: PlanCourse[],
   ratings: Record<string, ProfessorSummary>,
@@ -489,7 +603,7 @@ function searchOptions(
 ): PlannerResult {
   const warnings: PlanWarning[] = [];
   const parsed = parsePrefs(preferences);
-  const groups = courses.map((course) => {
+  const sectionGroups = courses.map((course) => {
     const pinnedSection = course.pinnedSectionId
       ? (course.sections ?? []).find((section) => sectionId(section, course.course_id) === course.pinnedSectionId)
       : undefined;
@@ -508,74 +622,203 @@ function searchOptions(
         instructorGpa: sectionGpa(section, course),
       } as ScheduledSection));
     if (!sections.length && !pinnedConflict) warnings.push({ code: "noEligibleSections", courseId: course.course_id });
-    return { courseId: course.course_id, sections };
+    return { courseId: course.course_id, sections: distinctSections(sections) };
   }).filter((group) => group.sections.length > 0).sort((a, b) => a.sections.length - b.sections.length);
-  if (groups.length !== courses.length) {
+  if (sectionGroups.length !== courses.length) {
     warnings.push({ code: "someCoursesOmitted" });
   }
-  if (!groups.length) return { options: [], warnings, truncated: false };
+  if (!sectionGroups.length) return { options: [], warnings, truncated: false };
 
-  for (const group of groups) {
-    group.sections.sort((a, b) => {
-      const localScore = (section: ScheduledSection) => {
-        const rated = section.instructorRatings.map((item) => item.averageRating).filter((item): item is number => item !== null);
-        const rating = rated.length ? rated.reduce((sum, item) => sum + item, 0) / rated.length : 0;
-        const early = parsed.earlyBefore === null ? 0 : (section.meetings ?? []).filter((meeting) => hasKnownTime(meeting) && (minutes(meeting.start_time) as number) < parsed.earlyBefore!).length;
-        const unknown = Number(hasUnknownTime(section)) + section.instructorRatings.filter((item) => !item.matched || item.averageRating === null).length;
-        return rating + gpaPoints(section.instructorGpa, parsed.preferGpa) - 0.7 * early - 0.35 * unknown - (isFull(section) ? FULL_SECTION_PENALTY : 0);
+  // Each course's sections best first (by what each section scores on its own), so good schedules are
+  // found early and the bound below can set the rest aside.
+  let size = 0;
+  const groups = sectionGroups.map((group) => {
+    const localScore = (section: ScheduledSection) => {
+      const rated = section.instructorRatings.map((item) => item.averageRating).filter((item): item is number => item !== null);
+      const rating = rated.length ? rated.reduce((sum, item) => sum + item, 0) / rated.length : 0;
+      const early = parsed.earlyBefore === null ? 0 : (section.meetings ?? []).filter((meeting) => hasKnownTime(meeting) && (minutes(meeting.start_time) as number) < parsed.earlyBefore!).length;
+      const unknown = Number(hasUnknownTime(section)) + section.instructorRatings.filter((item) => !item.matched || item.averageRating === null).length;
+      return rating + gpaPoints(section.instructorGpa, parsed.preferGpa) - 0.7 * early - 0.35 * unknown - (isFull(section) ? FULL_SECTION_PENALTY : 0);
+    };
+    const sorted = [...group.sections].sort((a, b) => localScore(b) - localScore(a) || a.section_id.localeCompare(b.section_id));
+    return sorted.map((section): Choice => {
+      const rated = section.instructorRatings.map((item) => item.averageRating).filter((item): item is number => item !== null);
+      return {
+        section,
+        index: size++,
+        mix: instructorKey(section),
+        slots: (section.meetings ?? []).filter(hasKnownTime).map((meeting) => [dayBits(meeting.days), minutes(meeting.start_time) as number, minutes(meeting.end_time) as number]),
+        own: ownPoints(section, parsed),
+        rating: rated.length ? rated.reduce((sum, item) => sum + item, 0) / rated.length : null,
+        gpa: parsed.preferGpa && typeof section.instructorGpa === "number" ? section.instructorGpa : null,
+        days: (section.meetings ?? []).reduce((bits, meeting) => bits | dayBits(meeting.days), 0),
+        full: isFull(section),
       };
-      return localScore(b) - localScore(a) || a.section_id.localeCompare(b.section_id);
     });
-  }
+  });
 
-  const pool: ScheduleOption[] = [];
-  const chosen: ScheduledSection[] = [];
+  // Which sections of each course fit with each section (no overlap, with the chosen buffer), as bits in
+  // the course's order, worked out once.
+  const choices = groups.flat();
+  const words = groups.map((group) => Math.ceil(group.length / 32));
+  const fits = choices.map((choice) => groups.map((group, index) => {
+    const mask = new Uint32Array(words[index]);
+    group.forEach((other, position) => {
+      const overlap = choice.slots.some(([days, start, end]) => other.slots.some(([otherDays, otherStart, otherEnd]) => (days & otherDays) !== 0 && start < otherEnd + parsed.bufferMinutes && otherStart < end + parsed.bufferMinutes));
+      if (!overlap) mask[position >> 5] |= 1 << (position & 31);
+    });
+    return mask;
+  }));
+  // The sections of each course that still fit everything chosen, one set per depth of the search.
+  const domains = Array.from({ length: groups.length + 1 }, () => words.map((count) => new Uint32Array(count)));
+  groups.forEach((group, index) => group.forEach((_, position) => { domains[0][index][position >> 5] |= 1 << (position & 31); }));
+  const has = (mask: Uint32Array, position: number) => ((mask[position >> 5] >>> (position & 31)) & 1) === 1;
+
+  // What the courses from `from` on can still add, from their sections that fit what is chosen: the most
+  // each adds to the parts that add up, whether it can only take a full section, its rating and GPA at
+  // best, and the fewest days on campus the week can end with.
+  const restBound = (from: number, level: Uint32Array[], days: number) => {
+    let own = 0, full = 0, forced = 0;
+    const rating: AverageRest = { sum: 0, count: 0, optional: [] }, gpa: AverageRest = { sum: 0, count: 0, optional: [] };
+    const dayChoices: number[][] = [];
+    for (let index = from; index < groups.length; index += 1) {
+      let best = -Infinity, open = false, shared = 0b1111111, ratingBest = -Infinity, ratingMissing = false, gpaBest = -Infinity, gpaMissing = false;
+      const dayList: number[] = [];
+      groups[index].forEach((choice, position) => {
+        if (!has(level[index], position)) return;
+        best = Math.max(best, choice.own);
+        open ||= !choice.full;
+        shared &= choice.days;
+        dayList.push(choice.days);
+        if (choice.rating === null) ratingMissing = true; else ratingBest = Math.max(ratingBest, choice.rating);
+        if (choice.gpa === null) gpaMissing = true; else gpaBest = Math.max(gpaBest, choice.gpa);
+      });
+      own += best;
+      full += open ? 0 : 1;
+      forced |= shared;
+      dayChoices.push(dayList);
+      if (ratingBest > -Infinity) { if (ratingMissing) rating.optional.push(ratingBest); else { rating.sum += ratingBest; rating.count += 1; } }
+      if (gpaBest > -Infinity) { if (gpaMissing) gpa.optional.push(gpaBest); else { gpa.sum += gpaBest; gpa.count += 1; } }
+    }
+    rating.optional.sort((a, b) => b - a);
+    gpa.optional.sort((a, b) => b - a);
+    // Each course still to choose adds the days of one of its sections, so the week has at least as many
+    // days as the course that adds the fewest at best.
+    const base = days | forced;
+    let fewestDays = bitCount(base);
+    for (const list of dayChoices) fewestDays = Math.max(fewestDays, Math.min(...list.map((bits) => bitCount(base | bits))));
+    return { own, full, rating, gpa, fewestDays };
+  };
+
+  // The pool keeps the best schedules found, at most PER_MIX for one set of instructors, so one set at
+  // different times cannot crowd out the rest. When there are fewer sets than that allows, the pool is as
+  // big as they can fill.
+  let possibleMixes = 1;
+  for (const group of groups) possibleMixes = Math.min(CANDIDATE_POOL, possibleMixes * new Set(group.map((choice) => choice.mix)).size);
+  const capacity = Math.min(CANDIDATE_POOL, PER_MIX * possibleMixes);
+  const pool: Found[] = [];
   const seen = new Set<string>();
+  const keep = (found: Found) => {
+    const same = pool.filter((item) => item.mix === found.mix);
+    if (same.length >= PER_MIX) {
+      const weakest = same[same.length - 1];
+      if (rankFound(found, weakest) >= 0) return;
+      pool.splice(pool.indexOf(weakest), 1);
+    }
+    let at = pool.length;
+    while (at > 0 && rankFound(found, pool[at - 1]) < 0) at -= 1;
+    pool.splice(at, 0, found);
+    if (pool.length > capacity) pool.pop();
+  };
+
+  const chosen: Choice[] = [];
   let nodes = 0;
   let truncated = false;
-  const walk = (groupIndex: number) => {
-    if (groupIndex === groups.length) {
-      const key = chosen.map((section) => section.section_id).sort().join("|");
-      if (seen.has(key)) return;
-      seen.add(key);
-      pool.push(summarize([...chosen], parsed));
-      pool.sort((a, b) => a.fullSectionIds.length - b.fullSectionIds.length || b.score - a.score || a.selectedSections.map((section) => section.section_id).join("|").localeCompare(b.selectedSections.map((section) => section.section_id).join("|")));
-      if (pool.length > CANDIDATE_POOL) pool.pop();
-      return;
-    }
-    for (const candidate of groups[groupIndex].sections) {
+  // Whether no schedule built on the choices so far could take a place in the pool, once it is full: the
+  // bound is the score with each course still to choose at its best on every part separately. Walking
+  // only grows as classes are added, so the walking so far already counts against it.
+  const cannotPlace = (points: number, full: number, walked: number) => {
+    if (pool.length < capacity) return false;
+    const worst = pool[pool.length - 1];
+    if (full !== worst.full) return full > worst.full;
+    const bound = shownScore(points + 1e-9);
+    return bound < worst.shown || (bound === worst.shown && walked > worst.walk);
+  };
+  const walk = (depth: number, own: number, ratingSum: number, ratingCount: number, gpaSum: number, gpaCount: number, days: number, full: number, walkCost: number, walked: number) => {
+    const here = domains[depth], next = domains[depth + 1], last = depth + 1 === groups.length;
+    for (const [position, choice] of groups[depth].entries()) {
+      if (!has(here[depth], position)) continue;
       if (nodes >= MAX_NODES) {
         truncated = true;
         return;
       }
       nodes += 1;
-      if (chosen.some((section) => conflicts(candidate, section, parsed.bufferMinutes))) continue;
-      chosen.push(candidate);
-      walk(groupIndex + 1);
+      // The courses still to choose, narrowed to the sections that also fit this one; none left is a dead end.
+      let deadEnd = false;
+      for (let index = depth + 1; index < groups.length && !deadEnd; index += 1) {
+        const mask = fits[choice.index][index], from = here[index], to = next[index];
+        let any = 0;
+        for (let word = 0; word < to.length; word += 1) any |= to[word] = from[word] & mask[word];
+        deadEnd = any === 0;
+      }
+      if (deadEnd) continue;
+      const nextOwn = own + choice.own;
+      const nextRatingSum = ratingSum + (choice.rating ?? 0), nextRatingCount = ratingCount + (choice.rating === null ? 0 : 1);
+      const nextGpaSum = gpaSum + (choice.gpa ?? 0), nextGpaCount = gpaCount + (choice.gpa === null ? 0 : 1);
+      const nextDays = days | choice.days;
+      let points = 0, fewestFull = full + Number(choice.full);
+      if (pool.length >= capacity) {
+        const rest = restBound(depth + 1, next, nextDays);
+        const rating = bestAverage(nextRatingSum, nextRatingCount, rest.rating);
+        const gpa = parsed.preferGpa ? bestAverage(nextGpaSum, nextGpaCount, rest.gpa) : null;
+        const gpaPart = gpa === null ? 0 : GPA_WEIGHT * (gpa - GPA_BASELINE);
+        points = 0.4 + nextOwn + rest.own
+          + (rating === null ? 0 : mayHaveNone(nextRatingCount, rest.rating) ? Math.max(0, rating) : rating)
+          + (gpa === null ? 0 : mayHaveNone(nextGpaCount, rest.gpa) ? Math.max(0, gpaPart) : gpaPart)
+          + (parsed.preferFewerDays ? -DAY_PENALTY * rest.fewestDays : 0);
+        fewestFull += rest.full;
+        if (cannotPlace(points - walkCost, fewestFull, walked)) continue;
+      }
+      chosen.push(choice);
+      const sections = chosen.map((item) => item.section);
+      if (last) {
+        const key = sections.map((section) => section.section_id).sort().join("|");
+        if (!seen.has(key)) {
+          seen.add(key);
+          const option = summarize(sections, parsed);
+          keep({ option, full: option.fullSectionIds.length, shown: shownScore(option.score), walk: option.walkMinutes, gap: option.gapMinutes, key, mix: chosen.map((item) => item.mix).sort().join("|") });
+        }
+      } else {
+        const walkingMinutes = weeklyWalkMinutes(sections);
+        const cost = tightWalks(sections).reduce((sum, item) => sum + TIGHT_WALK_PENALTY + TIGHT_WALK_PER_MINUTE * (item.walkMinutes - item.gapMinutes), 0)
+          + (parsed.preferNearbyClasses ? WALK_MINUTE_PENALTY * walkingMinutes : 0);
+        // The walking this section adds may already rule it out.
+        if (!cannotPlace(points - cost, fewestFull, walkingMinutes)) walk(depth + 1, nextOwn, nextRatingSum, nextRatingCount, nextGpaSum, nextGpaCount, nextDays, full + Number(choice.full), cost, walkingMinutes);
+      }
       chosen.pop();
       if (truncated) return;
     }
   };
-  walk(0);
+  walk(0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
   // Fill the list in passes: first different instructors, then different lecture times, then anything left.
   // Options with open seats go through every pass before any option containing a full section is considered.
-  const options: ScheduleOption[] = [];
+  const picked: Found[] = [];
   const passes = [false, true].flatMap((allowFull) => [instructorKey, lectureKey, null].map((keyOf) => ({ allowFull, keyOf })));
   for (const { allowFull, keyOf } of passes) {
-    const used = new Set(keyOf ? options.map((option) => option.selectedSections.map(keyOf).sort().join("|")) : []);
-    for (const option of pool) {
-      if (options.length === MAX_OPTIONS) break;
-      if (options.includes(option)) continue;
-      if (!allowFull && option.fullSectionIds.length) continue;
+    const used = new Set(keyOf ? picked.map((item) => item.option.selectedSections.map(keyOf).sort().join("|")) : []);
+    for (const item of pool) {
+      if (picked.length === MAX_OPTIONS) break;
+      if (picked.includes(item)) continue;
+      if (!allowFull && item.full) continue;
       if (keyOf) {
-        const mix = option.selectedSections.map(keyOf).sort().join("|");
+        const mix = item.option.selectedSections.map(keyOf).sort().join("|");
         if (used.has(mix)) continue;
         used.add(mix);
       }
-      options.push(option);
+      picked.push(item);
     }
   }
-  options.sort((a, b) => a.fullSectionIds.length - b.fullSectionIds.length || b.score - a.score);
+  const options = picked.sort(rankFound).map((item) => item.option);
   if (!options.length) warnings.push({ code: "noConflictFree" });
   if (truncated) warnings.push({ code: "searchLimit" });
   if (options.length && options.every((option) => option.fullSectionIds.length)) {

@@ -44,7 +44,7 @@ export function normalizeProfessorName(value: string) {
 }
 
 export function isInstructorTba(value: string) {
-  const normalized = value.trim().replace(/\s+/g, " ").toUpperCase().replace(/\.$/, "");
+  const normalized = value.trim().replace(/^instructor:\s*/i, "").replace(/\s+/g, " ").toUpperCase().replace(/\.$/, "");
   return ["TBA", "T.B.A", "TO BE ANNOUNCED", "TO BE ARRANGED"].includes(normalized);
 }
 

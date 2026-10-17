@@ -29,7 +29,7 @@ test("seat summaries carry each section's times, without Freshman Connection sec
     { section_id: "ENGL101-0101", number: "0101", open_seats: 3, meetings: [{ days: "TuTh", start_time: "9:30am", end_time: "10:45am", building: "TWS", room: "0201", classtype: null }] },
     { section_id: "ENGL101-FC01", number: "FC01", open_seats: 9, meetings: [] },
   ]);
-  assert.deepEqual(slots, [{ open: 3, meetings: [{ days: "TuTh", start_time: "9:30am", end_time: "10:45am", building: "TWS", room: "0201" }] }]);
+  assert.deepEqual(slots, [{ id: "ENGL101-0101", open: 3, meetings: [{ days: "TuTh", start_time: "9:30am", end_time: "10:45am", building: "TWS", room: "0201" }] }]);
 });
 
 test("Gen Ed groups keep \"or\" choices together, so one course is not counted twice for them", () => {

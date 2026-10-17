@@ -162,7 +162,7 @@ export default function TestudoImport({ term, terms, termName, planCount, langua
   };
 
   if (!open) return <div className="text-xs">
-    <button type="button" onClick={() => { setOpen(true); setNote(""); }} className="font-medium text-[#a34a39] hover:underline">{t.open}</button>
+    <button type="button" onClick={() => { setOpen(true); setNote(""); }} className="min-h-6 font-medium text-[#a34a39] hover:underline">{t.open}</button>
     {note && <p role="status" className="mt-1 text-[#48534f]">✓ {note}</p>}
   </div>;
 

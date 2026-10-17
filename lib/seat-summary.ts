@@ -16,11 +16,13 @@ export type SeatSummary = {
   slots?: SectionSlot[];
 };
 
-export type SectionSlot = { open: number | null; meetings: MeetingTime[] };
+export type SectionSlot = { id?: string; open: number | null; meetings: MeetingTime[] };
 
-// Only what the fit check needs: days, times, and the building/room that mark online-only meetings.
+// What the fit check needs (days, times, and the building/room that mark online-only meetings), and the
+// section's ID for the seats in a chosen section.
 export function sectionSlots(sections: UmdSection[]): SectionSlot[] {
   return sections.filter((section) => !isFreshmanConnection(section)).map((section) => ({
+    ...(section.section_id ? { id: section.section_id } : {}),
     open: parseCount(section.open_seats),
     meetings: (section.meetings ?? []).map((meeting) => ({ days: meeting.days ?? null, start_time: meeting.start_time ?? null, end_time: meeting.end_time ?? null, building: meeting.building ?? null, room: meeting.room ?? null })),
   }));

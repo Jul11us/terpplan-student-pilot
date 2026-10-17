@@ -170,3 +170,13 @@ test("the hold file count is read apart from the waitlist", async () => {
   const [plain] = parseTestudoSections(html.replace(/<span class="seats-info-label">Holdfile.*$/s, "</div>"), "BMGT220");
   assert.equal(plain.holdfile, null);
 });
+
+test("an unassigned instructor is read as TBA, without Testudo's label", async () => {
+  const { parseTestudoSections } = await import("../lib/umd.ts");
+  const { isInstructorTba } = await import("../lib/planetterp.ts");
+  const html = `<div class="section"><input name="sectionId" value="2201"><span class="section-instructor">Instructor: TBA</span></div>
+    <div class="section"><input name="sectionId" value="2301"><span class="section-instructor">Christine Schaaf</span></div>`;
+  assert.deepEqual(parseTestudoSections(html, "COMM107").map((section) => section.instructors), [["TBA"], ["Christine Schaaf"]]);
+  assert.equal(isInstructorTba("Instructor: TBA"), true, "plans saved before the change still read as TBA");
+  assert.equal(isInstructorTba("Christine Schaaf"), false);
+});

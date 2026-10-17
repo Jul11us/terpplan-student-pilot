@@ -1,5 +1,10 @@
-import { getPopularCourses } from "@/lib/history-db";
+import { countSharers, getPopularCourses } from "@/lib/history-db";
 import { getCourse } from "@/lib/umd";
+
+// Until a few people share, the list would show one person's plan: it waits for five, and a course is
+// listed once it is in two plans.
+const MIN_SHARERS = 5;
+const MIN_PLANS = 2;
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -13,11 +18,12 @@ export async function GET(request: Request) {
   }
 
   try {
-    const popular = await getPopularCourses(term, limit);
-    
+    const [popular, sharers] = await Promise.all([getPopularCourses(term, limit), countSharers(term)]);
+    if (sharers < MIN_SHARERS) return Response.json({ term, courses: [], sharers });
+
     // Enrich with course titles
     const enriched = await Promise.all(
-      popular.map(async (item) => {
+      popular.filter((item) => item.activeCount >= MIN_PLANS).map(async (item) => {
         try {
           const courseData = await getCourse(item.courseId, term);
           const courseName = courseData?.course && typeof courseData.course === 'object' && 'name' in courseData.course
@@ -30,7 +36,7 @@ export async function GET(request: Request) {
       }),
     );
 
-    return Response.json({ term, courses: enriched });
+    return Response.json({ term, courses: enriched, sharers });
   } catch (error) {
     console.error("Popular courses error:", error);
     return Response.json({ error: "Popular courses could not be loaded. Try again shortly." }, { status: 503 });

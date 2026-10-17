@@ -364,3 +364,86 @@ test("an example schedule uses open sections before full ones when both fit", ()
   const unpin = generateOptions([cmsc, math], {}, {}).repairs.find((repair) => repair.kind === "unpin");
   assert.equal(unpin.preview.find((item) => item.courseId === "MATH140").sectionId, "MATH140-0301");
 });
+
+// Random courses for checking the search against every combination: a few lecture patterns, buildings across
+// campus, rated, unrated and TBA instructors, some full sections and some discussions.
+function randomCourses(seed, courseCount, sizes) {
+  let state = seed;
+  const random = () => (state = (state * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const pick = (list) => list[Math.floor(random() * list.length)];
+  const clock = (value) => `${Math.floor(value / 60)}:${String(value % 60).padStart(2, "0")}`;
+  const patterns = [["MWF", 50], ["TuTh", 75], ["MW", 75], ["F", 50], ["Th", 50]];
+  const buildings = ["IRB", "CSI", "TYD", "ESJ", "MTH", "ARM", "VMH", "PHY", "SPH", "HBK"];
+  const people = ["Ada Rated", "Bo Rated", "Cy Rated", "Di Unrated", "TBA"];
+  return Array.from({ length: courseCount }, (_, index) => {
+    const id = `TEST${100 + index}`;
+    const sections = Array.from({ length: sizes[index] ?? 3 + Math.floor(random() * 3) }, (_, number) => {
+      const [days, length] = pick(patterns);
+      const start = 8 * 60 + 30 * Math.floor(random() * 18);
+      const meetings = [{ days, start_time: clock(start), end_time: clock(start + length), classtype: "Lecture", building: pick(buildings), room: "0100" }];
+      if (random() < 0.3) meetings.push({ days: days === "TuTh" ? "F" : "Th", start_time: clock(start), end_time: clock(start + 50), classtype: "Discussion", building: pick(buildings), room: "0200" });
+      return { section_id: `${id}-0${101 + number}`, open_seats: random() < 0.15 ? 0 : 5, instructors: [pick(people)], meetings };
+    });
+    return course(id, sections, { instructorGpa: { "ada rated": 3.5, "bo rated": 2.7, "cy rated": 3.1 } });
+  });
+}
+const searchRatings = Object.fromEntries([["Ada Rated", 4.6], ["Bo Rated", 3.2], ["Cy Rated", 4.1]].map(([name, rating]) => [normalizeProfessorName(name), { name, matched: true, status: "ok", averageRating: rating, reviewCount: 10, sourceUrl: null }]));
+// How the page ranks schedules: fewer full sections, then the score as shown, then less walking, then fewer gaps.
+const rankOf = (option) => [option.fullSectionIds.length, -Math.round(option.score * 100 + 1e-6), option.walkMinutes, option.gapMinutes];
+const before = (a, b) => { for (let index = 0; index < a.length; index += 1) if (a[index] !== b[index]) return a[index] < b[index]; return false; };
+
+test("the best schedule found is the best of every combination, under each preference", () => {
+  const preferenceSets = [{}, { preferFewerDays: true }, { preferNearbyClasses: true, earlyBefore: "10:00" }, { windowStart: "10:00", windowEnd: "15:00", preferGpa: true }, { preferFewerDays: true, preferNearbyClasses: true, preferGpa: true }];
+  for (let seed = 1; seed <= 12; seed += 1) {
+    const courses = randomCourses(seed, 4, []);
+    for (const preferences of preferenceSets) {
+      let best = null;
+      const visit = (index, picked) => {
+        if (index === courses.length) {
+          const option = generateOptions(courses.map((item, position) => ({ ...item, pinnedSectionId: picked[position] })), searchRatings, preferences).options[0];
+          if (option?.selectedSections.length === courses.length && (!best || before(rankOf(option), rankOf(best)))) best = option;
+          return;
+        }
+        for (const item of courses[index].sections) visit(index + 1, [...picked, item.section_id]);
+      };
+      visit(0, []);
+      const result = generateOptions(courses, searchRatings, preferences);
+      assert.equal(result.truncated, false);
+      if (!best) { assert.equal(result.options.length, 0); continue; }
+      assert.deepEqual(rankOf(result.options[0]), rankOf(best), `seed ${seed}, ${JSON.stringify(preferences)}`);
+    }
+  }
+});
+
+test("a five-course plan with large courses is searched completely", () => {
+  const courses = randomCourses(99, 5, [20, 18, 30, 26, 90]);
+  const result = generateOptions(courses, searchRatings, { busyBlocks: [{ id: "job", days: ["Tue", "Thu"], start: "13:00", end: "16:00" }] });
+  assert.equal(result.truncated, false);
+  assert.ok(!result.warnings.some((warning) => warning.code === "searchLimit"));
+  assert.equal(result.options.length, 3);
+});
+
+test("schedules that show the same score are ranked by walking, then by time between classes", () => {
+  const cmsc = course("CMSC131", [placed("CMSC131-0101", "IRB", "10:00", "10:50")]);
+  // The same score each way (both buildings are a short walk from IRB): PHY is the longer walk, and the
+  // 3pm section leaves the longer gap.
+  const engl = course("ENGL101", [
+    placed("ENGL101-0101", "PHY", "13:00", "13:50"),
+    placed("ENGL101-0201", "CSI", "15:00", "15:50"),
+    placed("ENGL101-0301", "CSI", "13:00", "13:50"),
+  ]);
+  const options = generateOptions([cmsc, engl], {}, {}).options;
+  assert.equal(new Set(options.map((option) => option.score.toFixed(2))).size, 1);
+  assert.deepEqual(options.map((option) => option.selectedSections.find((item) => item.course_id === "ENGL101").section_id), ["ENGL101-0301", "ENGL101-0201", "ENGL101-0101"]);
+});
+
+test("sections that differ only in room are one choice, the one with the most open seats", () => {
+  const cmsc = course("CMSC131", [placed("CMSC131-0101", "IRB", "10:00", "10:50")]);
+  const engl = course("ENGL101", [
+    { ...placed("ENGL101-0101", "TYD", "13:00", "13:50"), open_seats: 2 },
+    { ...placed("ENGL101-0102", "TYD", "13:00", "13:50"), open_seats: 9, meetings: [{ ...at("TYD", "13:00", "13:50"), room: "2110" }] },
+    placed("ENGL101-0201", "TYD", "15:00", "15:50"),
+  ]);
+  const ids = generateOptions([cmsc, engl], {}, {}).options.map((option) => option.selectedSections.find((item) => item.course_id === "ENGL101").section_id);
+  assert.deepEqual([...ids].sort(), ["ENGL101-0102", "ENGL101-0201"]);
+});

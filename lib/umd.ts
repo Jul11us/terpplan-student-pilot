@@ -207,7 +207,8 @@ export function parseTestudoSections(html: string, courseId: string): UmdSection
     return [{
       section_id: `${courseId}-${number}`,
       number,
-      instructors: classTexts(sectionHtml, "section-instructor"),
+      // An unassigned instructor reads "Instructor: TBA" on Testudo; keep just "TBA", as everywhere else.
+      instructors: classTexts(sectionHtml, "section-instructor").map((name) => name.replace(/^instructor:\s*/i, "")).filter(Boolean),
       seats: numberClassText(sectionHtml, "total-seats-count"),
       open_seats: numberClassText(sectionHtml, "open-seats-count"),
       waitlist: numberClassText(sectionHtml, "waitlist-count"),

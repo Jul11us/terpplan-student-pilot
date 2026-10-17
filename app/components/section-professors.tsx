@@ -126,13 +126,13 @@ export default function SectionProfessors({ names, courseId, ratings, language, 
         const rating = ratings[keyFor(name)];
         const data = reviewData[key];
         const isOpen = openKey === key;
-        const isTba = /^(TBA|T\.B\.A\.?|TO BE ANNOUNCED|TO BE ARRANGED)$/i.test(name.trim());
+        const isTba = /^(instructor:\s*)?(TBA|T\.B\.A\.?|TO BE ANNOUNCED|TO BE ARRANGED)$/i.test(name.trim());
         return (
           <div key={name} className="text-xs">
             <div className={compact ? "flex flex-col items-start gap-1.5" : "flex flex-wrap items-center gap-x-2 gap-y-1"}>
               {/* An instructor PlanetTerp has no page for has nothing to show in a card, so the name stays plain. */}
               {isTba || rating?.status === "unmatched"
-                ? <span className={`font-medium text-[#525d59] ${compact ? "text-sm" : ""}`}>{name}</span>
+                ? <span className={`font-medium text-[#525d59] ${compact ? "text-sm" : ""}`}>{isTba ? (language === "zh" ? "教师待定" : "Instructor TBA") : name}</span>
                 : <ProfessorDetailCard name={name} courseId={courseId} language={language}>
                     {term
                       ? <a href={`/instructor?${new URLSearchParams({ name: name.trim(), term, course: courseId })}`} title={language === "zh" ? "这位老师本学期的所有班次" : "All of this instructor's sections this term"} className={`font-medium text-[#525d59] underline decoration-[#cfcac0] underline-offset-2 hover:text-[#a34a39] ${compact ? "text-sm" : ""}`}>{name}</a>
