@@ -20,7 +20,9 @@ export const TRACK_NAMES: Record<CsTrack, Text> = {
 };
 
 // Distributive areas (department, general track; the same for every track). CMSC471 is area 2 or area 3.
-const AREAS: Record<string, Area[]> = {
+// From undergrad.cs.umd.edu/general-track-degree-requirements, like TOPICS below; `npm run check:term` reports
+// where the two differ from that page.
+export const AREAS: Record<string, Area[]> = {
   CMSC411: [1], CMSC412: [1], CMSC414: [1], CMSC416: [1], CMSC417: [1],
   CMSC420: [2], CMSC421: [2], CMSC422: [2], CMSC423: [2], CMSC424: [2], CMSC426: [2], CMSC427: [2], CMSC470: [2], CMSC471: [2, 3], CMSC472: [2],
   CMSC430: [3], CMSC431: [3], CMSC433: [3], CMSC434: [3], CMSC435: [3], CMSC436: [3],
@@ -29,7 +31,7 @@ const AREAS: Record<string, Area[]> = {
 };
 // Special topics count for an area only when taken in the terms the department lists; otherwise they are
 // upper level electives.
-const TOPICS: Record<string, { area: Area; terms: string[] }> = {
+export const TOPICS: Record<string, { area: Area; terms: string[] }> = {
   CMSC498B: { area: 1, terms: ["202408", "202508"] },
   CMSC498C: { area: 1, terms: ["202401", "202501", "202601", "202608"] },
   CMSC498I: { area: 1, terms: ["202208"] },

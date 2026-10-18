@@ -158,3 +158,11 @@ test("a term sent to the planner joins its plan there: courses already in it sta
   assert.deepEqual([crowded.added, crowded.left], [1, 1], "the course already planned is neither added nor left out");
   assert.deepEqual(parseSavedState({ plans: { 202701: sent.plan } }).plans["202701"], sent.plan, "the planner keeps it as saved");
 });
+
+test("a minor is kept with the plan like a catalog major; a bad one is dropped", () => {
+  const base = { start: "202608", years: 4, terms: {}, earlier: [] };
+  assert.deepEqual(parseRoadmap({ ...base, minor: { slug: "mathematics--statistics-minor", blocks: [0, 0, "x"], ticked: ["1x9k2a", "BAD"] } }).minor, { slug: "mathematics--statistics-minor", blocks: [0], ticked: ["1x9k2a"] });
+  assert.equal(parseRoadmap({ ...base, minor: { slug: "../etc" } }).minor, undefined);
+  assert.equal("minor" in parseRoadmap(base), false);
+  assert.deepEqual(parseRoadmap({ ...base, major: { id: "CS", track: "data" }, minor: { slug: "mathematics--statistics-minor" } }).major, { id: "CS", track: "data" }, "with a major too");
+});

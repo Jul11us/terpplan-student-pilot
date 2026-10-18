@@ -50,12 +50,22 @@ export async function PUT(request: Request) {
     if (!await allowRate(`sync:${await accountTag(user.id)}`, 240, 3600)) return Response.json({ error: "Too many saves; try again in a few minutes." }, { status: 429, headers: NO_STORE });
     // Newer wins; force (the student chose this device's copy over the account's) always replaces it.
     const force = parsed.value.force === true;
+    // An older page sends no weeks. Merge the account's current weeks in this same write, so another device's
+    // week saved while the request was in flight cannot be replaced by a stale read. An explicit {} clears it.
+    const preserveWeeks = state.weeks === undefined;
+    const nextState = preserveWeeks
+      ? "CASE WHEN json_type(plan_sync.state, '$.weeks') = 'object' THEN json_set(excluded.state, '$.weeks', json_extract(plan_sync.state, '$.weeks')) ELSE excluded.state END"
+      : "excluded.state";
     const result = await env.DB.prepare(`INSERT INTO plan_sync (user_id, state, updated_at) VALUES (?, ?, ?)
-      ON CONFLICT(user_id) DO UPDATE SET state = excluded.state, updated_at = excluded.updated_at
-      WHERE ? OR plan_sync.updated_at < excluded.updated_at`).bind(user.id, text, when, force ? 1 : 0).run();
+      ON CONFLICT(user_id) DO UPDATE SET state = ${nextState}, updated_at = excluded.updated_at
+      WHERE (? OR plan_sync.updated_at < excluded.updated_at) AND length(${nextState}) <= ?`).bind(user.id, text, when, force ? 1 : 0, MAX_SYNC_BYTES).run();
     if (!result.meta.changes) {
       const row = await stored(user.id);
-      return Response.json({ error: "Your account has a newer copy.", state: row ? parseSyncState(JSON.parse(row.state)) : null, updatedAt: row?.updatedAt ?? null }, { status: 409, headers: NO_STORE });
+      const current = row ? parseSyncState(JSON.parse(row.state)) : null;
+      if (preserveWeeks && current?.weeks && JSON.stringify({ ...state, weeks: current.weeks }).length > MAX_SYNC_BYTES) {
+        return Response.json({ error: "This plan is too large to sync." }, { status: 413, headers: NO_STORE });
+      }
+      return Response.json({ error: "Your account has a newer copy.", state: current, updatedAt: row?.updatedAt ?? null }, { status: 409, headers: NO_STORE });
     }
     return Response.json({ saved: true, updatedAt: when }, { headers: NO_STORE });
   } catch {

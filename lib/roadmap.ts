@@ -23,9 +23,14 @@ export type SavedRoadmap = {
   // snapshot (lib/major-check.ts) with the catalog tables that apply (its defaults when unset) and the rules written
   // only as text that the student ticked (lib/major-check.ts requirementKeys).
   major?: { id: "CS"; track: CsTrack } | CatalogMajorChoice;
+  // A minor checked beside the major, from the catalog snapshot like a catalog major.
+  minor?: CatalogChoice;
 };
 
-export type CatalogMajorChoice = { id: "catalog"; slug: string; blocks?: number[]; ticked?: string[] };
+// A program from the catalog snapshot: its slug, the catalog tables that apply (its defaults when unset), and the
+// rules written only as text that the student ticked.
+export type CatalogChoice = { slug: string; blocks?: number[]; ticked?: string[] };
+export type CatalogMajorChoice = { id: "catalog" } & CatalogChoice;
 
 export type TermSeason = "fall" | "spring" | "winter" | "summer";
 // A course as the bundled catalogs list it (app/api/catalog); null when neither term lists it.
@@ -65,15 +70,8 @@ export function roadmapTerms(roadmap: Pick<SavedRoadmap, "start" | "years">) {
   return Array.from({ length: roadmap.years }, (_, index) => Object.values(yearTerms(roadmap.start, index))).flat().sort();
 }
 
-// The term in progress on a date, by month (close enough for which terms are still ahead): January is winter,
-// February to May spring, June and July summer, August to December fall.
-export function termAt(date: Date) {
-  const year = date.getFullYear(), month = date.getMonth() + 1;
-  if (month === 1) return `${year - 1}12`;
-  if (month <= 5) return `${year}01`;
-  if (month <= 7) return `${year}05`;
-  return `${year}08`;
-}
+// The term in progress on a date, by month (lib/term-calendar.ts).
+export { termAt } from "@/lib/term-calendar";
 
 // The fall that begins the academic year a term belongs to.
 export function fallOf(term: string) {
@@ -108,19 +106,26 @@ export function parseRoadmap(value: unknown): SavedRoadmap | undefined {
       if (COURSE.test(id) && typeof amount === "number" && amount >= 0 && amount <= 20) credits[id] = Math.round(amount * 2) / 2;
     }
   }
-  return { start: record.start, years, terms, earlier: codes(record.earlier, MAX_EARLIER), ...(Object.keys(credits).length ? { credits } : {}), ...parseMajor(record.major) };
+  const minor = catalogChoice(record.minor);
+  return { start: record.start, years, terms, earlier: codes(record.earlier, MAX_EARLIER), ...(Object.keys(credits).length ? { credits } : {}), ...parseMajor(record.major), ...(minor ? { minor } : {}) };
 }
 
 const indexes = (raw: unknown) => Array.isArray(raw) ? [...new Set(raw.filter((item): item is number => Number.isInteger(item) && item >= 0 && item < 1000))].slice(0, 200) : null;
 
+function catalogChoice(raw: unknown): CatalogChoice | null {
+  const choice = raw && typeof raw === "object" ? raw as Record<string, unknown> : null;
+  if (typeof choice?.slug !== "string" || !/^[a-z0-9-]{3,160}$/.test(choice.slug)) return null;
+  // An empty list of tables is a choice too (every table switched off); an empty list of ticks is not kept.
+  const blocks = indexes(choice.blocks);
+  const ticked = Array.isArray(choice.ticked) ? [...new Set(choice.ticked.filter((item): item is string => typeof item === "string" && /^[a-z0-9]{1,8}(?:-\d{1,3})?$/.test(item)))].slice(0, 200) : null;
+  return { slug: choice.slug, ...(blocks ? { blocks } : {}), ...(ticked?.length ? { ticked } : {}) };
+}
+
 function parseMajor(raw: unknown): { major?: SavedRoadmap["major"] } {
   const major = raw && typeof raw === "object" ? raw as Record<string, unknown> : null;
   if (major?.id === "CS" && CS_TRACKS.includes(major.track as CsTrack)) return { major: { id: "CS", track: major.track as CsTrack } };
-  if (major?.id !== "catalog" || typeof major.slug !== "string" || !/^[a-z0-9-]{3,160}$/.test(major.slug)) return {};
-  // An empty list of tables is a choice too (every table switched off); an empty list of ticks is not kept.
-  const blocks = indexes(major.blocks);
-  const ticked = Array.isArray(major.ticked) ? [...new Set(major.ticked.filter((item): item is string => typeof item === "string" && /^[a-z0-9]{1,8}(?:-\d{1,3})?$/.test(item)))].slice(0, 200) : null;
-  return { major: { id: "catalog", slug: major.slug, ...(blocks ? { blocks } : {}), ...(ticked?.length ? { ticked } : {}) } };
+  const choice = major?.id === "catalog" ? catalogChoice(major) : null;
+  return choice ? { major: { id: "catalog", ...choice } } : {};
 }
 
 // Where a course sits in the plan: a term, "earlier", or nowhere.

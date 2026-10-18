@@ -96,6 +96,8 @@ test("formatTermName formats term code to readable name", () => {
   assert.equal(formatTermName("202408", "en"), "Fall 2024");
   assert.equal(formatTermName("202401", "zh"), "2024 春季");
   assert.equal(formatTermName("202408", "zh"), "2024 秋季");
+  assert.equal(formatTermName("202612", "en"), "Winter 2027", "the January after the fall");
+  assert.equal(formatTermName("202612", "zh"), "2027 冬季");
 });
 
 test("calculateTrendDirection identifies rising trend", () => {

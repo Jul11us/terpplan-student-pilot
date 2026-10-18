@@ -1,8 +1,9 @@
 // Builds data/umd-programs.json from the UMD undergraduate catalog (academiccatalog.umd.edu):
 // each minor's and major's requirement tables, plus credits and prerequisites for the courses they list.
 // Run: node scripts/build-programs.mjs            (set PROGRAM_HTML_CACHE=<dir> to reuse downloaded pages)
+//      node scripts/build-programs.mjs --out <file>   (writes there instead; scripts/term-check.mjs compares it)
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { prerequisiteTree, treeCodes } from "./prerequisites.mjs";
 
 const CATALOG = "https://academiccatalog.umd.edu";
@@ -312,7 +313,8 @@ async function main() {
     programs: programs.sort((a, b) => a.name.localeCompare(b.name)),
     courses: Object.fromEntries([...keep].sort().map((code) => [code, courses[code]])),
   };
-  writeFileSync(new URL("../data/umd-programs.json", import.meta.url), JSON.stringify(snapshot));
+  const out = process.argv.indexOf("--out");
+  writeFileSync(out > 0 && process.argv[out + 1] ? resolve(process.argv[out + 1]) : new URL("../data/umd-programs.json", import.meta.url), JSON.stringify(snapshot));
   const minors = programs.filter((program) => program.kind === "minor");
   console.log(`${minors.length} minors (${minors.filter((program) => !program.items.length).length} without a course table), ${programs.length - minors.length} majors, ${keep.size} courses`);
 }

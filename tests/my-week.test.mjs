@@ -44,3 +44,29 @@ test("a saved week notices a new room or time, and a section that is gone", asyn
   assert.deepEqual(updated.classes.filter((item) => item.sectionId === "CMSC216-0104").map((item) => item.room).sort(), ["0215", "3118"]);
   assert.equal(compareWeek(updated, current).length, 0);
 });
+
+test("weeks are kept per term; a week saved before that is read as its term's, and the newest four are kept", async () => {
+  const { MAX_WEEKS, parseMyWeeks, pickWeekTerm } = await import("../lib/my-week.ts");
+  const fall = weekFromSections(sections, "202608", "Fall 2026"), spring = weekFromSections(sections, "202701", "Spring 2027");
+  assert.deepEqual(Object.keys(parseMyWeeks(JSON.parse(JSON.stringify(fall)))), ["202608"], "the old single week");
+  const both = parseMyWeeks({ weeks: { 202608: fall, 202701: spring, 202612: { ...spring, term: "202701" }, nonsense: fall } });
+  assert.deepEqual(Object.keys(both).sort(), ["202608", "202701"], "a week filed under another term is dropped");
+  const many = Object.fromEntries(["202408", "202501", "202508", "202601", "202608", "202701"].map((term) => [term, { ...fall, term }]));
+  assert.deepEqual(Object.keys(parseMyWeeks({ weeks: many })).sort(), ["202508", "202601", "202608", "202701"].slice(-MAX_WEEKS));
+  // Opens on the term in session, else the next to start, else the latest.
+  assert.equal(pickWeekTerm(both, new Date(2026, 9, 18)), "202608", "mid-October: fall");
+  assert.equal(pickWeekTerm(both, new Date(2026, 7, 20)), "202608", "before fall classes start");
+  assert.equal(pickWeekTerm(both, new Date(2026, 11, 15)), "202701", "fall classes are over: spring is next");
+  assert.equal(pickWeekTerm(both, new Date(2027, 5, 1)), "202701", "both over: the latest");
+  assert.equal(pickWeekTerm({}, new Date(2026, 9, 18)), null);
+});
+
+test("a term's classes run from its first to its last class day, or by month when its calendar is not here", async () => {
+  const { termEnded, termInSession } = await import("../lib/term-calendar.ts");
+  assert.equal(termInSession("202608", new Date(2026, 7, 30)), false, "the day before fall classes");
+  assert.equal(termInSession("202608", new Date(2026, 7, 31)), true);
+  assert.equal(termInSession("202608", new Date(2026, 11, 12)), false, "after the last class day");
+  assert.equal(termEnded("202608", new Date(2026, 11, 12)), true);
+  assert.equal(termInSession("202708", new Date(2027, 8, 15)), true, "no calendar yet: by month");
+  assert.equal(termEnded("202705", new Date(2027, 8, 15)), true);
+});

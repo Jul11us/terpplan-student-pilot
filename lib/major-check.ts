@@ -48,6 +48,11 @@ export type MajorCheck = {
   open: number;
   // The catalog's stated total has credits its tables do not list.
   unlistedCredits: number;
+  // About how many credits the requirements still need beyond the plan (rules written as text included until ticked).
+  remainingCredits: number;
+  // For a minor: the plan courses counted for it that the major counts too, and how many more than allowed.
+  overlap: string[];
+  overlapExcess: number;
 };
 
 // A catalog note that the import read as a requirement ("Note: Students who take MATH241 must also take another
@@ -105,7 +110,9 @@ export function textRule(label: string, subjects: Set<string>) {
   return { subjects: [...named], levels: levels.size ? [...levels].sort() : null, excluded: [...excludedIn(label)] };
 }
 
-export function checkCatalogMajor(raw: Program, facts: Record<string, CourseFact>, courses: PlanCourse[], now: string, { blocks, ticked = [] }: { blocks?: number[]; ticked?: string[] } = {}): MajorCheck {
+// Also checks a minor: majorCodes are the courses the major counts, and overlapCap how many of them the minor may
+// count too (lib/programs.ts MINOR_MAJOR_OVERLAP_COURSES).
+export function checkCatalogMajor(raw: Program, facts: Record<string, CourseFact>, courses: PlanCourse[], now: string, { blocks, ticked = [], majorCodes, overlapCap = null }: { blocks?: number[]; ticked?: string[]; majorCodes?: Set<string>; overlapCap?: number | null } = {}): MajorCheck {
   const keys = requirementKeys(raw);
   const tickedKeys = new Set(ticked);
   // Notes stay out of the check (a block no one selects); a rule whose only listed courses are the ones it leaves
@@ -117,7 +124,7 @@ export function checkCatalogMajor(raw: Program, facts: Record<string, CourseFact
   }) };
   const chosen = blocks ? new Set(blocks.filter((index) => index >= 0 && index < program.blocks.length)) : defaultBlocks(program);
   const manualDone = new Set(keys.flatMap((key, index) => tickedKeys.has(key) ? [index] : []));
-  const progress = evaluateProgram(program, facts, planStatuses(courses, now), { blocks: chosen, manualDone, overlapCap: null });
+  const progress = evaluateProgram(program, facts, planStatuses(courses, now), { blocks: chosen, manualDone, overlapCap, ...(majorCodes ? { majorCodes } : {}) });
   // Each code the requirements may name, with the plan course behind it (an honors version stands for its base).
   const byCode = new Map<string, PlanCourse>();
   for (const course of courses) {
@@ -164,5 +171,8 @@ export function checkCatalogMajor(raw: Program, facts: Record<string, CourseFact
       maybe: guess?.courses ?? [], maybeHave: guess?.have ?? 0, maybeNeed: guess?.need ?? 0, maybeUnit: guess?.unit ?? "courses",
     };
   });
-  return { lines, done: lines.filter((line) => line.ok).length, open: lines.filter((line) => line.open && !line.ok).length, unlistedCredits: progress.unlistedCredits };
+  return {
+    lines, done: lines.filter((line) => line.ok).length, open: lines.filter((line) => line.open && !line.ok).length, unlistedCredits: progress.unlistedCredits,
+    remainingCredits: progress.remainingCredits, overlap: progress.overlap.map((code) => byCode.get(code)?.id ?? code), overlapExcess: progress.overlapExcess,
+  };
 }

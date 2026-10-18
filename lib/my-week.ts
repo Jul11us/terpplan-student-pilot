@@ -1,8 +1,10 @@
-// "My week": the schedule option a student chose, kept in this browser so /week can show it without a
+// "My week": the schedule option a student chose for a term, kept in this browser so /week can show it without a
 // network connection (from the home screen, between classes). Only meeting times and rooms are kept.
 
 import { isAsyncOnline, meetingDays, meetingMinutes, type MeetingTime } from "@/lib/meeting-time";
 import { storageKey } from "@/lib/demo";
+import { markLocalChange } from "@/lib/sync-meta";
+import { termEnded } from "@/lib/term-calendar";
 
 export const MY_WEEK_KEY = "terpplan:my-week";
 export const WEEK_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
@@ -67,21 +69,68 @@ export function parseMyWeek(value: unknown): MyWeek | null {
   };
 }
 
-export function readMyWeek(): MyWeek | null {
+// One week per term ({ weeks: { "202608": ..., "202701": ... } }), so saving next term's schedule keeps this term's.
+// A week stored before that (a single week) is read as its term's. The newest terms are kept, and synced with the
+// account (lib/plan-sync.ts).
+export type MyWeeks = Record<string, MyWeek>;
+export const MAX_WEEKS = 4;
+
+const newest = (weeks: MyWeeks): MyWeeks => Object.fromEntries(Object.entries(weeks).sort(([a], [b]) => b.localeCompare(a)).slice(0, MAX_WEEKS));
+
+export function parseMyWeeks(value: unknown): MyWeeks {
+  if (!value || typeof value !== "object") return {};
+  const record = value as Record<string, unknown>;
+  if (typeof record.term === "string" && Array.isArray(record.classes)) {
+    const week = parseMyWeek(record);
+    return week && /^\d{6}$/.test(week.term) ? { [week.term]: week } : {};
+  }
+  const weeks: MyWeeks = {};
+  if (record.weeks && typeof record.weeks === "object") {
+    for (const [term, raw] of Object.entries(record.weeks as Record<string, unknown>)) {
+      const week = parseMyWeek(raw);
+      if (week && /^\d{6}$/.test(term) && week.term === term) weeks[term] = week;
+    }
+  }
+  return newest(weeks);
+}
+
+export function readMyWeeks(): MyWeeks {
   try {
-    return parseMyWeek(JSON.parse(window.localStorage.getItem(storageKey(MY_WEEK_KEY)) ?? "null"));
+    return parseMyWeeks(JSON.parse(window.localStorage.getItem(storageKey(MY_WEEK_KEY)) ?? "null"));
   } catch {
-    return null;
+    return {};
   }
 }
 
-export function writeMyWeek(week: MyWeek) {
+// Replaces every saved week (with the account's copy); not a change of the student's own.
+export function writeMyWeeks(weeks: MyWeeks) {
   try {
-    window.localStorage.setItem(storageKey(MY_WEEK_KEY), JSON.stringify(week));
+    window.localStorage.setItem(storageKey(MY_WEEK_KEY), JSON.stringify({ weeks: newest(weeks) }));
     return true;
   } catch {
     return false;
   }
+}
+
+// Saves one term's week, keeping the other terms'.
+export function writeMyWeek(week: MyWeek) {
+  const saved = writeMyWeeks({ ...readMyWeeks(), [week.term]: week });
+  if (saved) markLocalChange();
+  return saved;
+}
+
+// The week /week opens on: the first saved term whose classes are not over yet (the one in session, else the next
+// to start), else the latest.
+export function pickWeekTerm(weeks: MyWeeks, now = new Date()) {
+  const terms = Object.keys(weeks).sort();
+  return terms.find((term) => !termEnded(term, now)) ?? terms.at(-1) ?? null;
+}
+
+// A term's saved week, or without a term the one /week opens on.
+export function readMyWeek(term?: string): MyWeek | null {
+  const weeks = readMyWeeks();
+  const key = term ?? pickWeekTerm(weeks);
+  return key ? weeks[key] ?? null : null;
 }
 
 export function classesOn(week: MyWeek, day: string) {

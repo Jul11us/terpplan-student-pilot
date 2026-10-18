@@ -10,7 +10,7 @@ registerHooks({ resolve(specifier, context, next) {
 } });
 const { GET, PUT, DELETE } = await import("../app/api/sync/route.ts");
 const { createEmailSession, hashEmail } = await import("../lib/auth.ts");
-const { decideSync, parseSyncState, syncStateEmpty } = await import("../lib/plan-sync.ts");
+const { decideSync, parseSyncState, syncStateEmpty, syncStateForAccount } = await import("../lib/plan-sync.ts");
 
 const plan = (...ids) => ({ saved: { term: "202701", plans: { 202701: ids.map((courseId) => ({ courseId, courseTitle: courseId })) }, preferences: { excludedDays: [], earliestStart: "", windowStart: "", windowEnd: "", strictTime: false, openSeatsOnly: false, includeFreshmanConnection: false, busyBlocks: [{ id: "job", days: ["Tue"], start: "13:00", end: "16:00", label: "Campus job" }], bufferMinutes: 0 } }, taken: { completed: ["MATH140"], inProgress: [], source: "manual", updatedAt: "" }, reminders: { "Spring 2027": { date: "2026-11-02", time: "08:30" } } });
 const state = (...ids) => parseSyncState(plan(...ids));
@@ -75,8 +75,8 @@ test("deleting removes the account's copy", async () => {
 
 test("the question shows the term's courses and how many commitments each copy has", async () => {
   const { planSummary, PERSONAL_KEYS } = await import("../lib/plan-sync.ts");
-  assert.deepEqual(planSummary(state("MATH141", "CMSC132")), { term: "202701", courses: ["MATH141", "CMSC132"], commitments: 1 });
-  assert.deepEqual(planSummary(parseSyncState({ saved: { plans: {} } })), { term: "", courses: [], commitments: 0 });
+  assert.deepEqual(planSummary(state("MATH141", "CMSC132")), { term: "202701", courses: ["MATH141", "CMSC132"], commitments: 1, weeks: [] });
+  assert.deepEqual(planSummary(parseSyncState({ saved: { plans: {} } })), { term: "", courses: [], commitments: 0, weeks: [] });
   // "Sign out and clear" removes every key that holds the student's own planner data.
   for (const key of ["terpplan:v1", "terpplan:taken", "terpplan:registration-time", "terpplan:registration-day", "terpplan:my-week", "terpplan:sync-meta"]) assert.ok(PERSONAL_KEYS.includes(key), key);
 });
@@ -101,4 +101,89 @@ test("Gen Ed needs sync before any course is added, and are not silently replace
   const empty = parseSyncState({ saved: { plans: {}, genEd: { codes: [] } } });
   assert.equal(syncStateEmpty(empty), true);
   assert.equal(decideSync({ local: empty, server: null, lastSynced: null, localChanged: true }), "inSync", "a cleared selection stays empty");
+});
+
+const week = (term) => ({ term, termName: term, savedAt: "2026-10-01T10:00:00.000Z", unscheduled: [], classes: [{ courseId: "CMSC216", courseTitle: "Introduction to Computer Systems", sectionId: "CMSC216-0101", kind: null, days: ["Tue", "Thu"], start: 660, end: 735, building: "ESJ", room: "0202" }] });
+
+test("My week travels with the account, term by term; a page from before that keeps the account's weeks", async () => {
+  const withWeeks = { ...plan("MATH141"), weeks: { 202608: week("202608"), 202701: week("202701") } };
+  assert.equal((await PUT(request("PUT", { state: withWeeks, updatedAt: "2026-10-01T10:00:00.000Z" }))).status, 200);
+  assert.deepEqual(Object.keys((await (await GET(request("GET"))).json()).state.weeks).sort(), ["202608", "202701"]);
+  // An open tab from before this change saves its plan without weeks.
+  assert.equal((await PUT(request("PUT", { state: plan("CMSC132"), updatedAt: "2026-10-01T11:00:00.000Z" }))).status, 200);
+  const stored = (await (await GET(request("GET"))).json()).state;
+  assert.equal(stored.saved.plans["202701"][0].courseId, "CMSC132");
+  assert.deepEqual(Object.keys(stored.weeks).sort(), ["202608", "202701"], "the weeks stay");
+  // A device that clears its weeks sends an empty list, which is kept as such.
+  assert.equal((await PUT(request("PUT", { state: { ...plan("CMSC132"), weeks: {} }, updatedAt: "2026-10-01T12:00:00.000Z" }))).status, 200);
+  assert.deepEqual((await (await GET(request("GET"))).json()).state.weeks, {});
+});
+
+test("weeks count as data on a device, and no weeks equals weeks left out", () => {
+  const onlyWeek = parseSyncState({ saved: { plans: {} }, weeks: { 202608: week("202608") } });
+  assert.equal(syncStateEmpty(onlyWeek), false);
+  assert.equal(decideSync({ local: onlyWeek, server: null, lastSynced: null, localChanged: true }), "askUpload");
+  const server = { state: state("MATH141"), updatedAt: "2026-10-01T10:00:00.000Z" };
+  assert.equal(decideSync({ local: parseSyncState({ ...plan("MATH141"), weeks: {} }), server, lastSynced: null, localChanged: true }), "inSync", "an old copy without weeks matches a device with none");
+  assert.equal("weeks" in parseSyncState(plan("MATH141")), false, "left out stays left out");
+});
+
+test("adopting a legacy account copy keeps only weeks known to belong to that account", () => {
+  const deviceWeeks = { 202608: week("202608") };
+  const legacy = state("MATH141");
+  const adoptedWeeks = (copy, previousAccount, account) => syncStateForAccount(copy, previousAccount, account).weeks ?? deviceWeeks;
+  assert.deepEqual(adoptedWeeks(legacy, "account-a", "account-a"), deviceWeeks, "a returning student's own legacy week stays on this device");
+  assert.deepEqual(adoptedWeeks(legacy, "account-a", "account-b"), {}, "choosing account B must clear account A's week before the next upload");
+  assert.deepEqual(adoptedWeeks(legacy, undefined, "account-b"), {}, "an unowned device week is not silently attached to the chosen account");
+  const accountWeeks = { 202701: week("202701") };
+  assert.deepEqual(adoptedWeeks({ ...legacy, weeks: accountWeeks }, "account-a", "account-b"), accountWeeks, "an account's explicit week replaces the previous student's");
+  assert.deepEqual(adoptedWeeks({ ...legacy, weeks: {} }, "account-a", "account-a"), {}, "an explicitly cleared account copy clears this device too");
+});
+
+test("an in-flight legacy save preserves a week another device saved in the meantime", { timeout: 5000 }, async () => {
+  await PUT(request("PUT", { state: { ...plan("MATH141"), weeks: { 202608: week("202608") } }, updatedAt: "2026-10-01T10:00:00.000Z" }));
+  let release, entered, held = false;
+  const barrier = new Promise((resolve) => { release = resolve; });
+  const paused = new Promise((resolve) => { entered = resolve; });
+  const hold = async () => { held = true; entered(); await barrier; };
+  globalThis.__syncEnv.DB = { ...database, prepare(query) {
+    const decorate = (statement) => ({ ...statement,
+      bind(...values) { return decorate(statement.bind(...values)); },
+      async first(...args) {
+        const row = await statement.first(...args);
+        // The previous implementation read weeks before its write. Hold that stale read if present;
+        // an atomic implementation instead pauses just before executing its single upsert below.
+        if (!held && /^SELECT state, updated_at/.test(query)) await hold();
+        return row;
+      },
+      async run(...args) {
+        if (!held && /^INSERT INTO plan_sync/.test(query)) await hold();
+        return statement.run(...args);
+      },
+    });
+    return decorate(database.prepare(query));
+  } };
+  const legacySave = PUT(request("PUT", { state: plan("CMSC132"), updatedAt: "2026-10-01T12:00:00.000Z" }));
+  try {
+    await paused;
+    assert.equal((await PUT(request("PUT", { state: { ...plan("MATH141"), weeks: { 202701: week("202701") } }, updatedAt: "2026-10-01T11:00:00.000Z" }))).status, 200);
+  } finally {
+    release();
+  }
+  assert.equal((await legacySave).status, 200);
+  const stored = (await (await GET(request("GET"))).json()).state;
+  assert.equal(stored.saved.plans["202701"][0].courseId, "CMSC132", "the newer legacy plan is saved");
+  assert.deepEqual(Object.keys(stored.weeks), ["202701"], "the intervening week's update is preserved atomically");
+});
+
+test("preserving weeks cannot grow a legacy save beyond the sync limit", async () => {
+  const largeWeek = week("202608");
+  largeWeek.classes[0].courseTitle = "w".repeat(40_000);
+  assert.equal((await PUT(request("PUT", { state: { ...plan("MATH141"), weeks: { 202608: largeWeek } }, updatedAt: "2026-10-01T10:00:00.000Z" }))).status, 200);
+  const largePlan = plan("CMSC132");
+  largePlan.saved.plans["202701"][0].courseTitle = "p".repeat(30_000);
+  assert.equal((await PUT(request("PUT", { state: largePlan, updatedAt: "2026-10-01T11:00:00.000Z" }))).status, 413);
+  const stored = (await (await GET(request("GET"))).json()).state;
+  assert.equal(stored.saved.plans["202701"][0].courseId, "MATH141", "a rejected merge leaves the stored plan intact");
+  assert.equal(stored.weeks["202608"].classes[0].courseTitle.length, 40_000);
 });

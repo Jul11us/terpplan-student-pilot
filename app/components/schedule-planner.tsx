@@ -98,7 +98,7 @@ const copy = {
     onlyInstructors: "Only", minutes: "min", credits: "credits", credit: "credit", lecture: "Lecture", discussion: "Discussion", lab: "Lab",
     // Short forms for the narrow timetable blocks.
     lectureShort: "LEC", discussionShort: "DIS", labShort: "LAB",
-    select: "View this schedule", calendar: "Weekly timetable", unknown: "Times to confirm", noUnknown: "All meeting times are listed.", useWeek: "Use as my week", weekSaved: "Saved. Open My week →", weekHint: "My week lists each day's classes with building map links and works without internet. You can add it to your phone's home screen.", reportSchedule: "Something wrong in this schedule (a time, room or map link)? Report it",
+    select: "View this schedule", calendar: "Weekly timetable", unknown: "Times to confirm", noUnknown: "All meeting times are listed.", useWeek: "Use as my week", weekSaved: "Saved. Open My week →", weekHint: "My week lists each day's classes with building map links and works without internet; each term is kept on its own. You can add it to your phone's home screen.", reportSchedule: "Something wrong in this schedule (a time, room or map link)? Report it",
     noOptions: "No conflict-free schedule was found. Remove a preference or course and try again.",
     fit: "Preferred-window fit", warning: "Some meeting times are missing, so those sections cannot be fully checked.",
     loadError: "Schedule options could not be generated. Please try again.", invalidWindow: "Enter both ends of the preferred window, with the start before the end.", back: "← Back to course search",
@@ -169,7 +169,7 @@ const copy = {
     pinnedNote: "你指定的班次即使已满或属于 FC，也会保留在方案里。",
     onlyInstructors: "只排", minutes: "分钟", credits: "学分", credit: "学分", lecture: "讲课", discussion: "讨论课", lab: "实验课",
     lectureShort: "讲课", discussionShort: "讨论课", labShort: "实验课",
-    select: "查看此方案", calendar: "每周课表", unknown: "需要确认的时间", noUnknown: "所有班次均列出了上课时间。", useWeek: "设为我的一周", weekSaved: "已保存，打开“我的一周” →", weekHint: "“我的一周”按天列出每节课和楼的地图链接，没有网络也能看，可以添加到手机主屏幕。", reportSchedule: "课表里有信息不对（时间、教室或地图链接）？告诉我们",
+    select: "查看此方案", calendar: "每周课表", unknown: "需要确认的时间", noUnknown: "所有班次均列出了上课时间。", useWeek: "设为我的一周", weekSaved: "已保存，打开“我的一周” →", weekHint: "“我的一周”按天列出每节课和楼的地图链接，没有网络也能看，每个学期分开保存。可以添加到手机主屏幕。", reportSchedule: "课表里有信息不对（时间、教室或地图链接）？告诉我们",
     noOptions: "没有找到无冲突方案。可以移除一项偏好或课程后重试。",
     fit: "符合时间偏好的比例", warning: "部分班次时间缺失，无法完整验证这些课程是否冲突。",
     loadError: "暂时无法生成排课方案，请重试。", invalidWindow: "请填写完整的偏好时间段，并确保开始时间早于结束时间。", back: "← 返回找课",

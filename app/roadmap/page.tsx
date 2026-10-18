@@ -7,7 +7,7 @@ import { AuditSection, CatalogMajor, PLACE_LIMIT, PlaceChips, type PlaceChoice }
 import { checkAuditNeeds, readAuditNeeds, type AuditCheck, type SavedAuditNeeds } from "@/lib/audit-plan";
 import { checkCsMajor, csBenchmarks, CS_TRACKS, TRACK_NAMES, type CsBenchmark, type CsCheck, type CsTrack } from "@/lib/cs-major";
 import { checkCatalogMajor, type MajorCheck, type MajorLine, type PlanCourse } from "@/lib/major-check";
-import { defaultBlocks, PROGRAMS_DATA_VERSION, type CourseFact, type Program } from "@/lib/programs";
+import { defaultBlocks, MINOR_MAJOR_OVERLAP_COURSES, PROGRAMS_DATA_VERSION, type CourseFact, type Program } from "@/lib/programs";
 import { useOfferingSeasons } from "@/app/components/season-note";
 import { useDocumentLanguage } from "@/lib/document-language";
 import { GEN_ED_CATEGORIES } from "@/lib/gened-categories";
@@ -25,6 +25,10 @@ import { countUse } from "@/lib/usage";
 type Language = "en" | "zh";
 type Suggestion = { course_id: string; name: string; credits: string | null };
 type ProgramData = { builtAt: string; program: Program; courses: Record<string, CourseFact> };
+type ProgramChoice = { slug: string; name: string };
+
+// A usual full load: 120 credits in eight fall and spring terms. The minor's room is counted at it.
+const USUAL_LOAD = 15;
 
 // The catalog's own Computer Science page; the precise check (lib/cs-major.ts) takes its place in the list.
 const CS_CATALOG_SLUG = "computer-science--computer-science-major";
@@ -48,6 +52,16 @@ const copy = {
     majorTitle: "Major requirements", majorLabel: "Major", trackLabel: "Track", majorNone: "Not chosen", majorCs: "Computer Science",
     majorPrompt: "Choose your major to check its requirements one by one. Computer Science is checked rule by rule, with its four specializations; other majors are checked against the catalog's course lists, and rules the catalog writes only in words are left for you to check.",
     majorCatalog: "Other majors (from the catalog)", majorDoneOpen: "{n} of {m} met · {k} to check yourself", auditShort: "Audit: {n} of {m}",
+    minorTitle: "Minor", minorLabel: "Minor", minorNone: "Not chosen", minorShort: "Minor: {n} of {m}",
+    minorPrompt: "Choose a minor to see what it still needs beyond this plan, and whether it fits in the terms left.",
+    minorFitDone: "This plan has every course the minor's tables ask for.",
+    minorFit: "The minor still needs about {credits} credits that are not in the plan; the fall and spring terms ahead have about {room} credits of room at 15 credits a term.",
+    minorFits: "It fits: add its courses with “Add to a term” above, and keep room for your major's courses.",
+    minorTight: "It does not fit at 15 credits a term: take more credits in some terms, use summer or winter, or plan another term.",
+    minorOverlap: "Counted for both the minor and your major: {list}. UMD lets a minor share at most two courses (6 credits) with the major.",
+    minorOverlapExcess: "That is {n} more, so the minor needs {n} other {courses} in their place; the credits above include them.",
+    minorNoMajor: "Choose your major above to see which courses would count for both.",
+    minorUlc: "Courses for the CS upper level concentration are not counted as shared: the department lets a minor's courses count for it.",
     toPlanner: "Make this term's schedule →", toPlannerHint: "Opens the planner with this term's courses: compare schedules, then watch full sections.",
     placed: "{id} added to {term}.", placedEarlier: "{id} added to the courses before the plan.", choiceFull: " · full", choicePrereq: " · prerequisites not planned before it", choiceEarlier: "Before the plan (AP, transfer credit)",
     majorDone: "{n} of {m} met", majorShort: "Major: {n} of {m}", courseUnit: "courses", courseOne: "course", creditUnit: "credits", areaUnit: "areas", progress: "{have} / {need} {unit}",
@@ -76,6 +90,16 @@ const copy = {
     majorTitle: "专业要求", majorLabel: "专业", trackLabel: "方向", majorNone: "未选择", majorCs: "计算机科学 Computer Science",
     majorPrompt: "选你的专业，按专业要求逐项检查。计算机科学按系里的规则逐条检查（含四个方向）；其他专业按 catalog 列出的课程检查，catalog 只用文字描述的要求留给你自己核对。",
     majorCatalog: "其他专业（按 catalog）", majorDoneOpen: "已满足 {n} / {m} 项 · {k} 项需要自己核对", auditShort: "审计 {n} / {m} 项",
+    minorTitle: "辅修", minorLabel: "辅修", minorNone: "未选择", minorShort: "辅修 {n} / {m} 项",
+    minorPrompt: "选一个辅修，看它在这份规划之外还差什么、剩下的学期放不放得下。",
+    minorFitDone: "辅修表格里要求的课，这份规划都排进去了。",
+    minorFit: "辅修还有约 {credits} 学分没排进规划；之后的秋季和春季学期按每学期 15 学分算，还空着约 {room} 学分。",
+    minorFits: "放得下：用上面的“排进学期”把课排进去，同时给专业课留出位置。",
+    minorTight: "按每学期 15 学分放不下：需要某些学期多修、利用夏季或冬季学期，或者多读一个学期。",
+    minorOverlap: "既算进辅修、又算进专业的课：{list}。UMD 规定辅修和主修最多共用 2 门课（6 学分）。",
+    minorOverlapExcess: "多出 {n} 门，辅修要另修 {n} {courses}课来替代，上面的学分已经算进去了。",
+    minorNoMajor: "在上面选你的专业，才能看到哪些课两边都算。",
+    minorUlc: "CS 的 Upper Level Concentration 可以用辅修的课，所以这部分不算作重叠。",
     toPlanner: "排这学期的课表 →", toPlannerHint: "带着这学期的课去排课页：比较课表，满员的班次可以关注余位。",
     placed: "已把 {id} 排进 {term}。", placedEarlier: "已把 {id} 放进“之前修过”。", choiceFull: " · 已满", choicePrereq: " · 先修课还没排在前面", choiceEarlier: "之前修过（AP、转学分）",
     majorDone: "已满足 {n} / {m} 项", majorShort: "专业要求 {n} / {m} 项", courseUnit: "门", courseOne: "门", creditUnit: "学分", areaUnit: "个领域", progress: "{have} / {need} {unit}",
@@ -185,9 +209,9 @@ function CourseRow({ id, term, info, issues, roadmap, places, language, onRemove
 // How a catalog requirement reads on paper: a required course with alternatives names them all.
 const printLabel = (line: MajorLine) => line.kind === "course" && line.listed.length > 1 ? line.listed.map((option) => option.join(" + ")).join(" / ") : line.label.length > 70 ? `${line.label.slice(0, 68)}…` : line.label;
 
-function RoadmapPrint({ roadmap, info, check, rows, cs, benchmarks, catalog, audit, auditDate }: {
+function RoadmapPrint({ roadmap, info, check, rows, cs, benchmarks, catalog, minor, audit, auditDate }: {
   roadmap: SavedRoadmap; info: Record<string, CourseInfo | null>; check: RoadmapCheck; rows: GenEdRow[]; cs: CsCheck | null; benchmarks: CsBenchmark[];
-  catalog: { name: string; check: MajorCheck } | null; audit: AuditCheck | null; auditDate: string;
+  catalog: { name: string; check: MajorCheck } | null; minor: { name: string; check: MajorCheck } | null; audit: AuditCheck | null; auditDate: string;
 }) {
   const lastTerm = roadmapTerms(roadmap).filter((term) => roadmap.terms[term]?.length).pop();
   const name = (term: string) => `${{ fall: "FALL", spring: "SPRING", winter: "JANUARY", summer: "SUMMER" }[termSeason(term)]} ${termYear(term)}`;
@@ -225,6 +249,10 @@ function RoadmapPrint({ roadmap, info, check, rows, cs, benchmarks, catalog, aud
       <p><b>{catalog.name}</b> · requirements met: {catalog.check.done} of {catalog.check.lines.length}{catalog.check.open ? ` (${catalog.check.open} written in words, to check against the catalog)` : ""}{lastTerm ? ` · Anticipated graduation: ${termLabel(lastTerm, "en")}` : ""}</p>
       {catalog.check.lines.some((line) => !line.ok && !line.open) && <p>Still needed: {catalog.check.lines.filter((line) => !line.ok && !line.open).slice(0, 14).map((line) => `${printLabel(line)} (${line.have}/${line.need})`).join("; ")}</p>}
     </div>}
+    {minor && <div className="mt-2 border border-black p-1" style={{ breakInside: "avoid" }}>
+      <p><b>Minor: {minor.name}</b> · requirements met: {minor.check.done} of {minor.check.lines.length}{minor.check.open ? ` (${minor.check.open} written in words, to check against the catalog)` : ""}{minor.check.overlap.length ? ` · Shared with the major: ${minor.check.overlap.join(", ")}` : ""}</p>
+      {minor.check.lines.some((line) => !line.ok && !line.open) && <p>Still needed: {minor.check.lines.filter((line) => !line.ok && !line.open).slice(0, 10).map((line) => `${printLabel(line)} (${line.have}/${line.need})`).join("; ")}</p>}
+    </div>}
     {audit && audit.lines.length > 0 && <div className="mt-2 border border-black p-1" style={{ breakInside: "avoid" }}>
       <p><b>Degree audit</b>{auditDate ? ` of ${auditDate}` : ""}: this plan fills {audit.done} of its {audit.lines.length} unfinished requirements{audit.open ? `; ${audit.open} to check by hand` : ""}.</p>
       {audit.lines.some((line) => line.ok === false) && <p>Not planned yet: {audit.lines.filter((line) => line.ok === false).slice(0, 12).map((line) => `${line.title.length > 60 ? `${line.title.slice(0, 58)}…` : line.title} (${line.need})`).join("; ")}</p>}
@@ -240,9 +268,12 @@ export default function RoadmapPage() {
   const [now, setNow] = useState("");
   const [info, setInfo] = useState<Record<string, CourseInfo | null>>({});
   const [notice, setNotice] = useState("");
-  const [majors, setMajors] = useState<Array<{ slug: string; name: string }> | null>(null);
+  const [majors, setMajors] = useState<ProgramChoice[] | null>(null);
+  const [minors, setMinors] = useState<ProgramChoice[] | null>(null);
   const [programData, setProgramData] = useState<ProgramData | null>(null);
   const [programFailed, setProgramFailed] = useState("");
+  const [minorData, setMinorData] = useState<ProgramData | null>(null);
+  const [minorFailed, setMinorFailed] = useState("");
   const [auditNeeds, setAuditNeeds] = useState<SavedAuditNeeds | null>(null);
   // The terms the planner has sections for (/api/terms): a term among them can go to the planner.
   const [plannerTerms, setPlannerTerms] = useState<string[]>([]);
@@ -275,15 +306,28 @@ export default function RoadmapPage() {
   useEffect(() => { countUse("roadmap"); }, []);
   const majorId = roadmap?.major?.id ?? "";
   useEffect(() => { if (majorId) countUse("major"); }, [majorId]);
-  // Every major in the catalog snapshot, for the major list.
+  // Every major and minor in the catalog snapshot, for the two lists.
   useEffect(() => {
     let cancelled = false;
     fetch(`/api/programs?all=1&v=${PROGRAMS_DATA_VERSION}`)
-      .then(async (response) => response.ok ? ((await response.json()) as { majors?: Array<{ slug: string; name: string }> }).majors ?? [] : [])
-      .catch(() => [] as Array<{ slug: string; name: string }>)
-      .then((list) => { if (!cancelled) setMajors(list); });
+      .then(async (response) => response.ok ? (await response.json()) as { majors?: ProgramChoice[]; minors?: ProgramChoice[] } : {})
+      .catch(() => ({} as { majors?: ProgramChoice[]; minors?: ProgramChoice[] }))
+      .then((lists) => { if (!cancelled) { setMajors(lists.majors ?? []); setMinors(lists.minors ?? []); } });
     return () => { cancelled = true; };
   }, []);
+  const minorSlug = roadmap?.minor?.slug ?? "";
+  useEffect(() => { if (minorSlug) countUse("minor"); }, [minorSlug]);
+  useEffect(() => {
+    if (!minorSlug) return;
+    let cancelled = false;
+    fetch(`/api/programs?slug=${encodeURIComponent(minorSlug)}&v=${PROGRAMS_DATA_VERSION}`).then(async (response) => {
+      if (!response.ok) throw new Error("program");
+      const payload = await response.json() as ProgramData;
+      if (!cancelled) setMinorData(payload);
+    }).catch(() => { if (!cancelled) setMinorFailed(minorSlug); });
+    return () => { cancelled = true; };
+  }, [minorSlug]);
+  const minorProgram = minorData && minorData.program.slug === minorSlug ? minorData : null;
   const catalogSlug = roadmap?.major?.id === "catalog" ? roadmap.major.slug : "";
   useEffect(() => {
     if (!catalogSlug) return;
@@ -325,6 +369,14 @@ export default function RoadmapPage() {
   const benchmarks = useMemo(() => roadmap?.major?.id === "CS" ? csBenchmarks(planCourses, roadmapTerms(roadmap)) : [], [roadmap, planCourses]);
   const catalogMajor = roadmap?.major?.id === "catalog" ? roadmap.major : null;
   const catalogCheck = useMemo(() => catalogMajor && program && now ? checkCatalogMajor(program.program, program.courses, planCourses, now, { blocks: catalogMajor.blocks, ticked: catalogMajor.ticked }) : null, [catalogMajor, program, planCourses, now]);
+  // The courses the major counts, for the minor's limit on shared courses (CS: not its upper level concentration,
+  // which may use a minor's courses). An honors course stands for its base course too.
+  const majorCounted = useMemo(() => new Set([
+    ...(cs?.lines ?? []).filter((line) => line.group !== "ulc").flatMap((line) => line.courses),
+    ...(catalogCheck?.lines ?? []).flatMap((line) => line.courses),
+  ].flatMap((course) => [course.id, course.id.slice(0, 7)])), [cs, catalogCheck]);
+  const minorChoice = roadmap?.minor ?? null;
+  const minorCheck = useMemo(() => minorChoice && minorProgram && now ? checkCatalogMajor(minorProgram.program, minorProgram.courses, planCourses, now, { blocks: minorChoice.blocks, ticked: minorChoice.ticked, majorCodes: majorCounted, overlapCap: MINOR_MAJOR_OVERLAP_COURSES }) : null, [minorChoice, minorProgram, planCourses, now, majorCounted]);
   const auditCheck = useMemo(() => auditNeeds ? checkAuditNeeds(auditNeeds, planCourses, Object.fromEntries(planCourses.map((course) => [course.id, info[course.id]?.ge]))) : null, [auditNeeds, planCourses, info]);
 
   // Course details (credits, Gen Eds, prerequisites) for the plan's courses, and for the courses the requirements
@@ -332,8 +384,9 @@ export default function RoadmapPage() {
   const offered = useMemo(() => [
     ...(cs?.lines ?? []).flatMap((line) => line.options.slice(0, PLACE_LIMIT)),
     ...(catalogCheck?.lines ?? []).flatMap((line) => line.place.slice(0, PLACE_LIMIT)),
+    ...(minorCheck?.lines ?? []).flatMap((line) => line.place.slice(0, PLACE_LIMIT)),
     ...(auditCheck?.lines ?? []).filter((line) => line.ok === false).flatMap((line) => line.options.slice(0, PLACE_LIMIT)),
-  ], [cs, catalogCheck, auditCheck]);
+  ], [cs, catalogCheck, minorCheck, auditCheck]);
   const missing = [...new Set([...ids, ...offered])].filter((id) => /^[A-Z]{4}\d{3}[A-Z]?$/.test(id) && !(id in info)).sort().join(",");
   useEffect(() => {
     const wanted = missing.split(",").filter(Boolean);
@@ -428,6 +481,26 @@ export default function RoadmapPage() {
   if (catalogMajor && !majorChoices.some((item) => item.slug === catalogMajor.slug)) majorChoices.unshift({ slug: catalogMajor.slug, name: program?.program.name ?? catalogMajor.slug });
   const chooseMajor = (value: string) => update({ ...roadmap, major: value === "CS" ? { id: "CS", track: csTrack } : value ? { id: "catalog", slug: value } : undefined });
   const catalogBlocks = catalogMajor?.blocks ? new Set(catalogMajor.blocks) : program ? defaultBlocks(program.program) : new Set<number>();
+  const minorChoices = [...(minors ?? [])];
+  if (minorChoice && !minorChoices.some((item) => item.slug === minorChoice.slug)) minorChoices.unshift({ slug: minorChoice.slug, name: minorProgram?.program.name ?? minorChoice.slug });
+  const minorBlocks = minorChoice?.blocks ? new Set(minorChoice.blocks) : minorProgram ? defaultBlocks(minorProgram.program) : new Set<number>();
+  const tickMinor = (key: string, on: boolean) => {
+    if (!minorChoice) return;
+    const ticked = new Set(minorChoice.ticked ?? []);
+    if (on) ticked.add(key); else ticked.delete(key);
+    update({ ...roadmap, minor: { ...minorChoice, ticked: [...ticked].sort() } });
+  };
+  // Room left in the fall and spring terms ahead, at a usual load, for what the minor still needs.
+  const minorRoom = roadmapTerms(roadmap).filter((term) => term > now && ["fall", "spring"].includes(termSeason(term)))
+    .reduce((sum, term) => sum + Math.max(0, USUAL_LOAD - (check.terms[term]?.credits ?? 0)), 0);
+  const minorSummary = minorCheck && minorProgram?.program.items.length ? <div className="mt-3 space-y-2 text-xs leading-5">
+    <p className={`rounded-lg border px-3 py-2 ${minorCheck.remainingCredits <= 0 || minorCheck.remainingCredits <= minorRoom ? "border-[#cddbd1] bg-[#edf3ef] text-[#315c43]" : "border-[#ead8b5] bg-[#fff8e8] text-[#745424]"}`}>
+      {minorCheck.remainingCredits <= 0 ? t.minorFitDone : `${fill(t.minorFit, { credits: minorCheck.remainingCredits, room: minorRoom })}${language === "zh" ? "" : " "}${minorCheck.remainingCredits <= minorRoom ? t.minorFits : t.minorTight}`}
+    </p>
+    {!roadmap.major ? <p className="text-[#646c68]">{t.minorNoMajor}</p>
+      : minorCheck.overlap.length > 0 && <p className="text-[#48534f]">{fill(t.minorOverlap, { list: minorCheck.overlap.join(language === "zh" ? "、" : ", ") })}{minorCheck.overlapExcess > 0 && `${language === "zh" ? "" : " "}${fill(t.minorOverlapExcess, { n: minorCheck.overlapExcess, courses: language === "zh" ? "门" : minorCheck.overlapExcess === 1 ? "course" : "courses" })}`}</p>}
+    {roadmap.major?.id === "CS" && <p className="text-[#646c68]">{t.minorUlc}</p>}
+  </div> : null;
   const tick = (key: string, on: boolean) => {
     if (!catalogMajor) return;
     const ticked = new Set(catalogMajor.ticked ?? []);
@@ -479,6 +552,7 @@ export default function RoadmapPage() {
           <span className="text-[#48534f]">{fill(t.genEdDone, { n: filledRows, m: rows.length })}</span>
           {cs && <span className="text-[#48534f]">{fill(t.majorShort, { n: cs.done, m: cs.lines.length })}</span>}
           {catalogCheck && catalogCheck.lines.length > 0 && <span className="text-[#48534f]">{fill(t.majorShort, { n: catalogCheck.done, m: catalogCheck.lines.length })}</span>}
+          {minorCheck && minorCheck.lines.length > 0 && <span className="text-[#48534f]">{fill(t.minorShort, { n: minorCheck.done, m: minorCheck.lines.length })}</span>}
           {auditCheck && auditCheck.lines.length > 0 && <span className="text-[#48534f]">{fill(t.auditShort, { n: auditCheck.done, m: auditCheck.lines.length })}</span>}
           <span className={issueCount ? "text-[#8a5a17]" : "text-[#315c43]"}>{issueCount ? fill(t.issues, { n: issueCount }) : t.noIssues}</span>
         </p>
@@ -546,6 +620,20 @@ export default function RoadmapPage() {
           onBlocks={(blocks) => update({ ...roadmap, major: { ...catalogMajor, blocks } })} onTick={tick} termName={termName} snapshot={program?.builtAt ?? ""} choicesFor={choicesFor} onPlace={addOffered} />}
       </section>
 
+      <section className="mt-8 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-4 sm:p-5">
+        <h2 className="font-serif text-2xl">{t.minorTitle}</h2>
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="grid w-full gap-1 text-xs font-medium text-[#5d6561] sm:w-auto">{t.minorLabel}<select value={minorChoice?.slug ?? ""} onChange={(event) => update({ ...roadmap, minor: event.target.value ? { slug: event.target.value } : undefined })} className="min-h-9 w-full rounded-lg border border-[#dedbd3] bg-white px-2 text-sm text-[#202728] sm:w-80">
+            <option value="">{t.minorNone}</option>
+            {minorChoices.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}
+          </select></label>
+          {minorCheck && minorCheck.lines.length > 0 && <span className={`pb-2 text-sm font-semibold ${minorCheck.done === minorCheck.lines.length ? "text-[#315c43]" : "text-[#24312d]"}`}>{fill(minorCheck.open ? t.majorDoneOpen : t.majorDone, { n: minorCheck.done, m: minorCheck.lines.length, k: minorCheck.open })}</span>}
+        </div>
+        {!minorChoice && <p className="mt-3 text-xs leading-5 text-[#646c68]">{t.minorPrompt}</p>}
+        {minorChoice && <CatalogMajor kind="minor" language={language} program={minorProgram?.program ?? null} failed={minorFailed === minorChoice.slug} check={minorCheck} blocks={minorBlocks}
+          onBlocks={(blocks) => update({ ...roadmap, minor: { ...minorChoice, blocks } })} onTick={tickMinor} termName={termName} snapshot={minorProgram?.builtAt ?? ""} choicesFor={choicesFor} onPlace={addOffered} extra={minorSummary} />}
+      </section>
+
       <AuditSection language={language} saved={auditNeeds} check={auditCheck} planIds={new Set(ids)} now={now} termName={termName} onSaved={setAuditNeeds} onFill={(entries) => fillFrom(entries, t.fillTakenNone)} choicesFor={choicesFor} onPlace={addOffered} />
 
       <section className="mt-8 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-4 sm:p-5">
@@ -558,6 +646,7 @@ export default function RoadmapPage() {
       </section>
     </div>
     <RoadmapPrint roadmap={roadmap} info={info} check={check} rows={rows} cs={cs} benchmarks={benchmarks}
-      catalog={catalogCheck && program ? { name: program.program.name, check: catalogCheck } : null} audit={auditCheck} auditDate={auditNeeds?.savedAt.slice(0, 10) ?? ""} />
+      catalog={catalogCheck && program ? { name: program.program.name, check: catalogCheck } : null} minor={minorCheck && minorProgram ? { name: minorProgram.program.name, check: minorCheck } : null}
+      audit={auditCheck} auditDate={auditNeeds?.savedAt.slice(0, 10) ?? ""} />
   </main>;
 }

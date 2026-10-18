@@ -114,3 +114,15 @@ test("on the catalog snapshot: Biological Sciences takes one of its three math p
   const both = checkCatalogMajor(biology, known, plan({ 202608: ["BSCI171"], 202701: ["BSCI161"] }), "202608");
   assert.deepEqual(ids(both.lines.find((item) => item.label.startsWith("BSCI180")).courses), ["BSCI161", "BSCI171"]);
 });
+
+test("a minor beside the major: what it still needs, and the courses it shares with the major beyond the two allowed", () => {
+  const snapshot = JSON.parse(readFileSync(new URL("../data/umd-programs.json", import.meta.url), "utf8"));
+  const statistics = snapshot.programs.find((program) => program.slug === "mathematics--statistics-minor");
+  const courses = [{ id: "MATH241", term: null, credits: 4 }, { id: "STAT400", term: "202701", credits: 3 }, { id: "STAT401", term: "202708", credits: 3 }];
+  const alone = checkCatalogMajor(statistics, snapshot.courses, courses, "202608");
+  assert.deepEqual([alone.done, alone.lines.length, alone.overlap, alone.overlapExcess, alone.remainingCredits], [2, 4, [], 0, 6], "STAT430 and one elective are left");
+  // A Data Science major counts all three: one more than a minor may share, which takes another course.
+  const shared = checkCatalogMajor(statistics, snapshot.courses, courses, "202608", { majorCodes: new Set(["MATH241", "STAT400", "STAT401"]), overlapCap: 2 });
+  assert.deepEqual([shared.overlap, shared.overlapExcess, shared.remainingCredits], [["MATH241", "STAT400", "STAT401"], 1, 9]);
+  assert.deepEqual(line(shared, "STAT430").place, ["STAT430"]);
+});

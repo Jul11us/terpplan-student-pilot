@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useDocumentLanguage } from "@/lib/document-language";
 import Link from "next/link";
 import { CalendarExport, WeeklyCalendar, dayNames, displayClock, minutes, type ScheduledSection } from "@/app/components/schedule-planner";
@@ -8,6 +8,8 @@ import { roomLabel } from "@/lib/room";
 import { isAsyncOnline } from "@/lib/meeting-time";
 import { formatSeatReadTime } from "@/lib/seat-time";
 import { parseSharedSchedule, type SharedSchedule } from "@/lib/shared-schedule";
+import { readMyWeek, weekFromSections, type MyWeek } from "@/lib/my-week";
+import { CompareWeek } from "@/app/components/compare-week";
 import { SiteHeader } from "@/app/components/site-header";
 
 type CoursePayload = {
@@ -71,6 +73,9 @@ export default function SharedSchedulePage() {
   const [sections, setSections] = useState<ScheduledSection[]>([]);
   const [missing, setMissing] = useState<string[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "invalid" | "failed">("loading");
+  // The viewer's own My week for the shared term, read from this browser only.
+  const [mine, setMine] = useState<MyWeek | null>(null);
+  const theirs = useMemo(() => shared ? weekFromSections(sections, shared.term, shared.term).classes : [], [sections, shared]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -79,6 +84,7 @@ export default function SharedSchedulePage() {
     if (!parsed) { setStatus("invalid"); return; }
     setShared(parsed);
     setLanguage(parsed.language);
+    setMine(readMyWeek(parsed.term));
     const courseIds = parsed.sectionIds.map((id) => id.split("-")[0]);
     Promise.all(courseIds.map(async (courseId) => {
       const response = await fetch(`/api/course?id=${encodeURIComponent(courseId)}&term=${parsed.term}`, { signal: controller.signal });
@@ -129,6 +135,7 @@ export default function SharedSchedulePage() {
         {shared.missingCourseIds.length > 0 && <div role="alert" className="mt-7 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] p-4 text-sm text-[#8c352c]"><strong>{t.notPlaced} {shared.missingCourseIds.join(", ")}</strong></div>}
         {missing.length > 0 && <div role="alert" className="mt-7 rounded-xl border border-[#ead8b5] bg-[#fff8e8] p-4 text-sm text-[#745424]"><strong>{t.missing} {missing.join(", ")}</strong><p className="mt-1">{t.partial}</p></div>}
         {sections.length > 0 && <section className="mt-8 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-8"><h2 className="mb-4 font-serif text-2xl">{t.calendar}</h2><CalendarExport sections={sections} term={shared.term} termName={termName(shared.term, "en")} language={language} incomplete={missing.length > 0 || shared.missingCourseIds.length > 0} /><WeeklyCalendar sections={sections} language={language} /></section>}
+        {sections.length > 0 && <CompareWeek mine={mine} theirs={theirs} termName={termName(shared.term, language)} language={language} />}
         {sections.length > 0 && <section className="mt-6 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-8"><h2 className="font-serif text-2xl">{t.sections}</h2><div className="mt-5 grid gap-3 md:grid-cols-2">{sections.map((section) => <article key={section.section_id} className="rounded-xl border border-[#e3e0d8] bg-white p-4"><div className="flex flex-wrap justify-between gap-3"><div><h3 className="font-semibold">{section.course_id} · {section.course_title}</h3><p className="mt-1 text-sm text-[#536d64]">{section.section_id}</p></div><span className="h-fit rounded-full bg-[#edf3ef] px-2.5 py-1 text-xs font-medium text-[#315c43]">{seatLabel(section.open_seats, language)}</span></div>{section.instructors?.length ? <p className="mt-3 text-xs text-[#5d6561]">{t.instructor}: {section.instructors.join(", ")}</p> : null}<div className="mt-3 space-y-1 text-xs leading-5 text-[#5d6561]">{section.meetings?.length ? section.meetings.map((meeting, index) => <p key={index}>{meetingText(meeting, language)}</p>) : <p>{t.timeTba}</p>}</div>{formatSeatReadTime(section.seatCheckedAt, language) && <p className="mt-3 text-[11px] text-[#646c68]">{t.readAt}: {formatSeatReadTime(section.seatCheckedAt, language)}</p>}</article>)}</div></section>}
       </>}
     </div>

@@ -115,14 +115,14 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
     /* eslint-disable react-hooks/set-state-in-effect */
     if (saved === "en" || saved === "zh") setLanguage(saved);
     const now = easternClock();
-    setClock(now); setNowMs(Date.now()); setMyWeek(readMyWeek());
+    setClock(now); setNowMs(Date.now()); setMyWeek(readMyWeek(term));
     // "Pick a time" starts on today (a weekday) at the next half hour.
     setPickDay(now.day <= 4 ? now.day : 0);
     setPickMinute(Math.min(22 * 60, Math.max(7 * 60, Math.ceil(now.minute / 30) * 30)));
     /* eslint-enable react-hooks/set-state-in-effect */
     const timer = window.setInterval(() => { setClock(easternClock()); setNowMs(Date.now()); }, 60_000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [term]);
 
   const today = clock?.date ?? null;
   useEffect(() => {

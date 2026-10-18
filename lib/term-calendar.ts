@@ -18,3 +18,29 @@ export const TERM_CALENDARS: Record<string, TermCalendar> = {
   // Spring 2027: Spring Break.
   "202701": { firstDay: "2027-01-27", lastDay: "2027-05-11", noClasses: [["2027-03-14", "2027-03-21"]] },
 };
+
+// The term in progress on a date, by month (close enough for which terms are still ahead): January is winter,
+// February to May spring, June and July summer, August to December fall.
+export function termAt(date: Date) {
+  const year = date.getFullYear(), month = date.getMonth() + 1;
+  if (month === 1) return `${year - 1}12`;
+  if (month <= 5) return `${year}01`;
+  if (month <= 7) return `${year}05`;
+  return `${year}08`;
+}
+
+// The device's calendar date ("2026-10-18"), to compare with the calendar's days.
+const localDay = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+// Whether a term's classes run on a date: from its first to its last class day when its calendar is here, else
+// by month.
+export function termInSession(term: string, date: Date) {
+  const calendar = TERM_CALENDARS[term];
+  return calendar ? calendar.firstDay <= localDay(date) && localDay(date) <= calendar.lastDay : termAt(date) === term;
+}
+
+// Whether a term's classes are over by a date (its last class day has passed, or by month a later term has begun).
+export function termEnded(term: string, date: Date) {
+  const calendar = TERM_CALENDARS[term];
+  return calendar ? localDay(date) > calendar.lastDay : term < termAt(date);
+}

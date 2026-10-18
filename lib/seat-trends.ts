@@ -213,8 +213,9 @@ export function formatOfferingPattern(pattern: OfferingHistory["pattern"], lang:
  * Format term code to readable name
  */
 export function formatTermName(term: string, lang: "en" | "zh"): string {
-  const year = term.slice(0, 4);
   const semester = term.slice(4);
+  // A winter term (YYYY12) is the January after that fall, and UMD names it by that year.
+  const year = Number(term.slice(0, 4)) + (semester === "12" ? 1 : 0);
   const names = {
     en: { "01": "Spring", "05": "Summer", "08": "Fall", "12": "Winter" },
     zh: { "01": "春季", "05": "夏季", "08": "秋季", "12": "冬季" },

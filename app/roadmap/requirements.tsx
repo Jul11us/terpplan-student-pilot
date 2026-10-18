@@ -4,7 +4,7 @@
 // the unfinished requirements of the student's own degree audit (lib/audit-plan.ts).
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { auditNeedsFrom, writeAuditNeeds, type AuditCheck, type SavedAuditNeeds } from "@/lib/audit-plan";
 import { parseDegreeAudit } from "@/lib/degree-audit";
 import { extractDegreeAuditText } from "@/lib/degree-audit-pdf";
@@ -22,6 +22,9 @@ const copy = {
     noTable: "The catalog does not list this major's courses in a table, so nothing here can be checked automatically. Use the degree audit check below, or read the requirements in the catalog.",
     catalog: "Read this major in the catalog", apply: "This major is selective or needs an application; its gateway courses usually need a minimum grade.",
     parts: "Which parts apply to you", partsHint: "From the catalog's headings: core parts are on; switch on your track, concentration, or degree (B.A. or B.S.).", core: "Core requirements",
+    minorNoTable: "The catalog does not list this minor's courses in a table, so nothing here can be checked automatically. Read its requirements in the catalog.",
+    minorCatalog: "Read this minor in the catalog", minorApply: "This minor needs an application or has entrance requirements.",
+    minorPartsHint: "From the catalog's headings: core parts are on; if the minor has options, switch on yours.",
     checkYourself: "Check yourself", checked: "Checked", tick: "I have checked this one and planned for it", written: "Written only in words in the catalog: compare your courses with it.",
     course: "course", courses: "courses", credit: "credit", credits: "credits",
     maybe: "Plan courses that may count: {list} ({have} / {need} {unit})",
@@ -44,6 +47,9 @@ const copy = {
     noTable: "catalog 没有用表格列出这个专业的课程，这里没法自动检查。可以用下面的 degree audit 核对，或到 catalog 页面阅读要求。",
     catalog: "在 catalog 查看这个专业", apply: "这个专业需要申请或有门槛，gateway 课通常有最低成绩要求。",
     parts: "哪些部分适用于你", partsHint: "来自 catalog 里的小标题：核心部分默认勾选；请勾选你的方向、concentration 或学位类型（B.A. / B.S.）。", core: "核心要求",
+    minorNoTable: "catalog 没有用表格列出这个辅修的课程，这里没法自动检查，请到 catalog 页面阅读要求。",
+    minorCatalog: "在 catalog 查看这个辅修", minorApply: "这个辅修需要申请或有门槛。",
+    minorPartsHint: "来自 catalog 里的小标题：核心部分默认勾选；如果辅修分方向，请勾选你选的那个。",
     checkYourself: "需要自己核对", checked: "已核对", tick: "我核对过了，这一项已经排好", written: "catalog 里只用文字描述，请对照原文自己核对。",
     course: "门", courses: "门", credit: "学分", credits: "学分",
     maybe: "规划里可能算进去的：{list}（{have} / {need} {unit}）",
@@ -91,12 +97,14 @@ export function PlaceChips({ ids, language, choicesFor, onPlace }: { ids: string
 
 const unitText = (language: Language, unit: "courses" | "credits", need: number) => unit === "credits" ? (need === 1 ? copy[language].credit : copy[language].credits) : need === 1 ? copy[language].course : copy[language].courses;
 
-export function CatalogMajor({ language, program, failed, check, blocks, onBlocks, onTick, termName, snapshot, choicesFor, onPlace }: {
-  language: Language; program: Program | null; failed: boolean; check: MajorCheck | null; blocks: Set<number>;
+// A major's or a minor's catalog requirements against the plan.
+export function CatalogMajor({ language, kind = "major", program, failed, check, blocks, onBlocks, onTick, termName, snapshot, choicesFor, onPlace, extra }: {
+  language: Language; kind?: "major" | "minor"; program: Program | null; failed: boolean; check: MajorCheck | null; blocks: Set<number>; extra?: ReactNode;
   onBlocks: (next: number[]) => void; onTick: (key: string, on: boolean) => void; termName: (term: string | null) => string; snapshot: string;
   choicesFor: (id: string) => PlaceChoice[]; onPlace: (id: string, to: string) => void;
 }) {
-  const t = copy[language];
+  const base = copy[language];
+  const t = kind === "minor" ? { ...base, noTable: base.minorNoTable, catalog: base.minorCatalog, apply: base.minorApply, partsHint: base.minorPartsHint } : base;
   if (!program || !check) return <p role="status" className="mt-3 text-xs text-[#646c68]">{failed ? t.loadError : t.loading}</p>;
   const placed = (courses: PlanCourse[]) => courses.map((course) => `${course.id} · ${termName(course.term)}`).join(language === "zh" ? "，" : ", ");
   const shownBlocks = new Set(check.lines.map((line) => line.block));
@@ -139,6 +147,7 @@ export function CatalogMajor({ language, program, failed, check, blocks, onBlock
       </li>;
     })}</ul>}
     {check.unlistedCredits > 0 && <p className="mt-3 text-[11px] leading-5 text-[#745424]">{fill(t.unlisted, { n: check.unlistedCredits })}</p>}
+    {extra}
     <p className="mt-3 text-[11px] leading-5 text-[#646c68]">{fill(t.notes, { date: snapshot })}</p>
   </>;
 }

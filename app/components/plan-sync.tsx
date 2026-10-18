@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { decideSync, parseSyncState, planSummary, sameSyncState, type SyncState } from "@/lib/plan-sync";
+import { decideSync, parseSyncState, planSummary, sameSyncState, syncStateForAccount, type SyncState } from "@/lib/plan-sync";
 import { readSavedState, STORAGE_KEY } from "@/lib/saved-state";
 import { readTaken, TAKEN_KEY } from "@/lib/taken-courses";
 import { REMINDER_KEY } from "@/lib/registration-day";
 import { formatTermName } from "@/lib/seat-trends";
 import { LOCAL_CHANGE_EVENT, readSyncMeta, writeSyncMeta } from "@/lib/sync-meta";
+import { readMyWeeks, writeMyWeeks } from "@/lib/my-week";
 
 type Language = "en" | "zh";
 type Server = { account: string; state: SyncState | null; updatedAt: string | null };
@@ -26,6 +27,7 @@ const copy = {
     account: "In your account", device: "On this device",
     courses: (list: string[]) => list.length ? list.join(", ") : "no courses",
     commitments: (n: number) => n ? ` · ${n} personal ${n === 1 ? "commitment" : "commitments"}` : "",
+    weeks: (terms: string) => ` · My week: ${terms}`,
   },
   zh: {
     uploadTitle: "这台设备上已经有一份方案。要把它存到你的账号吗？",
@@ -39,6 +41,7 @@ const copy = {
     account: "账号里", device: "这台设备",
     courses: (list: string[]) => list.length ? list.join("、") : "没有课程",
     commitments: (n: number) => n ? ` · ${n} 个个人日程` : "",
+    weeks: (terms: string) => ` · 我的一周：${terms}`,
   },
 } as const;
 
@@ -47,7 +50,7 @@ function readReminders() {
 }
 
 function localState(): SyncState {
-  return parseSyncState({ saved: readSavedState(), taken: readTaken(), reminders: readReminders() })!;
+  return parseSyncState({ saved: readSavedState(), taken: readTaken(), reminders: readReminders(), weeks: readMyWeeks() })!;
 }
 
 // Replaces this device's planner data (not counted as a local change). An emptied device keeps its language.
@@ -57,9 +60,11 @@ function applyState(state: SyncState) {
   if (state.taken) window.localStorage.setItem(TAKEN_KEY, JSON.stringify(state.taken));
   else window.localStorage.removeItem(TAKEN_KEY);
   window.localStorage.setItem(REMINDER_KEY, JSON.stringify(state.reminders));
+  // A legacy copy from this same account has no weeks: this device keeps its own.
+  if (state.weeks) writeMyWeeks(state.weeks);
 }
 
-const EMPTY: SyncState = { saved: { plans: {} }, taken: null, reminders: {} };
+const EMPTY: SyncState = { saved: { plans: {} }, taken: null, reminders: {}, weeks: {} };
 
 // Keeps a signed-in student's plan the same on every device. Runs on sign-in, on page load and when the tab
 // comes back into view; uploads a couple of seconds after each change. onApplied reloads the page after the
@@ -87,7 +92,7 @@ export function PlanSync({ active, language, onApplied }: { active: boolean; lan
   }, []);
 
   const adopt = useCallback((state: SyncState, updatedAt: string | null, account: string) => {
-    applyState(state);
+    applyState(syncStateForAccount(state, readSyncMeta().account, account));
     // An emptied device has not matched the account yet; its next change uploads without asking again.
     writeSyncMeta(updatedAt ? { account, lastSyncedAt: updatedAt, localChangedAt: updatedAt } : { account, lastSyncedAt: new Date(0).toISOString(), localChangedAt: new Date(0).toISOString() });
     onApplied();
@@ -147,9 +152,9 @@ export function PlanSync({ active, language, onApplied }: { active: boolean; lan
 
   if (!question) return null;
   const summary = (state: SyncState) => {
-    const { term, courses, commitments } = planSummary(state);
+    const { term, courses, commitments, weeks } = planSummary(state);
     const label = /^\d{6}$/.test(term) ? formatTermName(term, language) + (language === "zh" ? "：" : ": ") : "";
-    return label + t.courses(courses) + t.commitments(commitments);
+    return label + t.courses(courses) + t.commitments(commitments) + (weeks.length ? t.weeks(weeks.map((item) => formatTermName(item, language)).join(language === "zh" ? "、" : ", ")) : "");
   };
   const when = question.updatedAt ? new Date(question.updatedAt).toLocaleString(language === "zh" ? "zh-CN" : "en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
   const keepDevice = () => { void upload(question.account, true).then(answered); };

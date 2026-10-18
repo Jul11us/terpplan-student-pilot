@@ -4,11 +4,16 @@ import { useEffect, useState } from "react";
 import { useDocumentLanguage } from "@/lib/document-language";
 import Link from "next/link";
 import { buildingFor, mapsUrl } from "@/lib/campus-walk";
-import { applyWeekChanges, classesOn, compareWeek, dayOf, readMyWeek, weekFromSections, WEEK_DAYS, writeMyWeek, type MyWeek, type WeekChange, type WeekClass } from "@/lib/my-week";
+import { applyWeekChanges, classesOn, compareWeek, dayOf, pickWeekTerm, readMyWeeks, weekFromSections, WEEK_DAYS, writeMyWeek, type MyWeeks, type WeekChange, type WeekClass } from "@/lib/my-week";
 import { roomLabel } from "@/lib/room";
 import type { MeetingTime } from "@/lib/meeting-time";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
+import { formatTermName } from "@/lib/seat-trends";
 import { dayGaps, type Gap } from "@/lib/study-gaps";
+import { readSyncMeta } from "@/lib/sync-meta";
+import { isDemo } from "@/lib/demo";
+import { TERM_CALENDARS, termEnded, termInSession } from "@/lib/term-calendar";
+import { PlanSync } from "@/app/components/plan-sync";
 import { SiteHeader } from "@/app/components/site-header";
 
 type Language = "en" | "zh";
@@ -17,7 +22,8 @@ const copy = {
   en: {
     title: "My week", plan: "Plan courses", today: "Today", week: "This week", noClasses: "No classes",
     now: "In class now", next: "Next class", inMinutes: "in {n} min", doneToday: "No more classes today.", freeToday: "No classes today.",
-    map: "Map", saved: "{term} · saved {date}",
+    map: "Map", saved: "{term} · saved {date}", terms: "Saved terms",
+    notStarted: "{term} starts on {date}. These are the classes you saved for it.", notStartedUndated: "{term} has not started yet. These are the classes you saved for it.", ended: "{term} has ended.",
     empty: "No week saved yet. Import your schedule from Testudo, or build one in TerpPlan and tap “Use as my week” under the timetable.", emptyImport: "Import from Testudo", emptyButton: "Build a schedule",
     unscheduled: "Online or time to be announced:",
     note: "Times and rooms are as they were when you saved. If a section changes, check Testudo and save your week again.",
@@ -31,7 +37,8 @@ const copy = {
   zh: {
     title: "我的一周", plan: "规划课程", today: "今天", week: "本周课表", noClasses: "没有课",
     now: "正在上课", next: "下一节课", inMinutes: "{n} 分钟后", doneToday: "今天的课都上完了。", freeToday: "今天没有课。",
-    map: "地图", saved: "{term} · 保存于 {date}",
+    map: "地图", saved: "{term} · 保存于 {date}", terms: "已保存的学期",
+    notStarted: "{term}{date}开课，下面是你为这学期保存的课。", notStartedUndated: "{term}还没开始，下面是你为这学期保存的课。", ended: "{term}已经结束。",
     empty: "还没有保存课表。可以从 Testudo 导入你的课表，或者在 TerpPlan 排好课后点课表下面的“设为我的一周”。", emptyImport: "从 Testudo 导入", emptyButton: "去排课",
     unscheduled: "线上课程或时间待定：",
     note: "时间和教室是保存时的信息。如果班次有变化，请以 Testudo 为准，并重新保存。",
@@ -43,6 +50,9 @@ const copy = {
     gapDepartment: "系里的教室，可能上锁",
   },
 } as const;
+
+// After the account's copy replaced this device's, the page starts over from it (one function, so sync does not restart).
+const reloadPage = () => window.location.reload();
 
 const clock = (value: number) => {
   const hour = Math.floor(value / 60), minute = value % 60;
@@ -93,14 +103,22 @@ function GapRooms({ gap, day, term, language }: { gap: Gap; day: number; term: s
 export default function MyWeekPage() {
   const [language, setLanguage] = useState<Language>("en");
   useDocumentLanguage(language);
-  const [week, setWeek] = useState<MyWeek | null | undefined>(undefined);
+  // Every saved term's week, and the one on screen (the term in session, else the next to start).
+  const [weeks, setWeeks] = useState<MyWeeks | undefined>(undefined);
+  const [selected, setSelected] = useState("");
   const [now, setNow] = useState(() => new Date());
   const [changes, setChanges] = useState<WeekChange[]>([]);
   const [justUpdated, setJustUpdated] = useState(false);
+  // A device that has synced with an account before keeps My week in step with it here too.
+  const [syncing, setSyncing] = useState(false);
+  const week = weeks === undefined ? undefined : weeks[selected] ?? null;
   useEffect(() => {
     const load = window.setTimeout(() => {
       setLanguage(readSavedState().language ?? "en");
-      setWeek(readMyWeek());
+      const saved = readMyWeeks();
+      setWeeks(saved);
+      setSelected(pickWeekTerm(saved) ?? "");
+      setSyncing(Boolean(readSyncMeta().account) && !isDemo());
     }, 0);
     // "Next class" and "in N min" follow the clock.
     const tick = window.setInterval(() => setNow(new Date()), 30_000);
@@ -131,11 +149,17 @@ export default function MyWeekPage() {
   const updateWeek = () => {
     if (!week) return;
     const next = applyWeekChanges(week, changes);
-    if (writeMyWeek(next)) { setWeek(next); setJustUpdated(true); }
+    if (writeMyWeek(next)) { setWeeks((current) => ({ ...current, [next.term]: next })); setJustUpdated(true); }
   };
+  const chooseTerm = (term: string) => { setSelected(term); setChanges([]); setJustUpdated(false); };
 
   const t = copy[language];
   const switchLanguage = () => { const next = language === "en" ? "zh" : "en"; setLanguage(next); writeSavedState({ language: next }); };
+  const termName = (term: string) => formatTermName(term, language);
+  // The today box is for the term in session; another term's week says when it starts, or that it is over.
+  const live = week ? termInSession(week.term, now) : false;
+  const firstDay = week ? TERM_CALENDARS[week.term]?.firstDay : undefined;
+  const startDate = firstDay ? new Date(`${firstDay}T12:00:00`).toLocaleDateString(language === "zh" ? "zh-CN" : "en-US", { month: "long", day: "numeric" }) : "";
 
   const today = dayOf(now);
   const minuteNow = now.getHours() * 60 + now.getMinutes();
@@ -145,12 +169,16 @@ export default function MyWeekPage() {
   const todayGaps = dayGaps(todays) as Array<Gap & { from: WeekClass; to: WeekClass }>;
   const shownDays = WEEK_DAYS.filter((day) => (day !== "Sat" && day !== "Sun") || (week && classesOn(week, day).length));
   const savedDate = week?.savedAt ? new Date(week.savedAt).toLocaleDateString(language === "zh" ? "zh-CN" : "en-US", { month: "short", day: "numeric" }) : "";
+  const savedTerms = Object.keys(weeks ?? {}).sort();
 
   return <main className="min-h-screen bg-[#f5f3ef] text-[#202728]">
     <SiteHeader language={language} onLanguage={switchLanguage} current="week" />
     <div className="mx-auto max-w-2xl px-4 pb-12 pt-6">
+      <PlanSync active={syncing} language={language} onApplied={reloadPage} />
       <h1 className="font-serif text-3xl">{t.title}</h1>
-      {week && <p className="mt-1 text-xs text-[#5d6561]">{t.saved.replace("{term}", week.termName).replace("{date}", savedDate)}</p>}
+      {savedTerms.length > 1 && <div role="group" aria-label={t.terms} className="mt-3 flex flex-wrap gap-2">{savedTerms.map((term) => <button key={term} type="button" aria-pressed={term === selected} onClick={() => chooseTerm(term)}
+        className={`min-h-8 rounded-full border px-3 text-xs font-semibold ${term === selected ? "border-[#273c38] bg-[#273c38] text-white" : "border-[#d9d6ce] bg-white text-[#48534f] hover:bg-[#f7f5f0]"}`}>{termName(term)}</button>)}</div>}
+      {week && <p className="mt-2 text-xs text-[#5d6561]">{t.saved.replace("{term}", termName(week.term)).replace("{date}", savedDate)}</p>}
       {week === null && <div className="mt-5 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5"><p className="text-sm leading-6 text-[#48534f]">{t.empty}</p><div className="mt-3 flex flex-wrap gap-2"><Link href="/plan#import" className="rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white">{t.emptyImport}</Link><Link href="/plan" className="rounded-lg border border-[#536d64] bg-white px-3 py-2 text-xs font-semibold text-[#273c38]">{t.emptyButton}</Link></div></div>}
       {week && changes.length > 0 && <section role="status" className="mt-5 rounded-2xl border border-[#ead8b5] bg-[#fff8e8] p-4 text-[#745424]">
         <h2 className="text-sm font-semibold">⚠ {t.changesTitle}</h2>
@@ -162,8 +190,9 @@ export default function MyWeekPage() {
         <div className="mt-3 flex flex-wrap gap-2">{changes.some((change) => change.after) && <button type="button" onClick={updateWeek} className="rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white">{t.update}</button>}<a href="https://app.testudo.umd.edu/" target="_blank" rel="noopener noreferrer" className="rounded-lg border border-[#d9c79f] bg-white px-3 py-2 text-xs font-semibold text-[#745424]">{t.testudo} ↗</a></div>
       </section>}
       {week && justUpdated && !changes.length && <p role="status" className="mt-5 rounded-xl bg-[#edf3ef] px-4 py-3 text-xs text-[#315c43]">✓ {t.updated}</p>}
+      {week && !live && <p role="status" className="mt-5 rounded-xl border border-[#e0ddd5] bg-[#fbfaf8] px-4 py-3 text-xs leading-5 text-[#48534f]">{(termEnded(week.term, now) ? t.ended : startDate ? t.notStarted : t.notStartedUndated).replace("{term}", termName(week.term)).replace("{date}", startDate)}</p>}
       {week && <>
-        <section aria-label={t.today} className="mt-5 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-4">
+        {live && <section aria-label={t.today} className="mt-5 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-4">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-[#5d6561]">{t.today} · {t.days[today]}</h2>
           {current ? <p className="mt-2 text-sm font-semibold text-[#315c43]">{t.now}</p>
             : upcoming ? <p className="mt-2 text-sm font-semibold text-[#315c43]">{t.next} · {t.inMinutes.replace("{n}", String(upcoming.start - minuteNow))}</p>
@@ -174,11 +203,11 @@ export default function MyWeekPage() {
             return [<ClassRow key={item.sectionId + item.start} item={item} language={language} highlight={item === (current ?? upcoming)} />,
               gap && week ? <GapRooms key={`gap-${gap.start}`} gap={gap} day={WEEK_DAYS.indexOf(today)} term={week.term} language={language} /> : null];
           })}</ul>}
-        </section>
+        </section>}
         <section aria-label={t.week} className="mt-6">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-[#5d6561]">{t.week}</h2>
           <div className="mt-2 space-y-4">{shownDays.map((day) => { const list = classesOn(week, day); return <div key={day}>
-            <h3 className={`text-sm font-semibold ${day === today ? "text-[#a34a39]" : "text-[#24312d]"}`}>{t.days[day]}</h3>
+            <h3 className={`text-sm font-semibold ${live && day === today ? "text-[#a34a39]" : "text-[#24312d]"}`}>{t.days[day]}</h3>
             {list.length ? <ul className="mt-1.5 space-y-2">{list.map((item) => <ClassRow key={item.sectionId + item.start} item={item} language={language} />)}</ul> : <p className="mt-1 text-xs text-[#646c68]">{t.noClasses}</p>}
           </div>; })}</div>
         </section>
