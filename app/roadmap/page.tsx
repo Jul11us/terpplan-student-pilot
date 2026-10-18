@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { SiteHeader } from "@/app/components/site-header";
 import { AuditSection, CatalogMajor, PLACE_LIMIT, PlaceChips, type PlaceChoice } from "@/app/roadmap/requirements";
@@ -14,11 +15,12 @@ import { DIVERSITY } from "@/lib/gened-plan";
 import { describeRequirement, type PrereqLabels } from "@/lib/prereq-check";
 import {
   addCourses, checkRoadmap, courseCredits, DEGREE_CREDITS, emptyRoadmap, fallOf, genEdTable, MAX_PER_TERM, MAX_YEARS, MIN_YEARS, moveCourse,
-  removeCourse, roadmapHasCourses, roadmapTerms, termAt, termChoices, termSeason, termYear, variableCredits, yearTerms,
+  removeCourse, roadmapHasCourses, roadmapTerms, termAt, termChoices, termIntoPlan, termSeason, termYear, variableCredits, yearTerms,
   type CourseInfo, type CourseIssue, type GenEdRow, type RoadmapCheck, type SavedRoadmap, type TermSeason,
 } from "@/lib/roadmap";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { readTaken } from "@/lib/taken-courses";
+import { countUse } from "@/lib/usage";
 
 type Language = "en" | "zh";
 type Suggestion = { course_id: string; name: string; credits: string | null };
@@ -46,6 +48,7 @@ const copy = {
     majorTitle: "Major requirements", majorLabel: "Major", trackLabel: "Track", majorNone: "Not chosen", majorCs: "Computer Science",
     majorPrompt: "Choose your major to check its requirements one by one. Computer Science is checked rule by rule, with its four specializations; other majors are checked against the catalog's course lists, and rules the catalog writes only in words are left for you to check.",
     majorCatalog: "Other majors (from the catalog)", majorDoneOpen: "{n} of {m} met · {k} to check yourself", auditShort: "Audit: {n} of {m}",
+    toPlanner: "Make this term's schedule →", toPlannerHint: "Opens the planner with this term's courses: compare schedules, then watch full sections.",
     placed: "{id} added to {term}.", placedEarlier: "{id} added to the courses before the plan.", choiceFull: " · full", choicePrereq: " · prerequisites not planned before it", choiceEarlier: "Before the plan (AP, transfer credit)",
     majorDone: "{n} of {m} met", majorShort: "Major: {n} of {m}", courseUnit: "courses", courseOne: "course", creditUnit: "credits", areaUnit: "areas", progress: "{have} / {need} {unit}",
     groups: { core: "Required core courses", math: "Math and statistics", track: "Upper level CS · {track}", ulc: "Upper level concentration" },
@@ -73,6 +76,7 @@ const copy = {
     majorTitle: "专业要求", majorLabel: "专业", trackLabel: "方向", majorNone: "未选择", majorCs: "计算机科学 Computer Science",
     majorPrompt: "选你的专业，按专业要求逐项检查。计算机科学按系里的规则逐条检查（含四个方向）；其他专业按 catalog 列出的课程检查，catalog 只用文字描述的要求留给你自己核对。",
     majorCatalog: "其他专业（按 catalog）", majorDoneOpen: "已满足 {n} / {m} 项 · {k} 项需要自己核对", auditShort: "审计 {n} / {m} 项",
+    toPlanner: "排这学期的课表 →", toPlannerHint: "带着这学期的课去排课页：比较课表，满员的班次可以关注余位。",
     placed: "已把 {id} 排进 {term}。", placedEarlier: "已把 {id} 放进“之前修过”。", choiceFull: " · 已满", choicePrereq: " · 先修课还没排在前面", choiceEarlier: "之前修过（AP、转学分）",
     majorDone: "已满足 {n} / {m} 项", majorShort: "专业要求 {n} / {m} 项", courseUnit: "门", courseOne: "门", creditUnit: "学分", areaUnit: "个领域", progress: "{have} / {need} {unit}",
     groups: { core: "必修基础课", math: "数学和统计", track: "高年级 CS 课 · {track}", ulc: "Upper Level Concentration" },
@@ -240,6 +244,9 @@ export default function RoadmapPage() {
   const [programData, setProgramData] = useState<ProgramData | null>(null);
   const [programFailed, setProgramFailed] = useState("");
   const [auditNeeds, setAuditNeeds] = useState<SavedAuditNeeds | null>(null);
+  // The terms the planner has sections for (/api/terms): a term among them can go to the planner.
+  const [plannerTerms, setPlannerTerms] = useState<string[]>([]);
+  const router = useRouter();
   const t = copy[language];
 
   // Restored once: the saved plan, or an empty one whose year 1 is the fall of the student's first term on
@@ -256,6 +263,18 @@ export default function RoadmapPage() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/terms")
+      .then(async (response) => response.ok ? ((await response.json()) as { terms?: string[] }).terms ?? [] : [])
+      .catch(() => [] as string[])
+      .then((list) => { if (!cancelled) setPlannerTerms(list); });
+    return () => { cancelled = true; };
+  }, []);
+  // Counted once a day per browser, for the owner's usage numbers (lib/usage.ts): the page, and a major's check.
+  useEffect(() => { countUse("roadmap"); }, []);
+  const majorId = roadmap?.major?.id ?? "";
+  useEffect(() => { if (majorId) countUse("major"); }, [majorId]);
   // Every major in the catalog snapshot, for the major list.
   useEffect(() => {
     let cancelled = false;
@@ -350,6 +369,14 @@ export default function RoadmapPage() {
     setRoadmap(moveCourse(roadmap, id, to));
     setNotice(to === "earlier" ? fill(t.placedEarlier, { id }) : fill(t.placed, { id, term: termLabel(to, language) }));
   };
+  // The term's courses join the planner's plan for that term, and the planner opens on its schedules.
+  const sendToPlanner = (term: string) => {
+    const saved = readSavedState();
+    const sent = termIntoPlan(saved.plans[term] ?? [], roadmap.terms[term] ?? [], Object.fromEntries(ids.map((id) => [id, info[id]?.name])));
+    writeSavedState({ term, plans: { ...saved.plans, [term]: sent.plan } });
+    countUse("toPlanner");
+    router.push(`/plan?from=roadmap&added=${sent.added}&left=${sent.left}`);
+  };
   const setCredits = (id: string, credits: number | null) => {
     const next = { ...roadmap.credits };
     if (credits === null || !Number.isFinite(credits) || credits < 0 || credits > 20) delete next[id]; else next[id] = Math.round(credits * 2) / 2;
@@ -424,6 +451,8 @@ export default function RoadmapPage() {
       {summary.unknown.length > 0 && <p className="mt-1 text-[11px] text-[#646c68]">{fill(t.creditsUnknown, { n: summary.unknown.length })}</p>}
       {list.length > 0 && <ul className="mt-2 space-y-1.5">{list.map((id) => <CourseRow key={id} id={id} term={term} info={info[id]} issues={check.issues[`${term}|${id}`] ?? []} {...rowProps} />)}</ul>}
       <AddCourse language={language} full={list.length >= MAX_PER_TERM} onAdd={(id) => place(id, term)} />
+      {list.length > 0 && term >= now && plannerTerms.includes(term) && <button type="button" onClick={() => sendToPlanner(term)} title={t.toPlannerHint}
+        className="mt-2 flex min-h-8 w-full items-center justify-center rounded-lg border border-[#cfdcd3] bg-white px-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]">{t.toPlanner}</button>}
     </section>;
   };
 

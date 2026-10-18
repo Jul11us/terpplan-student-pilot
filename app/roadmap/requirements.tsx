@@ -11,6 +11,7 @@ import { extractDegreeAuditText } from "@/lib/degree-audit-pdf";
 import { genEdParam } from "@/lib/gened-categories";
 import type { MajorCheck, PlanCourse } from "@/lib/major-check";
 import type { Program } from "@/lib/programs";
+import { countUse } from "@/lib/usage";
 
 type Language = "en" | "zh";
 const fill = (template: string, values: Record<string, string | number>) => template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ""));
@@ -164,6 +165,7 @@ export function AuditSection({ language, saved, check, planIds, now, termName, o
       if (!needs) { setError(t.empty); return; }
       writeAuditNeeds(needs);
       onSaved(needs);
+      countUse("audit");
       setTaken([
         ...audit.completedCourseIds.map((id) => ({ id, term: audit.courseTerms[id] ?? null })),
         ...audit.inProgressCourseIds.map((id) => ({ id, term: audit.courseTerms[id] ?? now })),

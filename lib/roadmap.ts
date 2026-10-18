@@ -7,6 +7,7 @@ import { CS_TRACKS, type CsTrack } from "@/lib/cs-major";
 import { DIVERSITY, fillOptions } from "@/lib/gened-plan";
 import { courseSet, unmetRequirements } from "@/lib/prereq-check";
 import type { PrereqNode } from "@/lib/programs";
+import type { SavedPlanCourse } from "@/lib/saved-state";
 
 export type SavedRoadmap = {
   // The fall that begins year 1 ("202608").
@@ -154,6 +155,14 @@ export function addCourses(roadmap: SavedRoadmap, entries: Array<{ id: string; t
     if (to) next = moveCourse(next, id, to);
   }
   return next;
+}
+
+// A term's courses sent to the planner's plan for that term (app/plan): the courses the plan already has stay as
+// they are, with their chosen sections; the term's others follow while the plan has room (it holds 10).
+export function termIntoPlan(plan: SavedPlanCourse[], ids: string[], titles: Record<string, string | undefined>, limit = 10) {
+  const fresh = ids.filter((id) => !plan.some((course) => course.courseId === id));
+  const fits = fresh.slice(0, Math.max(0, limit - plan.length));
+  return { plan: [...plan, ...fits.map((id) => ({ courseId: id, courseTitle: titles[id] ?? id }))], added: fits.length, left: fresh.length - fits.length };
 }
 
 // A course's credits for the totals: the student's own number, else the catalog's (the lower end of a range such

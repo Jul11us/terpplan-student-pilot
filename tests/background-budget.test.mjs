@@ -179,6 +179,7 @@ test("bounded recurring queries use indexes rather than temporary sorting scans"
   for (const [query, index] of [
     ["SELECT * FROM watches WHERE last_checked_at IS NULL OR last_checked_at < '2026' ORDER BY last_checked_at LIMIT 201", "watches_last_checked"],
     ["SELECT * FROM watches WHERE alert_pending_at IS NOT NULL ORDER BY alert_pending_at LIMIT 200", "watches_pending_alert"],
+    ["SELECT * FROM watches WHERE alert_pending_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM watches AS emailed WHERE emailed.user_id = watches.user_id AND emailed.alert_sent_at > '2026') ORDER BY alert_pending_at LIMIT 200", "watches_pending_alert"],
     ["SELECT rowid FROM watches WHERE created_at < '2026' ORDER BY created_at LIMIT 500", "watches_created"],
   ]) {
     const plan = database.sqlite.prepare(`EXPLAIN QUERY PLAN ${query}`).all().map((row) => row.detail).join("\n");

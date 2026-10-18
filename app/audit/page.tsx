@@ -14,6 +14,7 @@ import { AUDIT_HANDOFF_KEY } from "@/lib/programs";
 import { writeTakenFromAudit } from "@/lib/taken-courses";
 import { SeasonNote, useOfferingSeasons } from "@/app/components/season-note";
 import { SiteHeader } from "@/app/components/site-header";
+import { countUse } from "@/lib/usage";
 
 type Language = "en" | "zh";
 type CandidateResponse = { candidates?: AuditCandidate[]; totalCandidates?: number; error?: string };
@@ -149,6 +150,7 @@ export default function AuditPage() {
       if (!text.trim()) throw new Error("text");
       const parsed = parseDegreeAudit(text);
       setAudit(parsed);
+      countUse("audit");
       const first = parsed.requirements.find((requirement) => requirement.courseIds.length || requirement.genEdCode);
       if (first) chooseRequirement(first);
       if (!parsed.requirements.length && parsed.status !== "complete") setError(t.noNeeds);

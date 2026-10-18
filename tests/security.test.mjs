@@ -172,6 +172,16 @@ test("email request throttles stop repeated sends and atomic buckets stop simult
   assert.equal(await allowRate("fixture-bucket", 5, 60), true);
 });
 
+test("students sharing one campus network address can all get codes, up to 60 an hour", async () => {
+  const fromCampus = (email) => requestCode(jsonRequest("/api/auth/request-code", { email }, "", { "cf-connecting-ip": "192.0.2.10" }));
+  for (let i = 0; i < 15; i++) assert.equal((await fromCampus(`student${i}@example.test`)).status, 200);
+  assert.equal(messages.length, 15);
+  database.sqlite.prepare("UPDATE email_login_rate_limits SET request_count = 60 WHERE rate_key = ?").run(`ip:${await auth.hashEmail("ip:192.0.2.10")}`);
+  assert.equal((await fromCampus("one-more@example.test")).status, 429);
+  assert.equal((await requestCode(jsonRequest("/api/auth/request-code", { email: "one-more@example.test" }, "", { "cf-connecting-ip": "192.0.2.11" }))).status, 200, "another address is not affected");
+  assert.equal(messages.length, 16);
+});
+
 test("forged proxy headers and tampered, expired or oversized cookies never grant identity", async () => {
   const user = await session("first@example.test");
   const valid = user.cookie.split("=")[1];

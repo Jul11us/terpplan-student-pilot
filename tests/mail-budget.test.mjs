@@ -99,6 +99,30 @@ test("quota pauses leave fresh seat alerts pending; exhausted retry does not loo
   assert.equal(last.alertsDropped, 1); assert.equal(calls.length, 3);
 });
 
+test("openings within ten minutes of a student's email wait and go out together, without holding up other students", async () => {
+  const opening = (user, section) => database.sqlite.prepare("INSERT INTO watches (user_id, course_id, course_title, term, section_id, open_seats, alert_pending_at) VALUES (?, 'TEST100', 'Fixture', '202701', ?, 1, ?)")
+    .run(user, section, new Date(now).toISOString());
+  watch(1);
+  assert.equal((await sendPendingAlerts(getDb())).emailsSent, 1);
+  now += 3 * 60_000; opening("user:1", "TEST100-2"); opening("user:1", "TEST100-3");
+  now += 2 * 60_000; opening("user:1", "TEST100-4"); watch(2);
+  assert.equal((await sendPendingAlerts(getDb())).emailsSent, 1, "only the other student, emailed for the first time");
+  assert.deepEqual(JSON.parse(calls.at(-1).body).to, ["student2@example.test"]);
+  assert.equal(database.sqlite.prepare("SELECT COUNT(*) AS n FROM watches WHERE user_id = 'user:1' AND alert_pending_at IS NOT NULL").get().n, 3, "kept for later");
+  // One of them fills again before the ten minutes are up, as the seat check records it.
+  database.sqlite.prepare("UPDATE watches SET open_seats = 0, alert_pending_at = NULL WHERE section_id = 'TEST100-3'").run();
+  now += 4 * 60_000;
+  assert.equal((await sendPendingAlerts(getDb())).emailsSent, 0, "nine minutes after the first email");
+  now += 60_000 + 1000;
+  assert.equal((await sendPendingAlerts(getDb())).emailsSent, 1);
+  const merged = JSON.parse(calls.at(-1).body);
+  assert.equal(calls.length, 3);
+  assert.equal(merged.subject, "Seats open in 2 sections you watch");
+  assert.ok(merged.text.includes("TEST100-2") && merged.text.includes("TEST100-4") && !merged.text.includes("TEST100-3"));
+  assert.ok(merged.text.includes("at most one email every 10 minutes"));
+  assert.equal(database.sqlite.prepare("SELECT COUNT(*) AS n FROM watches WHERE alert_pending_at IS NOT NULL").get().n, 0);
+});
+
 test("missing safety storage and the persisted email pause never send to the provider", async () => {
   database.sqlite.prepare("UPDATE mail_budget SET enabled = 0").run();
   assert.equal(await mail.sendBudgetedMail("login", payload, "paused"), "quota");

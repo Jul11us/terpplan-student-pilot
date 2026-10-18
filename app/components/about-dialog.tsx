@@ -6,7 +6,7 @@ import { analyticsEnabled } from "@/lib/site-config";
 type Language = "en" | "zh";
 
 import { CONTACT_EMAIL } from "@/lib/site-config";
-import { SEAT_CHECK_MINUTES } from "@/lib/seat-cadence";
+import { ALERT_GAP_MINUTES, SEAT_CHECK_MINUTES } from "@/lib/seat-cadence";
 
 const copy = {
   en: {
@@ -26,7 +26,7 @@ const copy = {
       "The minor and double-major explorer compares your courses with the catalog inside your browser; your course list is not sent to TerpPlan.",
       "If you share a schedule, its link contains the term and section numbers, and anyone with the link can view that schedule. No name, email, or seat watches are included.",
       "Your email is used to send sign-in codes for seat watches. It is stored only if you turn on seat emails, and deleted when you turn them off.",
-      `With seat emails on, TerpPlan checks your watched sections about every ${SEAT_CHECK_MINUTES} minutes and emails you once each time a full section opens. Every email has a link to stop them.`,
+      `With seat emails on, TerpPlan checks your watched sections about every ${SEAT_CHECK_MINUTES} minutes and emails you when a full section opens: at most one email every ${ALERT_GAP_MINUTES} minutes, with the sections that opened in between together. Every email has a link to stop them.`,
       "Seat watches are removed automatically 150 days after you add them.",
     ],
     analytics: "We count visits anonymously with Cloudflare Web Analytics (no cookies, no personal data) to see how TerpPlan is used. TerpPlan also counts, once a day per browser, how many people open it and use parts such as the planner or seat alerts; only the daily totals are kept, nothing about who you are or what you planned. When a request fails, only the kind of failure is counted. Messages sent with the Feedback form are kept so we can read them, with your email only if you add it.",
@@ -51,7 +51,7 @@ const copy = {
       "辅修 / 双专业评估在你的浏览器里把你的课程和 catalog 对比，你的课程列表不会发送给 TerpPlan。",
       "分享方案时，链接里会包含学期和班号，拿到链接的人都能查看这个方案；链接里不含姓名、邮箱或余位关注信息。",
       "邮箱用于发送余位关注的登录验证码；只有开启邮件提醒时才会保存，关闭提醒后即删除。",
-      `开启邮件提醒后，TerpPlan 约每 ${SEAT_CHECK_MINUTES} 分钟检查一次你关注的班次，班次从满员变为有空位时每次发一封邮件，每封邮件都附有停止提醒的链接。`,
+      `开启邮件提醒后，TerpPlan 约每 ${SEAT_CHECK_MINUTES} 分钟检查一次你关注的班次，班次从满员变为有空位时发邮件：每 ${ALERT_GAP_MINUTES} 分钟最多一封，期间新开的班次合在同一封里。每封邮件都附有停止提醒的链接。`,
       "关注的班次会在添加 150 天后自动删除。",
     ],
     analytics: "我们使用 Cloudflare Web Analytics 匿名统计访问量（不使用 cookie，不收集个人信息），以了解 TerpPlan 的使用情况。TerpPlan 也会按浏览器每天一次，统计有多少人打开网站、用了排课或余位提醒等功能；只保存每天的总数，不记录你是谁，也不记录你排了什么课。请求出错时只统计出错的类型和次数。通过“反馈”发来的留言会保存下来供我们阅读，只有你填了邮箱才会保存邮箱。",

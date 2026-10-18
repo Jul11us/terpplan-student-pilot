@@ -5,6 +5,11 @@ import { countError } from "@/lib/error-counts";
 import { sendBudgetedMail } from "@/lib/mail-budget";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Codes an hour per network address and per email address. Students in dorms and on campus Wi-Fi often share
+// one address, so its limit is high; each email address still gets four, and every code counts against the
+// day's shared email allowance (lib/mail-budget.ts).
+const CODES_PER_ADDRESS_PER_HOUR = 60;
+const CODES_PER_EMAIL_PER_HOUR = 4;
 
 async function allowRate(rateKey: string, limit: number, windowSeconds: number) {
   if (!env.DB) return false;
@@ -40,7 +45,7 @@ export async function POST(request: Request) {
     const emailHash = await hashEmail(email);
     const forwardedIp = request.headers.get("cf-connecting-ip")?.trim();
     const ipHash = forwardedIp ? await hashEmail(`ip:${forwardedIp}`) : emailHash;
-    if (!await allowRate(`ip:${ipHash}`, 10, 3600) || !await allowRate(`email:${emailHash}`, 4, 3600)) {
+    if (!await allowRate(`ip:${ipHash}`, CODES_PER_ADDRESS_PER_HOUR, 3600) || !await allowRate(`email:${emailHash}`, CODES_PER_EMAIL_PER_HOUR, 3600)) {
       return Response.json({ error: "Too many codes requested. Please try again later." }, { status: 429 });
     }
 

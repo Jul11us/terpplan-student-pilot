@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   addCourses, checkRoadmap, courseCredits, emptyRoadmap, fallOf, GEN_ED_ROWS, genEdTable, moveCourse, parseRoadmap, removeCourse,
-  roadmapHasCourses, roadmapTerms, termAt, termChoices, termYear, yearTerms,
+  roadmapHasCourses, roadmapTerms, termAt, termChoices, termIntoPlan, termYear, yearTerms,
 } from "../lib/roadmap.ts";
 import { parseDegreeAudit } from "../lib/degree-audit.ts";
 import { parseTaken } from "../lib/taken-courses.ts";
@@ -145,4 +145,16 @@ test("the chosen major and track are kept with the plan; anything else is droppe
   assert.deepEqual(parseRoadmap({ ...base, major: economics }).major, { id: "catalog", slug: "economics--economics-major", blocks: [1], ticked: ["1x9k2a", "1x9k2a-1"] });
   assert.deepEqual(parseRoadmap({ ...base, major: { id: "catalog", slug: "economics--economics-major", blocks: [], ticked: [] } }).major, { id: "catalog", slug: "economics--economics-major", blocks: [] }, "every table switched off is a choice too");
   assert.equal(parseRoadmap({ ...base, major: { id: "catalog", slug: "../etc/passwd" } }).major, undefined);
+});
+
+test("a term sent to the planner joins its plan there: courses already in it stay with their sections, up to 10", () => {
+  const plan = [{ courseId: "CMSC216", courseTitle: "Introduction to Computer Systems", pinnedSectionId: "CMSC216-0101" }];
+  const sent = termIntoPlan(plan, ["CMSC216", "CMSC250", "STAT400"], { CMSC250: "Discrete Structures" });
+  assert.deepEqual(sent.plan, [plan[0], { courseId: "CMSC250", courseTitle: "Discrete Structures" }, { courseId: "STAT400", courseTitle: "STAT400" }]);
+  assert.deepEqual([sent.added, sent.left], [2, 0]);
+  const nine = Array.from({ length: 9 }, (_, index) => ({ courseId: `ENGL${300 + index}`, courseTitle: "English" }));
+  const crowded = termIntoPlan(nine, ["CMSC216", "CMSC250", "ENGL300"], {});
+  assert.deepEqual(crowded.plan.map((course) => course.courseId).slice(-1), ["CMSC216"]);
+  assert.deepEqual([crowded.added, crowded.left], [1, 1], "the course already planned is neither added nor left out");
+  assert.deepEqual(parseSavedState({ plans: { 202701: sent.plan } }).plans["202701"], sent.plan, "the planner keeps it as saved");
 });

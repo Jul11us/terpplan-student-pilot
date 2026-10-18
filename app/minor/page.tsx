@@ -7,6 +7,7 @@ import { extractDegreeAuditText } from "@/lib/degree-audit-pdf";
 import { AUDIT_HANDOFF_KEY, defaultBlocks, evaluateProgram, MINOR_MAJOR_OVERLAP_COURSES, PROGRAMS_DATA_VERSION, unmetPrerequisites, withBaseCourses, type CourseFact, type CourseStatus, type ItemProgress, type Program } from "@/lib/programs";
 import { readSavedState, writeSavedState } from "@/lib/saved-state";
 import { SiteHeader } from "@/app/components/site-header";
+import { countUse } from "@/lib/usage";
 
 type Language = "en" | "zh";
 type ProgramList = { builtAt: string; minors: Array<{ slug: string; name: string }>; majors: Array<{ slug: string; name: string }> };
@@ -251,6 +252,7 @@ export default function ProgramExplorerPage() {
       const next = { completed: parsed.completedCourseIds, inProgress: parsed.inProgressCourseIds };
       setAudit(next);
       writeAuditHandoff(next);
+      countUse("audit");
     } catch { setAuditError(t.badPdf); }
     finally { setReading(false); }
   }
@@ -265,6 +267,9 @@ export default function ProgramExplorerPage() {
   }, [audit, manualText, includePlan, plan.all]);
 
   const current = programData && targetSlug && programData.program.slug === targetSlug ? programData : null;
+  // Counted once a day per browser when a minor's or second major's requirements are shown (lib/usage.ts).
+  const shownSlug = current?.program.slug ?? "";
+  useEffect(() => { if (shownSlug) countUse("minor"); }, [shownSlug]);
   const sameMajor = mode === "major" && Boolean(secondSlug) && secondSlug === majorSlug;
   const currentMajor = majorSlug && !sameMajor && majorCodes?.slug === majorSlug ? majorCodes.codes : null;
   const doneItems = useMemo(() => new Set(manualDone[targetSlug] ?? []), [manualDone, targetSlug]);

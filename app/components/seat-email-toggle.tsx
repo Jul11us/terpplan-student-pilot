@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SEAT_CHECK_MINUTES } from "@/lib/seat-cadence";
+import { ALERT_GAP_MINUTES, SEAT_CHECK_MINUTES } from "@/lib/seat-cadence";
 
 type Language = "en" | "zh";
 
@@ -9,7 +9,7 @@ const copy = {
   en: {
     title: "Email me when a seat opens",
     off: "Off. Seat changes show only while this page is open.",
-    on: "On. We email you once each time a full section you watch opens up.",
+    on: `On. We email you when a full section you watch opens up: at most one email every ${ALERT_GAP_MINUTES} minutes, with the sections that opened in between together.`,
     consent: "Turning this on saves your email address so TerpPlan can send seat alerts. You can turn it off here or from any alert email.",
     confirmEmail: "Confirm the email you signed in with",
     enable: "Turn on seat emails",
@@ -23,7 +23,7 @@ const copy = {
   zh: {
     title: "有空位时发邮件提醒我",
     off: "已关闭。只有打开本页面时才会检查余位变化。",
-    on: "已开启。你关注的班次从满员变为有空位时，每次开放发一封邮件。",
+    on: `已开启。你关注的班次从满员变为有空位时发邮件：每 ${ALERT_GAP_MINUTES} 分钟最多一封，期间新开的班次合在同一封里。`,
     consent: "开启后会保存你的邮箱地址，仅用于发送余位提醒。可随时在这里或任意一封提醒邮件中关闭。",
     confirmEmail: "请确认你登录时使用的邮箱",
     enable: "开启邮件提醒",

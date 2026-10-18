@@ -6,6 +6,7 @@ import { SITE_URL } from "@/lib/site-config";
 import { openingPath } from "@/lib/seat-swap";
 import { MAX_CLEANUP_ROWS_PER_RUN, MAX_EMAILS_PER_RUN, MAX_PENDING_ALERTS_PER_RUN } from "@/lib/background-budget";
 import { sendBudgetedMail } from "@/lib/mail-budget";
+import { ALERT_GAP_MINUTES } from "@/lib/seat-cadence";
 
 type Db = ReturnType<typeof getDb>;
 
@@ -16,6 +17,10 @@ export const MAX_WATCHED_COURSES_PER_USER = 10;
 export const MAX_WATCHES_PER_USER = 40;
 export const MAX_SECTIONS_PER_REQUEST = 20;
 const MAX_EMAILS_PER_USER_PER_DAY = 20;
+// Openings for a student emailed less than this long ago wait and go out together in one email once it has
+// passed, so a student watching many sections, or a section that keeps opening and filling, sends at most one
+// email in that time and leaves the shared daily allowance for everyone else.
+const ALERT_GAP_MS = ALERT_GAP_MINUTES * 60_000;
 // An opening older than this is probably gone; drop it rather than send a stale email.
 const PENDING_TTL_MS = 60 * 60_000;
 // Watches are removed this long after they were created (roughly one term).
@@ -87,13 +92,14 @@ export function alertEmail(rows: PendingRow[], token: string) {
     "你在 TerpPlan 关注的班次出现了空位。数据可能有延迟，打开时位置可能已被占用，请尽快在 Testudo 注册。",
     "想先看看是否和课表冲突，请在你用 TerpPlan 排课的设备上打开上面的链接。",
     "",
-    `You get one email each time a full section opens. Stop these emails / 停止提醒: ${link}`,
+    `You get at most one email every ${ALERT_GAP_MINUTES} minutes; sections that open in between come together in the next one. / 每 ${ALERT_GAP_MINUTES} 分钟最多一封，期间新开的班次会合在下一封里。`,
+    `Stop these emails / 停止提醒: ${link}`,
   ].join("\n");
   const html = `<p>A seat opened in a section you are watching on TerpPlan:</p>
 <ul>${lines.map((line, index) => `<li>${escapeHtml(line)}<br><a href="${escapeHtml(checks[index]!)}">Fits my schedule? / 适合我的课表吗？</a></li>`).join("")}</ul>
 <p>Seat data can lag, so the seat may already be taken. <a href="https://app.testudo.umd.edu/"><strong>Register in Testudo</strong></a> as soon as you can. To compare it with your schedule first, open "Fits my schedule?" on the device where you plan in TerpPlan.</p>
 <p>你在 TerpPlan 关注的班次出现了空位。数据可能有延迟，打开时位置可能已被占用，请尽快<a href="https://app.testudo.umd.edu/"><strong>在 Testudo 注册</strong></a>。想先看看是否和课表冲突，请在你用 TerpPlan 排课的设备上点“适合我的课表吗？”。</p>
-<p style="color:#777;font-size:12px">You get one email each time a full section opens. <a href="${escapeHtml(link)}">Stop these emails / 停止提醒</a></p>`;
+<p style="color:#777;font-size:12px">You get at most one email every ${ALERT_GAP_MINUTES} minutes; sections that open in between come together in the next one. 每 ${ALERT_GAP_MINUTES} 分钟最多一封，期间新开的班次会合在下一封里。 <a href="${escapeHtml(link)}">Stop these emails / 停止提醒</a></p>`;
   return { subject, text, html, link, oneClickLink: oneClickUnsubscribeUrl(token) };
 }
 
@@ -109,16 +115,19 @@ async function sendEmail(to: string, message: ReturnType<typeof alertEmail>, key
     }, key);
 }
 
-// Sends one email per student covering every section that opened since the last run.
+// Sends one email per student covering every section that opened since their last email.
 export async function sendPendingAlerts(db: Db, deadline = Infinity) {
   const summary = { emailsSent: 0, emailsFailed: 0, emailsDeferred: 0, alertsDropped: 0 };
   if (Date.now() >= deadline) return summary;
-  const pending = await db.select().from(watches).where(isNotNull(watches.alertPendingAt))
+  const now = Date.now();
+  // Students emailed within the gap are left out, so their openings stay queued for one later email and do not
+  // take this run's places from other students.
+  const pending = await db.select().from(watches)
+    .where(and(isNotNull(watches.alertPendingAt), sql`NOT EXISTS (SELECT 1 FROM watches AS emailed WHERE emailed.user_id = watches.user_id AND emailed.alert_sent_at > ${new Date(now - ALERT_GAP_MS).toISOString()})`))
     .orderBy(asc(watches.alertPendingAt)).limit(MAX_PENDING_ALERTS_PER_RUN);
   if (!pending.length) return summary;
-  const now = Date.now();
   const clear = (rows: PendingRow[], sent: boolean) => Promise.all(rows.map((row) => db.update(watches)
-    .set({ alertPendingAt: null, ...(sent ? { alertSentAt: new Date().toISOString() } : {}) })
+    .set({ alertPendingAt: null, ...(sent ? { alertSentAt: new Date(now).toISOString() } : {}) })
     .where(and(eq(watches.userId, row.userId), eq(watches.term, row.term), eq(watches.sectionId, row.sectionId), eq(watches.alertPendingAt, row.alertPendingAt!)))));
 
   const byUser = new Map<string, PendingRow[]>();
