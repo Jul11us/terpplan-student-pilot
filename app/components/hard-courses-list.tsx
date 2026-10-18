@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useDocumentLanguage } from "@/lib/document-language";
 import type { HardCourse } from "@/lib/hard-courses";
 import { formatTermName } from "@/lib/seat-trends";
-import { readSavedState, writeSavedState } from "@/lib/saved-state";
+import { readLanguage, writeSavedState } from "@/lib/saved-state";
 import { countUse } from "@/lib/usage";
 import { SiteHeader } from "@/app/components/site-header";
 
@@ -60,10 +60,9 @@ export function HardCoursesList({ courses, terms, builtAt }: { courses: HardCour
 
   useEffect(() => { countUse("hard"); }, []);
   useEffect(() => {
-    const saved = readSavedState().language;
     // Restoring the saved language after the first render keeps the server and client HTML the same.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (saved === "en" || saved === "zh") setLanguage(saved);
+    setLanguage(readLanguage());
   }, []);
 
   const departments = useMemo(() => [...new Set(courses.map((course) => course.department))].sort(), [courses]);

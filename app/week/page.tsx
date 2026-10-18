@@ -7,7 +7,7 @@ import { buildingFor, mapsUrl } from "@/lib/campus-walk";
 import { applyWeekChanges, classesOn, compareWeek, dayOf, pickWeekTerm, readMyWeeks, weekFromSections, WEEK_DAYS, writeMyWeek, type MyWeeks, type WeekChange, type WeekClass } from "@/lib/my-week";
 import { roomLabel } from "@/lib/room";
 import type { MeetingTime } from "@/lib/meeting-time";
-import { readSavedState, writeSavedState } from "@/lib/saved-state";
+import { readLanguage, writeSavedState } from "@/lib/saved-state";
 import { formatTermName } from "@/lib/seat-trends";
 import { dayGaps, type Gap } from "@/lib/study-gaps";
 import { readSyncMeta } from "@/lib/sync-meta";
@@ -114,7 +114,7 @@ export default function MyWeekPage() {
   const week = weeks === undefined ? undefined : weeks[selected] ?? null;
   useEffect(() => {
     const load = window.setTimeout(() => {
-      setLanguage(readSavedState().language ?? "en");
+      setLanguage(readLanguage());
       const saved = readMyWeeks();
       setWeeks(saved);
       setSelected(pickWeekTerm(saved) ?? "");

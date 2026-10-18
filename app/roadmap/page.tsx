@@ -18,7 +18,7 @@ import {
   removeCourse, roadmapHasCourses, roadmapTerms, termAt, termChoices, termIntoPlan, termSeason, termYear, variableCredits, yearTerms,
   type CourseInfo, type CourseIssue, type GenEdRow, type RoadmapCheck, type SavedRoadmap, type TermSeason,
 } from "@/lib/roadmap";
-import { readSavedState, writeSavedState } from "@/lib/saved-state";
+import { readLanguage, readSavedState, writeSavedState } from "@/lib/saved-state";
 import { readTaken } from "@/lib/taken-courses";
 import { countUse } from "@/lib/usage";
 
@@ -287,7 +287,7 @@ export default function RoadmapPage() {
       const saved = readSavedState();
       const today = termAt(new Date());
       const firstTaken = Object.values(readTaken()?.terms ?? {}).sort()[0];
-      setLanguage(saved.language ?? "en");
+      setLanguage(readLanguage(saved));
       setNow(today);
       setRoadmap(saved.roadmap ?? emptyRoadmap(fallOf(firstTaken && firstTaken < today ? firstTaken : today)));
       setAuditNeeds(readAuditNeeds());

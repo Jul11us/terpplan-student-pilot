@@ -7,7 +7,7 @@ import { useDocumentLanguage } from "@/lib/document-language";
 import { auditGenEdNeeds, coursesNeeded, parseCourseIds, parseDegreeAudit, type AuditRequirement, type AuditResult } from "@/lib/degree-audit";
 import { extractDegreeAuditText } from "@/lib/degree-audit-pdf";
 import { GEN_ED_CATEGORIES, genEdParam } from "@/lib/gened-categories";
-import { readSavedState, writeSavedState } from "@/lib/saved-state";
+import { readLanguage, readSavedState, writeSavedState } from "@/lib/saved-state";
 import { compareAuditCandidates, compareAuditCandidatesByGpa, type AuditCandidate } from "@/lib/audit-recommendations";
 import { auditNeedsFrom, writeAuditNeeds } from "@/lib/audit-plan";
 import { AUDIT_HANDOFF_KEY } from "@/lib/programs";
@@ -103,7 +103,7 @@ export default function AuditPage() {
   useEffect(() => {
     const restore = window.setTimeout(() => {
       const saved = readSavedState();
-      if (saved.language) setLanguage(saved.language);
+      setLanguage(readLanguage(saved));
       if (saved.term) setTerm(saved.term);
       setPlanIds((saved.plans[saved.term ?? "202701"] ?? []).map((course) => course.courseId));
     }, 0);

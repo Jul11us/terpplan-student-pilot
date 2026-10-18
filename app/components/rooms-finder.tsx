@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useDocumentLanguage } from "@/lib/document-language";
-import { readSavedState, writeSavedState } from "@/lib/saved-state";
+import { readLanguage, writeSavedState } from "@/lib/saved-state";
 import { formatTermName } from "@/lib/seat-trends";
 import { mapsUrl, type Building } from "@/lib/campus-walk";
 import { buildingsAt, clockLabel, easternClock, NO_CLASSES_DAY, type Bookings, termDay, walkMinutesFrom, type Position, type Room, type RoomStatus } from "@/lib/rooms";
@@ -111,9 +111,8 @@ export function RoomsFinder({ rooms, buildings, term, calendar, builtAt }: { roo
 
   useEffect(() => {
     countUse("rooms");
-    const saved = readSavedState().language;
     /* eslint-disable react-hooks/set-state-in-effect */
-    if (saved === "en" || saved === "zh") setLanguage(saved);
+    setLanguage(readLanguage());
     const now = easternClock();
     setClock(now); setNowMs(Date.now()); setMyWeek(readMyWeek(term));
     // "Pick a time" starts on today (a weekday) at the next half hour.

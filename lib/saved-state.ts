@@ -7,6 +7,7 @@ import { normalizeBusyBlocks, validBuffer, type BusyBlock } from "@/lib/personal
 import { CAMPUS_AREA_KEYS } from "@/lib/campus-walk";
 import { GEN_ED_CATEGORIES } from "@/lib/gened-categories";
 import { storageKey } from "@/lib/demo";
+import { browserLanguage } from "@/lib/language";
 import { markLocalChange } from "@/lib/sync-meta";
 import { parseRoadmap, type SavedRoadmap } from "@/lib/roadmap";
 
@@ -168,6 +169,11 @@ export function readSavedState(): SavedState {
   } catch {
     return { plans: {} };
   }
+}
+
+// The language a page opens in: the student's choice once they have made one, else their browser's.
+export function readLanguage(saved: SavedState = readSavedState()): "en" | "zh" {
+  return saved.language ?? browserLanguage();
 }
 
 // JSON with object keys sorted and undefined fields left out, so equal content gives equal text.

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useDocumentLanguage } from "@/lib/document-language";
-import { readSavedState, writeSavedState } from "@/lib/saved-state";
+import { readLanguage, writeSavedState } from "@/lib/saved-state";
 import { readRegistrationDay, savedReminder, writeRegistrationDay, type RegistrationDay } from "@/lib/registration-day";
 import { RegistrationCountdown } from "@/app/components/registration-countdown";
 import { formatTermName } from "@/lib/seat-trends";
@@ -52,7 +52,7 @@ export default function RegisterPage() {
     // Read after the first render, so the server and client HTML match.
     const saved = readRegistrationDay();
     /* eslint-disable react-hooks/set-state-in-effect */
-    setLanguage(readSavedState().language ?? "en");
+    setLanguage(readLanguage());
     setDay(saved);
     if (saved) setReminder(savedReminder(saved.termName));
     setLoaded(true);

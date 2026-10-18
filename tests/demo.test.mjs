@@ -15,8 +15,8 @@ globalThis.window = {
 };
 Object.defineProperty(globalThis, "navigator", { value: { language: "zh-CN" }, configurable: true });
 
-const { DEMO_TERM, isDemo, leaveDemo, startDemoFromUrl, storageKey } = await import("../lib/demo.ts");
-const { parseSavedState, readSavedState, writeSavedState } = await import("../lib/saved-state.ts");
+const { DEMO_TERM, isDemo, leaveDemo, startDemoFromUrl, storageKey, takeFreshDemo } = await import("../lib/demo.ts");
+const { parseSavedState, readLanguage, readSavedState, writeSavedState } = await import("../lib/saved-state.ts");
 const { readTaken } = await import("../lib/taken-courses.ts");
 
 test("?demo=1 sets up the sample beside the real plan, and leaving brings the real plan back", () => {
@@ -58,4 +58,31 @@ test("the sample passes the same checks as a saved plan", () => {
   assert.deepEqual(parsed.preferences.busyBlocks, stored.preferences.busyBlocks);
   assert.equal(stored.language, "zh", "a Chinese browser without a saved language gets the Chinese sample");
   leaveDemo();
+});
+
+test("a new sample asks the planner to open on the schedules, once", () => {
+  session.items.clear();
+  local.items.clear();
+  window.location.href = "https://terpplan.test/?demo=1";
+  startDemoFromUrl();
+  assert.equal(takeFreshDemo(), true, "the page that set the sample up opens it on the ranked schedules");
+  assert.equal(takeFreshDemo(), false, "later loads of the tab keep whatever step the student is on");
+  leaveDemo();
+});
+
+test("leaving the sample drops a request to open the schedules that was never read", () => {
+  session.items.clear();
+  local.items.clear();
+  window.location.href = "https://terpplan.test/?demo=1";
+  startDemoFromUrl();
+  leaveDemo();
+  assert.equal(takeFreshDemo(), false);
+});
+
+test("a saved language beats the browser's, which beats English", () => {
+  local.items.clear();
+  assert.equal(readLanguage(), "zh", "nothing saved, Chinese browser");
+  writeSavedState({ language: "en" });
+  assert.equal(readLanguage(), "en", "the choice the visitor made is kept");
+  local.items.clear();
 });

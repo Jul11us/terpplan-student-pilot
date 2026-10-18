@@ -8,7 +8,7 @@ import type { InstructorCourse } from "@/lib/instructor";
 import type { GpaSummary } from "@/lib/planetterp";
 import { isAsyncOnline } from "@/lib/meeting-time";
 import { roomLabel } from "@/lib/room";
-import { readSavedState, writeSavedState } from "@/lib/saved-state";
+import { readLanguage, writeSavedState } from "@/lib/saved-state";
 import { formatSeatReadTime } from "@/lib/seat-time";
 import { SiteHeader } from "@/app/components/site-header";
 
@@ -84,7 +84,7 @@ export default function InstructorPage() {
   useEffect(() => {
     const start = window.setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
-      setLanguage(readSavedState().language ?? "en");
+      setLanguage(readLanguage());
       setQuery({ name: (params.get("name") ?? "").trim(), term: /^\d{6}$/.test(params.get("term") ?? "") ? params.get("term")! : "202701", course: params.get("course") ?? "" });
     }, 0);
     return () => window.clearTimeout(start);

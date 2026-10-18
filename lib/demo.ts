@@ -5,8 +5,12 @@
 
 import type { SavedState } from "@/lib/saved-state";
 import type { TakenCourses } from "@/lib/taken-courses";
+import { browserLanguage } from "@/lib/language";
 
 const FLAG = "terpplan:demo";
+// Set when a sample is set up and cleared the first time the planner reads it, so a sample opens on its
+// ranked schedules instead of the empty "find courses" panel.
+const FRESH = "terpplan:demo-fresh";
 const SUFFIX = ":demo";
 export const DEMO_TERM = "202701";
 
@@ -15,6 +19,16 @@ const DEMO_KEYS = ["terpplan:v1", "terpplan:taken", "terpplan:audit-needs", "ter
 
 export function isDemo() {
   try { return typeof window !== "undefined" && window.sessionStorage.getItem(FLAG) === "1"; } catch { return false; }
+}
+
+// True once, right after a sample is set up from the link or the "Try a sample" button: the planner opens
+// on the ranked schedules. Later loads of the same tab keep whichever step the student was last on.
+export function takeFreshDemo() {
+  try {
+    if (typeof window === "undefined" || window.sessionStorage.getItem(FRESH) !== "1") return false;
+    window.sessionStorage.removeItem(FRESH);
+    return true;
+  } catch { return false; }
 }
 
 // The storage key to use for one of the keys above: its sample copy while the sample is on.
@@ -58,7 +72,7 @@ export function startDemoFromUrl() {
 // A fresh sample: its own copies of the plan and the taken courses, and the flag for this tab.
 function seedDemo() {
   try {
-    let language: "en" | "zh" = navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+    let language: "en" | "zh" = browserLanguage();
     // Keep the language the visitor already chose, if any.
     const real = JSON.parse(window.localStorage.getItem("terpplan:v1") ?? "null") as { language?: unknown } | null;
     if (real?.language === "zh" || real?.language === "en") language = real.language;
@@ -66,6 +80,7 @@ function seedDemo() {
     window.localStorage.setItem("terpplan:v1" + SUFFIX, JSON.stringify(demoState(language)));
     window.localStorage.setItem("terpplan:taken" + SUFFIX, JSON.stringify(DEMO_TAKEN));
     window.sessionStorage.setItem(FLAG, "1");
+    window.sessionStorage.setItem(FRESH, "1");
   } catch {
     // Storage blocked: the sample cannot be kept apart from a real plan, so it does not start.
   }
@@ -80,6 +95,7 @@ export function enterDemo() {
 export function leaveDemo() {
   try {
     window.sessionStorage.removeItem(FLAG);
+    window.sessionStorage.removeItem(FRESH);
     for (const key of DEMO_KEYS) window.localStorage.removeItem(key + SUFFIX);
   } catch { /* nothing to clean up */ }
   window.history.replaceState(null, "", "/plan");

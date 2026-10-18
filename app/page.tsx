@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useDocumentLanguage } from "@/lib/document-language";
-import { readSavedState, writeSavedState } from "@/lib/saved-state";
+import { readLanguage, readSavedState, writeSavedState } from "@/lib/saved-state";
 import { CONTACT_EMAIL } from "@/lib/site-config";
 import { openFeedback } from "@/lib/feedback";
 import { SEAT_CHECK_MINUTES } from "@/lib/seat-cadence";
@@ -235,7 +235,7 @@ export default function Home() {
     // Read after the first render, so the server and client HTML match.
     const saved = readSavedState();
     /* eslint-disable react-hooks/set-state-in-effect */
-    if (saved.language) setLanguage(saved.language);
+    setLanguage(readLanguage(saved));
     setHasPlan(Object.values(saved.plans).some((courses) => courses.length > 0));
     const day = readRegistrationDay();
     if (day?.courses.length) setRegistration(savedReminder(day.termName));

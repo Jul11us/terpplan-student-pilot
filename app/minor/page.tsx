@@ -5,7 +5,7 @@ import { useDocumentLanguage } from "@/lib/document-language";
 import { parseCourseIds, parseDegreeAudit } from "@/lib/degree-audit";
 import { extractDegreeAuditText } from "@/lib/degree-audit-pdf";
 import { AUDIT_HANDOFF_KEY, defaultBlocks, evaluateProgram, MINOR_MAJOR_OVERLAP_COURSES, PROGRAMS_DATA_VERSION, unmetPrerequisites, withBaseCourses, type CourseFact, type CourseStatus, type ItemProgress, type Program } from "@/lib/programs";
-import { readSavedState, writeSavedState } from "@/lib/saved-state";
+import { readLanguage, readSavedState, writeSavedState } from "@/lib/saved-state";
 import { SiteHeader } from "@/app/components/site-header";
 import { countUse } from "@/lib/usage";
 
@@ -193,7 +193,7 @@ export default function ProgramExplorerPage() {
   useEffect(() => {
     const restore = window.setTimeout(() => {
       const saved = readSavedState();
-      if (saved.language) setLanguage(saved.language);
+      setLanguage(readLanguage(saved));
       const term = saved.term ?? "202701";
       setPlan({ term, ids: (saved.plans[term] ?? []).map((course) => course.courseId), all: [...new Set(Object.values(saved.plans).flat().map((course) => course.courseId))] });
       const prefs = readPrefs();
