@@ -84,7 +84,8 @@ const copy = {
     exportCalendar: "Export to calendar (.ics)", saveTitle: "Save or share this schedule", saveHelp: "What each of these does",
     registerView: "Registration-day view ↗", registerHint: "Course and section numbers, each course's backups and a countdown on one page to keep next to Testudo. It is also linked at the top of the home page.",
     shareSchedule: "Copy share link", shareCopied: "Link copied", shareReady: "Share link", shareCopyFailed: "Copy the link below to share this schedule.",
-    shareHint: "Anyone with this link can see these sections. Times and seats are refreshed when they open it.",
+    shareHint: "Anyone with this link can see these sections. Times and seats are refreshed when they open it. A friend who saved their own schedule for this term as My week can also compare the gaps in both timetables.",
+    shareCompare: "Send it to a friend: once they save their own schedule for this term as My week, the link shows the gaps in both timetables and the sections you share.",
     exportHelp: "Apple Calendar / Outlook: open the downloaded file. Google Calendar: on a computer, Settings → Import & export → Import.",
     exportUnavailable: "Calendar export is not available for this term yet.",
     exportSkipped: "Left out (time TBA):",
@@ -156,7 +157,8 @@ const copy = {
     exportCalendar: "导出到日历（.ics）", saveTitle: "保存和分享这份课表", saveHelp: "这几个按钮分别做什么",
     registerView: "选课当天页面 ↗", registerHint: "课号、班号、每门课的备选班次和倒计时都在一页，注册时开在 Testudo 旁边。首页顶部也有入口。",
     shareSchedule: "复制分享链接", shareCopied: "链接已复制", shareReady: "分享链接", shareCopyFailed: "请复制下方链接分享这个课表。",
-    shareHint: "拿到链接的人可以查看这些班次；打开时会重新读取上课时间与余位。",
+    shareHint: "拿到链接的人可以查看这些班次；打开时会重新读取上课时间与余位。朋友把自己这学期的课表存为“我的一周”后，还能对比两份课表的空档。",
+    shareCompare: "发给朋友：TA 把自己这学期的课表存为“我的一周”后，打开链接就能对比两份课表的空档，以及你们同一个班的课。",
     exportHelp: "Apple 日历 / Outlook：直接打开下载的文件。Google 日历：在电脑上进入 设置 → 导入和导出 → 导入。",
     exportUnavailable: "这个学期的校历还没配置，暂时无法导出。",
     exportSkipped: "未导出（时间待定）：",
@@ -845,7 +847,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
               <button type="button" onClick={() => { if (writeMyWeek(weekFromSections(chosen.selectedSections, term, termName))) { setWeekSavedFor(weekKey); countUse("week"); } }} className={button}>{weekSavedFor === weekKey ? "✓ " : ""}{t.useWeek}</button>
               {/* The registration checklist below keeps this schedule saved for /register. */}
               <a href="/register" target="_blank" rel="noreferrer" className={button}>{t.registerView}</a>
-              {shareUrl && <div className="order-last basis-full"><label htmlFor="share-schedule-url" className="text-[11px] font-medium text-[#5d6561]">{shareCopied ? t.shareReady : t.shareCopyFailed}</label><input id="share-schedule-url" readOnly value={shareUrl} onFocus={(event) => event.target.select()} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-[#fbfaf8] px-3 py-2 text-xs text-[#273c38]" /></div>}
+              {shareUrl && <div className="order-last basis-full"><label htmlFor="share-schedule-url" className="text-[11px] font-medium text-[#5d6561]">{shareCopied ? t.shareReady : t.shareCopyFailed}</label><input id="share-schedule-url" readOnly value={shareUrl} onFocus={(event) => event.target.select()} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-[#fbfaf8] px-3 py-2 text-xs text-[#273c38]" /><p className="mt-1 text-[11px] leading-5 text-[#536d64]">{t.shareCompare}</p></div>}
               {weekSavedFor === weekKey && <a href="/week" className="order-last basis-full py-1 text-xs font-semibold text-[#a34a39] hover:underline">{t.weekSaved}</a>}
             </div>
             <details className="mt-3 text-[11px] leading-5 text-[#646c68]">
