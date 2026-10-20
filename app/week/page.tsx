@@ -14,6 +14,8 @@ import { readSyncMeta } from "@/lib/sync-meta";
 import { isDemo } from "@/lib/demo";
 import { TERM_CALENDARS, termEnded, termInSession } from "@/lib/term-calendar";
 import { PlanSync } from "@/app/components/plan-sync";
+import { FinalExamsCard } from "@/app/components/final-exams-card";
+import { examCoursesFromWeek, examsOver } from "@/lib/final-exams";
 import { SiteHeader } from "@/app/components/site-header";
 
 type Language = "en" | "zh";
@@ -212,6 +214,7 @@ export default function MyWeekPage() {
           </div>; })}</div>
         </section>
         {week.unscheduled.length > 0 && <p className="mt-4 text-xs text-[#5d6561]">{t.unscheduled} {week.unscheduled.join(", ")}</p>}
+        {!examsOver(week.term, now) && <div className="mt-5"><FinalExamsCard term={week.term} courses={examCoursesFromWeek(week)} language={language} /></div>}
         <p className="mt-5 text-[11px] leading-5 text-[#646c68]">{t.note}</p>
       </>}
       <section className="mt-6 rounded-xl border border-[#e0ddd5] bg-white p-4"><h2 className="text-sm font-semibold">{t.installTitle}</h2><p className="mt-1 text-xs leading-5 text-[#5d6561]">{t.install}</p></section>

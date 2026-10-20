@@ -67,3 +67,14 @@ test("a rebuilt catalog snapshot against the bundled one: programs added or gone
   ]);
   assert.deepEqual(diffPrograms(before, before), [], "the same snapshot: nothing to report");
 });
+
+test("a Registrar final exam page: its term and common exams, compared with a table", async () => {
+  const { parseExamPage, compareExamCourses } = await import("../scripts/term-check.mjs");
+  const html = `<main><h1>Fall 2027 Final Exams</h1><p>Standard: 8am - 8:45am Monday</p><h2>Common Final Exam Time Slots</h2>
+    <table><tr><td>CMSC131</td><td>Wednesday</td></tr><tr><td>STAT/DATA100</td></tr><tr><td>KORA 102</td></tr></table><p>MATH003, 107, 140H</p></main>`;
+  const page = parseExamPage(html);
+  assert.equal(page.term, "202708");
+  assert.deepEqual([...page.courses].sort(), ["CMSC131", "DATA100", "KORA102", "MATH003", "STAT100"]);
+  const table = { CMSC131: {}, CMSC132: {}, STAT100: {}, DATA100: {}, KORA102: {}, MATH003: {}, MATH140: {} };
+  assert.deepEqual(compareExamCourses(page.courses, table), ["Common exams in the table but no longer on the Registrar's page: CMSC132."]);
+});

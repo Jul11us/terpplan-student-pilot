@@ -3,7 +3,8 @@
 //   1. Terms: Testudo's term list against the planner's term and the class calendars in lib/term-calendar.ts.
 //   2. The catalog year against the year the site names.
 //   3. CS distributive areas and special topics (undergrad.cs.umd.edu) against lib/cs-major.ts.
-//   4. Minors' and majors' requirements in the catalog against data/umd-programs.json, rebuilt into a temporary
+//   4. Final exam schedules (registrar.umd.edu) against the tables in lib/final-exams.ts.
+//   5. Minors' and majors' requirements in the catalog against data/umd-programs.json, rebuilt into a temporary
 //      file by scripts/build-programs.mjs (about 500 pages, a few minutes; --skip-catalog leaves this out).
 // Run: npm run check:term      (PROGRAM_HTML_CACHE=<dir> reuses catalog pages downloaded before)
 import { spawnSync } from "node:child_process";
@@ -13,6 +14,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { AREAS, TOPICS } from "../lib/cs-major.ts";
 import { TERM_CALENDARS, termEnded } from "../lib/term-calendar.ts";
+import { EXAM_TABLES } from "../lib/final-exams.ts";
 
 const ROOT = new URL("..", import.meta.url);
 const HEADERS = { "user-agent": "TerpPlan term check (terpplan@proton.me)" };
@@ -179,6 +181,46 @@ async function checkCs() {
   return { ok: `The department's areas and special topics match lib/cs-major.ts.`, lines };
 }
 
+// A Registrar final exam page: its term ("Fall 2026 Final Exams") and the courses in its common exam list.
+export function parseExamPage(html) {
+  const text = plain(html.replace(/<(script|style)[\s\S]*?<\/\1>/g, " ")).replace(/The Current Page is /g, "");
+  const title = /(Spring|Fall) (20\d\d) Final Exams/.exec(text);
+  const commonAt = text.search(/Common Final Exam/i);
+  const courses = new Set();
+  if (commonAt >= 0) for (const match of text.slice(commonAt).matchAll(/\b([A-Z]{4}) ?(\d{3}[A-Z]?)\b/g)) courses.add(match[1] + match[2]);
+  if (/STAT\/DATA100/.test(text)) { courses.add("STAT100"); courses.add("DATA100"); }
+  return { term: title ? termCode(title[1], title[2]) : null, courses };
+}
+
+// Courses whose common exam differs between the page and a table. MATH courses are listed by number in a note, so
+// only the first MATH code can be read from the page and MATH is not checked for removals.
+export function compareExamCourses(listed, table) {
+  const lines = [];
+  const known = new Set(Object.keys(table));
+  const added = [...listed].filter((course) => !known.has(course)).sort();
+  const dropped = [...known].filter((course) => !listed.has(course) && !course.startsWith("MATH")).sort();
+  if (added.length) lines.push(`Common exams on the Registrar's page but not in the table: ${added.join(", ")}.`);
+  if (dropped.length) lines.push(`Common exams in the table but no longer on the Registrar's page: ${dropped.join(", ")}.`);
+  return lines;
+}
+
+async function checkExams() {
+  const lines = [], seen = [];
+  for (const season of ["fall", "spring"]) {
+    const url = `https://registrar.umd.edu/registration/register-classes/final-exams/${season}`;
+    const { term, courses } = parseExamPage(await page(url));
+    if (!term) throw new Error(`${url} names no term; its layout may have changed.`);
+    seen.push(termName(term));
+    if (!EXAM_TABLES[term]) {
+      lines.push(`The Registrar has posted ${termName(term)} final exams (${url}); lib/final-exams.ts has no table for ${term}, so the site still estimates it. Add its exam dates and common exams.`);
+      continue;
+    }
+    for (const line of compareExamCourses(courses, EXAM_TABLES[term].common)) lines.push(`${termName(term)}: ${line}`);
+  }
+  if (lines.length) lines.push(`Then update EXAM_TABLES in lib/final-exams.ts and run npm test.`);
+  return { ok: `The Registrar's ${seen.join(" and ")} final exam schedules match lib/final-exams.ts.`, lines };
+}
+
 function checkPrograms() {
   const directory = mkdtempSync(join(tmpdir(), "terpplan-programs-"));
   const out = join(directory, "umd-programs.json");
@@ -197,7 +239,7 @@ function checkPrograms() {
 async function main() {
   const skipCatalog = process.argv.includes("--skip-catalog");
   console.log(`TerpPlan term check · ${new Date().toISOString().slice(0, 10)} · nothing is changed\n`);
-  const sections = [["1. Terms", checkTerms], ["2. Catalog year", checkCatalogYear], ["3. CS areas and special topics", checkCs], ...(skipCatalog ? [] : [["4. Catalog requirements", checkPrograms]])];
+  const sections = [["1. Terms", checkTerms], ["2. Catalog year", checkCatalogYear], ["3. CS areas and special topics", checkCs], ["4. Final exams", checkExams], ...(skipCatalog ? [] : [["5. Catalog requirements", checkPrograms]])];
   let failed = false, found = 0;
   for (const [title, check] of sections) {
     console.log(title);

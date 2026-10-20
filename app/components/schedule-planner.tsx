@@ -27,6 +27,8 @@ import { PersonalSchedule, repairText, ScheduleRecovery, SectionSwap } from "@/a
 import { SeasonNote, useOfferingSeasons } from "@/app/components/season-note";
 import { PrintSchedule, printHint } from "@/app/components/print-sheet";
 import { WorkloadCard } from "@/app/components/workload-card";
+import { FinalExamsCard } from "@/app/components/final-exams-card";
+import { examCoursesFromSections } from "@/lib/final-exams";
 import { CreditMeter, WeekLoadChart } from "@/app/components/plan-insights";
 import type { CreditMeter as CreditMeterData } from "@/lib/plan-credits";
 import { countUse } from "@/lib/usage";
@@ -829,6 +831,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
         <p className="mb-2 text-xs leading-5 text-[#646c68]">{language === "zh" ? "点击课表中的课程可查看备选班次。个人日程仅显示在这里，不包含在分享链接或日历导出中。" : "Click a class to review alternative sections. Personal commitments appear here and are excluded from share links and calendar exports."}</p>
         <WeekLoadChart sections={chosen.selectedSections} language={language} />
         <WorkloadCard courses={chosen.selectedSections.map((section) => ({ courseId: section.course_id, credits: section.credits }))} language={language} />
+        <FinalExamsCard term={term} courses={examCoursesFromSections(chosen.selectedSections)} language={language} />
         <WeeklyCalendar sections={chosen.selectedSections} language={language} busyBlocks={busyBlocks} onSelectSection={(section) => { const control = document.getElementById(`section-swap-${section.section_id}`); control?.scrollIntoView({ block: "center", behavior: "smooth" }); control?.click(); }} />
         <button type="button" onClick={() => openFeedback({ kind: "problem", context: reportDetails({ term: termName, sectionIds: chosen.selectedSections.map((section) => section.section_id) }) })} className="mt-2 inline-block text-xs font-medium text-[#a34a39] hover:underline">{t.reportSchedule}</button>
         {/* Saving and sharing come after the timetable, once the student has looked the schedule over: one row of
