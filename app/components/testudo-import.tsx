@@ -96,11 +96,20 @@ export default function TestudoImport({ term, terms, termName, planCount, langua
   // What was already done with this result: saved as My week, counted as taken.
   const [done, setDone] = useState<{ week?: boolean; taken?: boolean }>({});
 
+  // "/plan#import" (from My week) opens the box on arrival; a link to "#import" on this page opens it too.
   useEffect(() => {
-    if (window.location.hash !== IMPORT_HASH) return;
-    window.history.replaceState(null, "", window.location.pathname + window.location.search);
-    box.current?.scrollIntoView({ block: "center" });
-    box.current?.querySelector("textarea")?.focus({ preventScroll: true });
+    const fromAddress = () => {
+      if (window.location.hash !== IMPORT_HASH) return;
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      setOpen(true);
+      window.setTimeout(() => {
+        box.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+        box.current?.querySelector("textarea")?.focus({ preventScroll: true });
+      }, 0);
+    };
+    fromAddress();
+    window.addEventListener("hashchange", fromAddress);
+    return () => window.removeEventListener("hashchange", fromAddress);
   }, []);
 
   const close = () => { setOpen(false); setText(""); setResult(null); setNote(""); setDone({}); };

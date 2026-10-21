@@ -113,6 +113,12 @@ const copy = {
     keepSection: "Keep at least one section available.", seatReadAt: "Seat data read", seatReadHint: "“Seat data read” is when TerpPlan read the source, not when UMD updated it.",
     pinnedInstructorHint: "Remove the required section before changing instructors.",
     selectedCourses: "Courses in your plan", noSelectedCourses: "No courses added for this term yet.",
+    startTitle: "Where would you like to start?",
+    start: {
+      search: ["I know my courses", "Type a course number like CMSC131, or a topic, and add it to your plan."],
+      import: ["Import from Testudo", "Already registered? Paste your Testudo schedule to see it, share it or keep it as My week."],
+      audit: ["Help me find what I need", "Read your degree audit to see which requirements and courses are left."],
+    },
   },
   zh: {
     eyebrow: "马里兰大学 · 学生试用", title: "规划下一学期", subtitle: "找课程、排进课表，并关注空余名额。",
@@ -138,6 +144,12 @@ const copy = {
     keepSection: "请至少保留一个可排班次。", seatReadAt: "余位数据读取于", seatReadHint: "“余位数据读取于”是 TerpPlan 读取数据的时间，不代表 UMD 更新数据的时间。",
     pinnedInstructorHint: "请先取消指定班次，再修改教师筛选。",
     selectedCourses: "已选课程", noSelectedCourses: "这个学期还没有添加课程。",
+    startTitle: "想从哪里开始？",
+    start: {
+      search: ["我知道要上哪些课", "输入课号（比如 CMSC131）或关键词，把课加进计划。"],
+      import: ["从 Testudo 导入", "已经选好课了？粘贴 Testudo 课表，就能查看、分享，或存为“我的一周”。"],
+      audit: ["帮我找要上的课", "读取你的学位审计，看看还缺哪些要求和课程。"],
+    },
   },
 } as const;
 
@@ -1068,6 +1080,21 @@ export default function Home() {
         {transferOffer && <section role="dialog" aria-label={t.transferTitle} className="mb-5 rounded-2xl border border-[#536d64] bg-[#edf3ef] px-4 py-3 text-sm text-[#24312d] sm:px-5">
           {transferOffer === "invalid" ? <p>{t.transferInvalid}</p> : <><p className="font-semibold">{t.transferTitle}</p><p className="mt-1 text-xs leading-5">{t.transferBody.replace("{courses}", String(transferCourseCount(transferOffer))).replace("{taken}", transferOffer.taken ? t.transferTaken.replace("{n}", String(transferOffer.taken.completed.length + transferOffer.taken.inProgress.length)) : "")}</p></>}
           <div className="mt-2 flex flex-wrap gap-2">{transferOffer !== "invalid" && <button type="button" onClick={() => acceptTransfer(transferOffer)} className="rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1d302c]">{t.transferLoad}</button>}<button type="button" onClick={closeTransfer} className="rounded-lg border border-[#536d64] bg-white px-3 py-2 text-xs font-semibold text-[#273c38]">{t.transferDismiss}</button></div>
+        </section>}
+        {/* An empty plan: three ways in, so a first visit does not start from a blank search box. */}
+        {step === "find" && restored && !demo && !planCourses.length && <section aria-labelledby="start-title" className="mb-5 rounded-2xl border border-[#e0ddd5] bg-white p-4 sm:p-5">
+          <h2 id="start-title" className="text-sm font-semibold text-[#273c38]">{t.startTitle}</h2>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3 sm:gap-3">
+            {(["search", "import", "audit"] as const).map((way, index) => {
+              const [title, body] = t.start[way];
+              const inner = <><span className="flex items-center gap-2 text-sm font-semibold text-[#202728]"><span aria-hidden="true" className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#273c38] text-[11px] font-bold text-white">{index + 1}</span>{title}<span aria-hidden="true" className="ml-auto text-[#a34a39]">→</span></span><span className="mt-1 block text-xs leading-5 text-[#5d6561]">{body}</span></>;
+              const card = "block rounded-xl border border-[#e3e0d8] bg-[#fbfaf8] px-3.5 py-3 text-left transition hover:border-[#536d64] hover:bg-[#edf3ef]";
+              if (way === "audit") return <Link key={way} href="/audit" onClick={() => countUse("startAudit")} className={card}>{inner}</Link>;
+              // The import box opens itself when the address changes to #import.
+              if (way === "import") return <a key={way} href="#import" onClick={() => countUse("startImport")} className={card}>{inner}</a>;
+              return <button key={way} type="button" onClick={() => { countUse("startSearch"); setFindMode("search"); window.setTimeout(() => { const input = document.querySelector<HTMLInputElement>("#course-search input"); input?.scrollIntoView({ block: "center", behavior: "smooth" }); input?.focus({ preventScroll: true }); }, 0); }} className={card}>{inner}</button>;
+            })}
+          </div>
         </section>}
         {step === "find" && restored && <section aria-label={t.selectedCourses} className="order-1 mb-5 mt-5 rounded-2xl border lg:order-none lg:mt-0 border-[#e0ddd5] bg-[#fbfaf8] px-4 py-3 sm:px-5">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
