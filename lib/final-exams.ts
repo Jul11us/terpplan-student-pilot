@@ -9,6 +9,7 @@
 // Each term: add its table here once the Registrar posts it (npm run check:term says when a new term appears).
 
 import { isAsyncOnline, meetingDays, meetingMinutes, type MeetingTime } from "@/lib/meeting-time";
+import type { IcsEvent } from "@/lib/ics";
 import type { MyWeek } from "@/lib/my-week";
 import { termEnded } from "@/lib/term-calendar";
 
@@ -27,7 +28,7 @@ const h = (clock: string) => { const [hour, minute] = clock.split(":").map(Numbe
 const slot = (day: number, start: string, end: string): ExamTime => ({ day, start: h(start), end: h(end) });
 
 // Standard slots by class start time (first to last start minute, inclusive), the same in fall and spring.
-const MWF_SLOTS: Array<[number, number, ExamTime]> = [
+export const MWF_SLOTS: Array<[number, number, ExamTime]> = [
   [h("8:00"), h("8:45"), slot(0, "13:30", "15:30")],
   [h("9:00"), h("9:45"), slot(3, "13:30", "15:30")],
   [h("10:00"), h("10:45"), slot(5, "10:30", "12:30")],
@@ -39,7 +40,7 @@ const MWF_SLOTS: Array<[number, number, ExamTime]> = [
   [h("16:00"), h("16:45"), slot(5, "16:00", "18:00")],
   [h("17:00"), h("17:45"), slot(3, "18:30", "20:30")],
 ];
-const TUTH_SLOTS: Array<[number, number, ExamTime]> = [
+export const TUTH_SLOTS: Array<[number, number, ExamTime]> = [
   [h("8:00"), h("9:15"), slot(4, "13:30", "15:30")],
   [h("9:30"), h("10:45"), slot(1, "10:30", "12:30")],
   [h("11:00"), h("12:15"), slot(0, "10:30", "12:30")],
@@ -50,8 +51,8 @@ const TUTH_SLOTS: Array<[number, number, ExamTime]> = [
 ];
 const EVENING_FROM = h("18:00");
 
-const LANGUAGE_COURSES = ["FREN103", "FREN203", "FREN204", "GERS103", "GERS203", "ITAL103", "ITAL203", "JAPN101", "JAPN102", "JAPN201", "JAPN202", "KORA101", "KORA102", "KORA201", "KORA202", "RUSS101", "RUSS102", "RUSS201", "RUSS202"];
-const MATH_COURSES = ["003", "107", "113", "115", "120", "121", "135", "136", "140", "140H", "141", "141H", "212", "213", "214", "240", "241", "241H", "243", "246", "246H"].map((number) => "MATH" + number);
+export const LANGUAGE_COURSES = ["FREN103", "FREN203", "FREN204", "GERS103", "GERS203", "ITAL103", "ITAL203", "JAPN101", "JAPN102", "JAPN201", "JAPN202", "KORA101", "KORA102", "KORA201", "KORA202", "RUSS101", "RUSS102", "RUSS201", "RUSS202"];
+export const MATH_COURSES = ["003", "107", "113", "115", "120", "121", "135", "136", "140", "140H", "141", "141H", "212", "213", "214", "240", "241", "241H", "243", "246", "246H"].map((number) => "MATH" + number);
 
 function common(groups: Array<[string[], ExamTime]>) {
   const table: Record<string, ExamTime> = {};
@@ -178,6 +179,24 @@ export function examPlan(term: string, courses: ExamCourse[]): ExamPlan | null {
   const busyDays = EXAM_WEEKDAYS.map((_, day) => ({ day, courseIds: timed.filter((exam) => exam.time.day === day).map((exam) => exam.courseId) }))
     .filter((entry) => entry.courseIds.length >= 3);
   return { term, from: found.from, official: found.official, dates: found.table.dates, exams: [...timed, ...exams.filter((exam) => !("time" in exam))], clashes, busyDays };
+}
+
+// Testudo's own final exam lookup for a course (exact time and room, once posted six weeks before the term ends).
+export const testudoExamUrl = (term: string, courseId: string) => `https://app.testudo.umd.edu/soc/exam/search?courseId=${encodeURIComponent(courseId)}&sectionId=&termId=${term}`;
+
+// Calendar events for the exams with a time, only from a term's own posted table: estimated days are never put
+// on a calendar.
+export function examEvents(plan: ExamPlan, text: { summary: string; description: string }): IcsEvent[] {
+  if (!plan.official) return [];
+  return plan.exams.flatMap((exam) => "time" in exam && plan.dates[exam.time.day] ? [{
+    uid: `exam-${plan.term}-${exam.courseId}@terpplan.com`,
+    date: plan.dates[exam.time.day],
+    start: exam.time.start,
+    end: exam.time.end,
+    summary: text.summary.replace("{course}", exam.courseId),
+    description: text.description.replace("{course}", exam.courseId),
+    url: testudoExamUrl(plan.term, exam.courseId),
+  }] : []);
 }
 
 type SectionLike = { course_id: string; meetings?: (MeetingTime & { classtype?: string | null })[] | null };

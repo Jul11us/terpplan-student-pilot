@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { AREAS, TOPICS } from "../lib/cs-major.ts";
 import { TERM_CALENDARS, termEnded } from "../lib/term-calendar.ts";
-import { EXAM_TABLES } from "../lib/final-exams.ts";
+import { EXAM_TABLES, examsOver, LANGUAGE_COURSES, MATH_COURSES, MWF_SLOTS, TUTH_SLOTS } from "../lib/final-exams.ts";
 
 const ROOT = new URL("..", import.meta.url);
 const HEADERS = { "user-agent": "TerpPlan term check (terpplan@proton.me)" };
@@ -192,6 +192,60 @@ export function parseExamPage(html) {
   return { term: title ? termCode(title[1], title[2]) : null, courses };
 }
 
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const CLOCK = String.raw`\d{1,2}(?::\d{2})?\s*[ap]\.?\s?m\.?`;
+const DATE = String.raw`(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s+(${MONTHS.join("|")})\s+(\d{1,2})`;
+
+// "8am", "1:30pm", "4 p.m.", "10:30 a.m." -> minutes after midnight.
+export function clockMinutes(text) {
+  const match = /^(\d{1,2})(?::(\d{2}))?\s*([ap])/i.exec(text.trim());
+  if (!match) return null;
+  const hour = Number(match[1]) % 12 + (match[3].toLowerCase() === "p" ? 12 : 0);
+  return hour * 60 + Number(match[2] ?? 0);
+}
+
+// The page's exam slots: standard ones by class start time (MWF and TuTh lists), and common ones by course, each
+// with its date ("2026-12-14") and exam time in minutes.
+export function parseExamSlots(html, year) {
+  const text = plain(html.replace(/<(script|style)[\s\S]*?<\/\1>/g, " "));
+  const mwfAt = text.search(/Courses meeting on MWF/i), tuthAt = text.search(/Courses meeting on TuTh/i);
+  // The common list comes after the TuTh list (the page also names it once near the top, in its contents).
+  const commonFrom = tuthAt >= 0 ? text.slice(tuthAt).search(/Common Final Exam/i) + tuthAt : -1;
+  const date = (month, day) => `${year}-${String(MONTHS.indexOf(month) + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  const standard = (part) => [...part.matchAll(new RegExp(String.raw`(${CLOCK})\s*-\s*(${CLOCK})\s+${DATE}\s+(${CLOCK})\s*-\s*(${CLOCK})`, "gi"))]
+    .map((match) => ({ from: clockMinutes(match[1]), to: clockMinutes(match[2]), date: date(match[3], match[4]), start: clockMinutes(match[5]), end: clockMinutes(match[6]) }));
+  const common = commonFrom < tuthAt ? [] : [...text.slice(commonFrom).matchAll(new RegExp(String.raw`\b([A-Z]{4} ?\d{3}[A-Z]?|STAT/DATA100|LANGUAGES|MATH)\b.{0,60}?${DATE}\s+(${CLOCK})\s*-\s*(${CLOCK})`, "g"))]
+    .map((match) => ({ label: match[1].replace(" ", ""), date: date(match[2], match[3]), start: clockMinutes(match[4]), end: clockMinutes(match[5]) }));
+  return { mwf: mwfAt >= 0 && tuthAt > mwfAt ? standard(text.slice(mwfAt, tuthAt)) : [], tuth: commonFrom > tuthAt ? standard(text.slice(tuthAt, commonFrom)) : [], common };
+}
+
+const clockText = (minutes) => `${Math.floor(minutes / 60) % 12 || 12}:${String(minutes % 60).padStart(2, "0")}${minutes < 720 ? "am" : "pm"}`;
+
+// Slots whose date or time on the page differs from a table (or that only one side has).
+export function compareExamSlots(page, table, slots = { mwf: MWF_SLOTS, tuth: TUTH_SLOTS }) {
+  const lines = [];
+  const at = (time) => `${table.dates[time.day] ?? "?"} ${clockText(time.start)}–${clockText(time.end)}`;
+  const shown = (row) => `${row.date} ${clockText(row.start)}–${clockText(row.end)}`;
+  for (const [name, label] of [["mwf", "MWF"], ["tuth", "TuTh"]]) {
+    const listed = page[name];
+    if (!listed.length) { lines.push(`No ${label} standard slots could be read from the page; its layout may have changed.`); continue; }
+    for (const row of listed) {
+      const ours = slots[name].find(([from, to]) => from === row.from && to === row.to);
+      if (!ours) lines.push(`${label} classes starting ${clockText(row.from)}–${clockText(row.to)}: on the page (${shown(row)}) but not in the table.`);
+      else if (at(ours[2]) !== shown(row)) lines.push(`${label} classes starting ${clockText(row.from)}–${clockText(row.to)}: the page says ${shown(row)}, the table ${at(ours[2])}.`);
+    }
+    for (const [from, to] of slots[name]) if (!listed.some((row) => row.from === from && row.to === to)) lines.push(`${label} classes starting ${clockText(from)}–${clockText(to)}: in the table but not on the page.`);
+  }
+  const groups = { "STAT/DATA100": ["STAT100", "DATA100"], LANGUAGES: LANGUAGE_COURSES, MATH: MATH_COURSES };
+  for (const row of page.common) {
+    for (const course of groups[row.label] ?? [row.label]) {
+      const ours = table.common[course];
+      if (ours && at(ours) !== shown(row)) lines.push(`${course} common exam: the page says ${shown(row)}, the table ${at(ours)}.`);
+    }
+  }
+  return lines;
+}
+
 // Courses whose common exam differs between the page and a table. MATH courses are listed by number in a note, so
 // only the first MATH code can be read from the page and MATH is not checked for removals.
 export function compareExamCourses(listed, table) {
@@ -205,17 +259,26 @@ export function compareExamCourses(listed, table) {
 }
 
 async function checkExams() {
-  const lines = [], seen = [];
+  const lines = [], seen = [], pages = new Map();
   for (const season of ["fall", "spring"]) {
     const url = `https://registrar.umd.edu/registration/register-classes/final-exams/${season}`;
-    const { term, courses } = parseExamPage(await page(url));
+    pages.set(url, await page(url));
+    const { term, courses } = parseExamPage(pages.get(url));
     if (!term) throw new Error(`${url} names no term; its layout may have changed.`);
     seen.push(termName(term));
     if (!EXAM_TABLES[term]) {
       lines.push(`The Registrar has posted ${termName(term)} final exams (${url}); lib/final-exams.ts has no table for ${term}, so the site still estimates it. Add its exam dates and common exams.`);
       continue;
     }
-    for (const line of compareExamCourses(courses, EXAM_TABLES[term].common)) lines.push(`${termName(term)}: ${line}`);
+    const html = pages.get(url);
+    const slots = parseExamSlots(html, term.slice(0, 4));
+    for (const line of [...compareExamCourses(courses, EXAM_TABLES[term].common), ...compareExamSlots(slots, EXAM_TABLES[term])]) lines.push(`${termName(term)}: ${line}`);
+  }
+  // Six weeks before the term ends, Testudo lists each course's own exam time and room; until then it says the
+  // official schedule is not available.
+  for (const term of Object.keys(EXAM_TABLES).filter((code) => !examsOver(code, new Date()))) {
+    const url = `https://app.testudo.umd.edu/soc/exam/search?courseId=CMSC&sectionId=&termId=${term}`;
+    if (!/not available until mid-semester/i.test(await page(url))) lines.push(`Testudo now lists exact ${termName(term)} final exams (${url}). Spot-check a few courses against the site's exam times, and tell students to go by Testudo.`);
   }
   if (lines.length) lines.push(`Then update EXAM_TABLES in lib/final-exams.ts and run npm test.`);
   return { ok: `The Registrar's ${seen.join(" and ")} final exam schedules match lib/final-exams.ts.`, lines };

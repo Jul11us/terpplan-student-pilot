@@ -104,6 +104,33 @@ export function buildIcs(meetings: IcsMeeting[], calendar: TermCalendar, calenda
   return lines.map(fold).join("\r\n") + "\r\n";
 }
 
+// One-off events on given days (final exams), Eastern time, each with alerts a day and an hour before.
+export type IcsEvent = { uid: string; date: string; start: number; end: number; summary: string; description: string; url?: string };
+
+export function buildEventsIcs(events: IcsEvent[], calendarName: string, now = new Date()) {
+  const stamp = now.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//TerpPlan//Final exams//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", `X-WR-CALNAME:${escapeText(calendarName)}`, "X-WR-TIMEZONE:America/New_York", ...VTIMEZONE];
+  for (const event of events) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(event.date) || !(event.end > event.start)) continue;
+    const alarm = (trigger: string) => ["BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${escapeText(event.summary)}`, `TRIGGER:${trigger}`, "END:VALARM"];
+    lines.push(
+      "BEGIN:VEVENT",
+      `UID:${event.uid}`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART;TZID=America/New_York:${compact(event.date)}T${clock(event.start)}`,
+      `DTEND;TZID=America/New_York:${compact(event.date)}T${clock(Math.min(event.end, 23 * 60 + 59))}`,
+      `SUMMARY:${escapeText(event.summary)}`,
+      `DESCRIPTION:${escapeText(event.description)}`,
+      ...(event.url ? [`URL:${event.url}`] : []),
+      ...alarm("-P1D"),
+      ...alarm("-PT1H"),
+      "END:VEVENT",
+    );
+  }
+  lines.push("END:VCALENDAR");
+  return lines.map(fold).join("\r\n") + "\r\n";
+}
+
 // One reminder event for the student's registration time (Eastern time), with alerts a day and 15 minutes
 // before. `when` is "YYYY-MM-DD" and "HH:MM" as Testudo shows them.
 export function buildReminderIcs(when: { date: string; time: string }, event: { summary: string; description: string; url: string }, now = new Date()) {

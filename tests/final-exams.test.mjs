@@ -95,3 +95,20 @@ test("exams are over after the last exam day, not the last class day", async () 
   assert.equal(examsOver("202608", new Date(2026, 11, 22, 12)), true);
   assert.equal(examsOver("202701", new Date(2026, 9, 19, 12)), false);
 });
+
+test("exam calendar: only a posted term's timed exams, each a one-off event with reminders", async () => {
+  const { examEvents } = await import("../lib/final-exams.ts");
+  const { buildEventsIcs } = await import("../lib/ics.ts");
+  const text = { summary: "Final exam: {course}", description: "Check {course} in Testudo." };
+  const courses = [{ courseId: "CMSC330", meetings: [] }, { courseId: "ARTH200", meetings: [{ days: [], start: null, end: null, kind: null, online: true }] }];
+  const events = examEvents(examPlan("202608", courses), text);
+  assert.deepEqual(events.map((event) => [event.uid, event.date, event.start, event.end, event.summary]), [["exam-202608-CMSC330@terpplan.com", "2026-12-15", 1110, 1230, "Final exam: CMSC330"]]);
+  assert.match(events[0].url, /soc\/exam\/search\?courseId=CMSC330&sectionId=&termId=202608$/);
+  assert.deepEqual(examEvents(examPlan("202701", courses), text), [], "estimates never go on a calendar");
+  const ics = buildEventsIcs(events, "TerpPlan · Fall 2026 · Final exams", new Date("2026-10-21T12:00:00Z"));
+  assert.match(ics, /DTSTART;TZID=America\/New_York:20261215T183000\r\n/);
+  assert.match(ics, /DTEND;TZID=America\/New_York:20261215T203000\r\n/);
+  assert.equal((ics.match(/BEGIN:VALARM/g) ?? []).length, 2);
+  assert.match(ics, /TRIGGER:-P1D\r\n[\s\S]*TRIGGER:-PT1H\r\n/);
+  assert.doesNotMatch(ics.slice(ics.indexOf("BEGIN:VEVENT")), /RRULE/, "a one-off event, not weekly");
+});

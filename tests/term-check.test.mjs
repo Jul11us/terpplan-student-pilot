@@ -78,3 +78,24 @@ test("a Registrar final exam page: its term and common exams, compared with a ta
   const table = { CMSC131: {}, CMSC132: {}, STAT100: {}, DATA100: {}, KORA102: {}, MATH003: {}, MATH140: {} };
   assert.deepEqual(compareExamCourses(page.courses, table), ["Common exams in the table but no longer on the Registrar's page: CMSC132."]);
 });
+
+test("Registrar exam slots: dates and times are read and compared with a table, not only course names", async () => {
+  const { parseExamSlots, compareExamSlots, clockMinutes } = await import("../scripts/term-check.mjs");
+  assert.deepEqual(["8am", "1:30pm", "4 p.m.", "10:30 a.m.", "12pm"].map(clockMinutes), [480, 810, 960, 630, 720]);
+  const html = `<main><a>Common Time Slots</a><h2>Standard</h2><p>Courses meeting on MWF, MW, M, W, or F:</p>
+    <table><tr><td>8am - 8:45am</td><td>Monday, December 13</td><td>1:30pm - 3:30pm</td></tr><tr><td>9am - 9:45am</td><td>Thursday, December 16</td><td>1:30pm - 3:30pm</td></tr></table>
+    <p>Courses meeting on TuTh, Tu, or Th:</p><table><tr><td>8am - 9:15am</td><td>Friday, December 17</td><td>1:30 p.m. - 3:30 p.m.</td></tr></table>
+    <h2>Common Final Exam Time Slots</h2><table><tr><td>CMSC330</td><td>Tuesday, December 14</td><td>6:30pm - 8:30pm</td></tr>
+    <tr><td>MATH <a>see note 2</a> for courses</td><td>Monday, December 13</td><td>4pm - 6pm</td></tr></table></main>`;
+  const page = parseExamSlots(html, "2027");
+  assert.deepEqual(page.mwf[0], { from: 480, to: 525, date: "2027-12-13", start: 810, end: 930 });
+  assert.equal(page.tuth.length, 1);
+  assert.deepEqual(page.common.map((row) => row.label), ["CMSC330", "MATH"]);
+  const slot = (day, start, end) => ({ day, start, end });
+  const table = { dates: ["2027-12-13", "2027-12-14", "2027-12-15", "2027-12-16", "2027-12-17", "2027-12-20"], common: { CMSC330: slot(1, 1110, 1230), MATH140: slot(0, 990, 1110) } };
+  const slots = { mwf: [[480, 525, slot(0, 810, 930)], [540, 585, slot(3, 810, 930)], [600, 645, slot(5, 630, 750)]], tuth: [[480, 555, slot(4, 810, 930)]] };
+  assert.deepEqual(compareExamSlots(page, table, slots), [
+    "MWF classes starting 10:00am–10:45am: in the table but not on the page.",
+    "MATH140 common exam: the page says 2027-12-13 4:00pm–6:00pm, the table 2027-12-13 4:30pm–6:30pm.",
+  ]);
+});
