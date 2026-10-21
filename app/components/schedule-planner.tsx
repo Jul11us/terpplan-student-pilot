@@ -29,6 +29,7 @@ import { PersonalSchedule, repairText, ScheduleRecovery, SectionSwap } from "@/a
 import { SeasonNote, useOfferingSeasons } from "@/app/components/season-note";
 import { PrintSchedule, printHint } from "@/app/components/print-sheet";
 import { WorkloadCard } from "@/app/components/workload-card";
+import { ShareImage } from "@/app/components/share-image";
 import { FinalExamsCard } from "@/app/components/final-exams-card";
 import { examCoursesFromSections } from "@/lib/final-exams";
 import { CreditMeter, WeekLoadChart } from "@/app/components/plan-insights";
@@ -880,6 +881,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
               <CalendarExport compact key={chosen.selectedSections.map((section) => section.section_id).join("|")} sections={chosen.selectedSections} term={term} termName={termName} language={language} incomplete={chosenMissing.length > 0} />
               <PrintSchedule compact option={chosen} busyBlocks={busyBlocks} request={{ ...scheduleRequest, selectedSectionIds: chosen.selectedSections.map((item) => item.section_id) }} termName={termName} language={language} canLoadBackups={!loading && upToDate && chosenMissing.length === 0} />
               <button type="button" onClick={() => void shareSchedule()} className={button}>{shareCopied ? "✓ " + t.shareCopied : t.shareSchedule}</button>
+              <ShareImage sections={chosen.selectedSections} busyBlocks={busyBlocks} term={term} language={language} path={sharePath(term, chosen.selectedSections.map((section) => section.section_id), language, chosenMissing)} buttonClass={button} />
               <button type="button" onClick={() => { if (writeMyWeek(weekFromSections(chosen.selectedSections, term, termName))) { setWeekSavedFor(weekKey); countUse("week"); } }} className={button}>{weekSavedFor === weekKey ? "✓ " : ""}{t.useWeek}</button>
               {/* The registration checklist below keeps this schedule saved for /register. */}
               <a href="/register" target="_blank" rel="noreferrer" className={button}>{t.registerView}</a>
@@ -892,6 +894,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
                 <li><span className="font-semibold text-[#48534f]">{t.exportCalendar}</span>{colon}{TERM_CALENDARS[term] ? `${t.exportHelp} ${t.exportNote}` : t.exportUnavailable}</li>
                 <li><span className="font-semibold text-[#48534f]">{language === "zh" ? "打印 / 存为 PDF" : "Print / save as PDF"}</span>{colon}{printHint(language)}</li>
                 <li><span className="font-semibold text-[#48534f]">{t.shareSchedule}</span>{colon}{t.shareHint}</li>
+                <li><span className="font-semibold text-[#48534f]">{language === "zh" ? "生成分享图片" : "Share as image"}</span>{colon}{language === "zh" ? "把这周的课表画成一张图（普通 4:5 或 Instagram Story 竖版），带 TerpPlan 标识和分享链接的二维码。个人日程默认不显示。" : "Draws this week as a picture (a 4:5 post or an Instagram Story) with the TerpPlan mark and a QR code of the share link. Personal commitments are left out unless you turn them on."}</li>
                 <li><span className="font-semibold text-[#48534f]">{t.useWeek}</span>{colon}{t.weekHint}</li>
                 <li><span className="font-semibold text-[#48534f]">{t.registerView.replace(" ↗", "")}</span>{colon}{t.registerHint}</li>
               </ul>

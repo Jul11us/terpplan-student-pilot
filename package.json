@@ -19,6 +19,7 @@
     "drizzle-orm": "0.45.2",
     "next": "16.3.8",
     "pdfjs-dist": "^5.4.624",
+    "qrcode-generator": "2.0.4",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
