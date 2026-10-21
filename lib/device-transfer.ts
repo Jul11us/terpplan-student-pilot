@@ -54,6 +54,7 @@ function shareable(state: SavedState): SavedState {
     plans: state.plans,
     otherPlans: state.otherPlans,
     showingB: state.showingB,
+    ...(state.chosen && Object.keys(state.chosen).length ? { chosen: state.chosen } : {}),
     ...(state.preferences ? { preferences: { ...state.preferences, ...(busyBlocks ? { busyBlocks } : {}) } } : {}),
   };
 }
@@ -74,7 +75,7 @@ export async function decodeTransfer(code: string): Promise<Transfer | null> {
     const parsed = JSON.parse(new TextDecoder().decode(await pipe(fromBase64Url(code), new DecompressionStream("deflate-raw")))) as { v?: unknown; s?: unknown; t?: unknown };
     if (parsed.v !== VERSION) return null;
     const state = parseSavedState(parsed.s);
-    return { state: { term: state.term, plans: state.plans, otherPlans: state.otherPlans, showingB: state.showingB, ...(state.preferences ? { preferences: state.preferences } : {}) }, taken: parseTaken(parsed.t) };
+    return { state: { term: state.term, plans: state.plans, otherPlans: state.otherPlans, showingB: state.showingB, chosen: state.chosen, ...(state.preferences ? { preferences: state.preferences } : {}) }, taken: parseTaken(parsed.t) };
   } catch {
     return null;
   }
@@ -85,6 +86,6 @@ export const transferCourseCount = (transfer: Transfer) => [...Object.values(tra
 
 // Replace the receiving browser's plan data, including empty values, while keeping its language.
 export function applyTransfer(transfer: Transfer) {
-  writeSavedState({ term: transfer.state.term, plans: transfer.state.plans, otherPlans: transfer.state.otherPlans ?? {}, showingB: transfer.state.showingB ?? {}, preferences: transfer.state.preferences });
+  writeSavedState({ term: transfer.state.term, plans: transfer.state.plans, otherPlans: transfer.state.otherPlans ?? {}, showingB: transfer.state.showingB ?? {}, chosen: transfer.state.chosen ?? {}, preferences: transfer.state.preferences });
   writeTaken(transfer.taken ? { completed: transfer.taken.completed, inProgress: transfer.taken.inProgress, credits: transfer.taken.credits, source: transfer.taken.source } : null);
 }

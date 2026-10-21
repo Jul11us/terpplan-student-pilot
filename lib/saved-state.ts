@@ -58,6 +58,9 @@ export type SavedState = {
   // otherPlans[term] is the one put aside, and showingB marks the terms where Plan B is on screen.
   otherPlans?: Record<string, SavedPlanCourse[]>;
   showingB?: Record<string, true>;
+  // The schedule option the student picked, by term and plan ("202701:A"), as its section ids. The planner shows
+  // that option again after a reload or new seat counts, instead of whichever one ranks first then.
+  chosen?: Record<string, string[]>;
   preferences?: SavedPreferences;
   genEd?: SavedGenEd;
   // The four-year plan (lib/roadmap.ts).
@@ -84,6 +87,17 @@ function planCourses(value: unknown): SavedPlanCourse[] {
       ...(excludedSectionIds.length ? { excludedSectionIds } : {}),
     }];
   }).slice(0, 10);
+}
+
+export const choiceKey = (term: string, planB: boolean) => `${term}:${planB ? "B" : "A"}`;
+
+function chosen(value: unknown): Record<string, string[]> {
+  if (!value || typeof value !== "object") return {};
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+    .filter(([key]) => /^\d{6}:[AB]$/.test(key))
+    .map(([key, ids]) => [key, [...new Set(strings(ids).filter((id) => /^[A-Z]{4}\d{3}[A-Z0-9]*-[A-Z0-9]{1,8}$/.test(id)))].sort().slice(0, 10)] as const)
+    .filter(([, ids]) => ids.length)
+    .slice(0, 24));
 }
 
 function preferences(value: unknown): SavedPreferences | undefined {
@@ -144,6 +158,7 @@ export function parseSavedState(value: unknown): SavedState {
     plans: byTerm(parsed.plans),
     otherPlans: byTerm(parsed.otherPlans),
     showingB,
+    chosen: chosen(parsed.chosen),
     preferences: preferences(parsed.preferences),
     ...(savedGenEd ? { genEd: savedGenEd } : {}),
     ...(roadmap ? { roadmap } : {}),
@@ -199,4 +214,17 @@ export function writeSavedState(patch: Partial<SavedState>) {
   } catch {
     // Storage unavailable or full: the page keeps working, it just will not remember.
   }
+}
+
+// Merge one pick into the latest browser copy: another tab may have picked for a different term or plan
+// since this component mounted. Only fall back to the in-memory picks when storage cannot be read.
+export function writeOptionChoice(key: string, sectionIds: string[], fallback: Record<string, string[]> = {}) {
+  let choices = fallback;
+  try {
+    const raw = window.localStorage.getItem(storageKey(STORAGE_KEY));
+    choices = raw ? parseSavedState(JSON.parse(raw)).chosen ?? {} : {};
+  } catch { /* storage blocked: this visit's picks still work */ }
+  const next = { ...choices, [key]: sectionIds };
+  writeSavedState({ chosen: next });
+  return next;
 }

@@ -8,7 +8,8 @@ import { reportDetails } from "@/lib/report-link";
 import { openFeedback } from "@/lib/feedback";
 import { roomLabel } from "@/lib/room";
 import { TERM_CALENDARS } from "@/lib/term-calendar";
-import { readSavedState, writeSavedState } from "@/lib/saved-state";
+import { readSavedState, STORAGE_KEY, writeOptionChoice, writeSavedState } from "@/lib/saved-state";
+import { storageKey } from "@/lib/demo";
 import { formatSeatReadTime } from "@/lib/seat-time";
 import { isAsyncOnline } from "@/lib/meeting-time";
 import { buildingFor, CAMPUS_AREA_KEYS, mapsUrl, tightWalks } from "@/lib/campus-walk";
@@ -18,6 +19,7 @@ import { optionKey, OPTION_SORTS, sortOptions, type OptionSort } from "@/lib/opt
 import { formatScore, optionDifference } from "@/lib/score-display";
 import { PRESET_KEYS, presetActive, togglePreset, type PresetFields, type PresetKey } from "@/lib/schedule-presets";
 import { planKey } from "@/lib/plan-key";
+import { findSavedOption, optionSectionIds } from "@/lib/option-choice";
 import { sharePath } from "@/lib/shared-schedule";
 import { weekFromSections, writeMyWeek } from "@/lib/my-week";
 import { anonymousBusyBlocks, type BusyBlock } from "@/lib/personal-schedule";
@@ -93,6 +95,9 @@ const copy = {
     exportSkipped: "Left out (time TBA):",
     exportNote: "Regular class weeks only, without holidays or final exams. Confirm times and rooms in Testudo.",
     onlineAsync: "Online, no set time (not shown on the grid):", onlineNoTime: "Online · no set time",
+    pickedTag: "Your pick",
+    pickedGone: "The schedule you picked is no longer among the options: {gone} cannot be placed any more (full, filtered out or no longer offered). Showing the top-ranked option; tap a card to pick again.",
+    pickedApart: "The sections you picked ({ids}) no longer fit together in any option. Showing the top-ranked option; tap a card to pick again.",
     incompleteTag: "Missing", incompleteTitle: "This schedule is incomplete",
     incompleteBody: "These courses could not be placed and are not in this schedule, its share link, calendar file, or registration checklist:",
     updating: "Updating options for your latest changes…", autoNote: "Options update automatically when you change courses or preferences.",
@@ -166,6 +171,9 @@ const copy = {
     exportSkipped: "未导出（时间待定）：",
     exportNote: "只包含正常上课周，已去掉假期，不含期末考试。请以 Testudo 的时间和教室为准。",
     onlineAsync: "线上、无固定时间（不显示在课表格子里）：", onlineNoTime: "线上 · 无固定时间",
+    pickedTag: "你选的方案",
+    pickedGone: "你之前选的方案已经不在结果里了：{gone} 现在排不进去（可能满了、被筛掉了或不再开设）。先显示排名第一的方案，点一张卡片可以重新选。",
+    pickedApart: "你之前选的班次（{ids}）现在凑不成同一套方案。先显示排名第一的方案，点一张卡片可以重新选。",
     incompleteTag: "缺少", incompleteTitle: "这个方案不完整",
     incompleteBody: "下面这些课没能排进来，不在这个方案里，也不会出现在分享链接、日历文件和选课清单中：",
     updating: "正在根据最新的改动更新方案…", autoNote: "修改课程或排课偏好后，方案会自动更新。",
@@ -206,6 +214,8 @@ type Props = {
   takenEditor?: React.ReactNode;
   // The Plan A / Plan B switch, owned by the page.
   planSwitch?: React.ReactNode;
+  // Where the picked option is kept: this term and plan ("202701:A").
+  choiceKey?: string;
   onBack: () => void;
   onUpdateCourse: (courseId: string, patch: Partial<PlanCourse>) => void;
   // Puts a course back at its place in the plan (undoing "remove this course" from a fix).
@@ -516,11 +526,19 @@ export function CalendarExport({ sections, term, termName, language, incomplete,
   </div>;
 }
 
-export default function SchedulePlanner({ courses, term, termName, language, creditsLabel, creditWarning, creditMeter, prereqNeeds = {}, takenEditor, planSwitch, onRemove, onBack, onChosenChange, onPreferencesChange, onUpdateCourse, onRestoreCourse }: Props) {
+export default function SchedulePlanner({ courses, term, termName, language, creditsLabel, creditWarning, creditMeter, prereqNeeds = {}, takenEditor, planSwitch, choiceKey = `${term}:A`, onRemove, onBack, onChosenChange, onPreferencesChange, onUpdateCourse, onRestoreCourse }: Props) {
   const t = copy[language];
   const [generated, setGenerated] = useState<{ requestKey: string; prefsKey: string; options: ScheduleOption[]; warnings: PlanWarning[]; diagnostics?: PlanDiagnosis[]; repairs?: PlanRepair[] }>({ requestKey: "", prefsKey: "", options: [], warnings: [] });
-  // The option being viewed, kept by its section ids so re-sorting the list does not move the selection.
-  const [selectedKey, setSelectedKey] = useState("");
+  // The option picked for each term and plan, kept in saved state so a reload or new options bring it back.
+  const [savedChoices, setSavedChoices] = useState(() => readSavedState().chosen ?? {});
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== storageKey(STORAGE_KEY)) return;
+      setSavedChoices(readSavedState().chosen ?? {});
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
   const [optionSort, setOptionSort] = useState<OptionSort>("best");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -632,12 +650,16 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
       if (seq !== generationSeq.current) return;
       if (!response.ok) throw new Error(payload.error || t.loadError);
       setGenerated({ requestKey, prefsKey, options: payload.options ?? [], warnings: payload.warnings ?? [], diagnostics: payload.diagnostics ?? [], repairs: payload.repairs ?? [] });
-      if (payload.options?.length) countUse("schedule");
-      setSelectedKey("");
+      // How the run ended, for /admin: a full schedule, only options missing a course, or nothing that fits.
+      if (payload.options?.length) {
+        countUse("schedule");
+        countUse(payload.options.some((option) => courses.every((course) => option.selectedSections.some((section) => section.course_id === course.courseId))) ? "complete" : "partial");
+      } else countUse("noSolution");
       setShareUrl("");
       setShareCopied(false);
     } catch {
       if (seq !== generationSeq.current) return;
+      countUse("loadFailed");
       setError(t.loadError);
       setGenerated({ requestKey, prefsKey, options: [], warnings: [] });
     } finally {
@@ -656,8 +678,17 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
     return () => window.clearTimeout(timer);
   }, [courses.length, upToDate, windowValid, requestKey, prefsKey]);
 
-  // Falls back to the first card when nothing is picked yet, or when new options replaced the picked one.
-  const chosen = options.find((option) => optionKey(option) === selectedKey) ?? options[0];
+  // The option picked for this term and plan, else the first card. The saved map also keeps this visit's
+  // picks in memory when storage is unavailable; a separate selection would leak between Plan A and B.
+  const savedMatch = useMemo(() => findSavedOption(options, savedChoices[choiceKey], courses.map((course) => course.courseId)), [options, savedChoices, choiceKey, courses]);
+  const chosen = savedMatch.option ?? options[0];
+  const pickedKey = savedMatch.option ? optionKey(savedMatch.option) : "";
+  // Clicking a card is the pick: it is saved for this term and plan straight away.
+  const pickOption = (option: ScheduleOption) => {
+    const next = writeOptionChoice(choiceKey, optionSectionIds(option), savedChoices);
+    setSavedChoices(next);
+    countUse("pick");
+  };
   const prefsChanged = options.length > 0 && generated.prefsKey !== prefsKey;
   // Courses in the plan that an option could not place; an option missing any is incomplete.
   const missingFrom = (option: ScheduleOption) => courses.map((course) => course.courseId).filter((courseId) => !option.selectedSections.some((section) => section.course_id === courseId));
@@ -702,7 +733,8 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
     onUpdateCourse(courseId, { pinnedSectionId: replacement.section_id });
     const nextCourses = courses.map((course) => course.courseId === courseId ? { ...course, pinnedSectionId: replacement.section_id } : course);
     setGenerated({ requestKey: planKey(nextCourses, term), prefsKey, options: [option], warnings: [], diagnostics: [], repairs: [] });
-    setSelectedKey(""); setShareUrl(""); setShareCopied(false);
+    setShareUrl(""); setShareCopied(false);
+    pickOption(option);
   };
   useEffect(() => {
     if (!chosen || !onChosenChange) return;
@@ -806,13 +838,14 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
         {options.length > 1 && <label className="inline-flex items-center gap-1.5 text-xs text-[#48534f]">{t.sortLabel}<select value={optionSort} onChange={(event) => setOptionSort(event.target.value as OptionSort)} className="rounded-lg border border-[#d9d6ce] bg-white px-2 py-1 text-xs">{OPTION_SORTS.map((value) => <option key={value} value={value}>{t.optionSort[value]}</option>)}</select></label>}
       </div>
       <p className="mt-1 text-xs text-[#646c68]">{optionSort === "best" ? t.ranking : t.sortedNote}</p>
+      {upToDate && !loading && savedMatch.wanted.length > 0 && !savedMatch.option && <p role="status" className="mt-3 rounded-xl border border-[#ead8b5] bg-[#fff8e8] px-4 py-3 text-sm text-[#745424]">{savedMatch.gone.length ? t.pickedGone.replace("{gone}", savedMatch.gone.join(", ")) : t.pickedApart.replace("{ids}", savedMatch.wanted.join(", "))}</p>}
       {prefsChanged && windowValid && <p role="status" className="mt-3 rounded-xl border border-[#d9e3dc] bg-[#f4f8f5] px-4 py-3 text-sm text-[#315c43]">{t.updating}</p>}
       {prefsChanged && !windowValid && <p role="status" className="mt-3 rounded-xl border border-[#ead8b5] bg-[#fff8e8] px-4 py-3 text-sm text-[#745424]">{t.staleOptions}</p>}
       <div className="mt-4 grid gap-3 lg:grid-cols-3">{sortedOptions.map((option, index) => { const key = optionKey(option); const picked = key === (chosen ? optionKey(chosen) : ""); return <div key={key} className={`relative rounded-xl border p-4 text-left transition ${picked ? "border-[#536d64] bg-[#edf3ef] ring-2 ring-[#536d64]/15" : "border-[#e3e0d8] bg-white hover:border-[#b9c5be]"}`}>
         {/* The card selects the option; the score's info button sits above it and only opens the explanation. */}
-        <button type="button" onClick={() => { setSelectedKey(key); setShareUrl(""); setShareCopied(false); }} aria-pressed={picked} aria-label={`${t.option} ${index + 1}`} className="absolute inset-0 rounded-xl" />
+        <button type="button" onClick={() => { setShareUrl(""); setShareCopied(false); pickOption(option); }} aria-pressed={picked} aria-label={`${t.option} ${index + 1}`} className="absolute inset-0 rounded-xl" />
         <div className="pointer-events-none relative">
-        <span className="flex items-center justify-between gap-2"><strong>{t.option} {index + 1}</strong><span className="flex items-center gap-1.5 text-xs text-[#646c68]">{t.score} {formatScore(option.score)}<button type="button" onClick={() => setScoreHelpFor(scoreHelp === key ? null : { requestKey, key })} aria-expanded={scoreHelp === key} aria-label={t.scoreHow} title={t.scoreHow} className="pointer-events-auto grid h-4 w-4 place-items-center rounded-full border border-[#9aa59f] text-[10px] font-bold leading-none text-[#59635f] hover:border-[#536d64] hover:text-[#273c38]">i</button></span></span>
+        <span className="flex items-center justify-between gap-2"><strong>{t.option} {index + 1}{key === pickedKey && <span className="ml-2 rounded-full bg-[#273c38] px-2 py-0.5 align-middle text-[11px] font-semibold text-white">✓ {t.pickedTag}</span>}</strong><span className="flex items-center gap-1.5 text-xs text-[#646c68]">{t.score} {formatScore(option.score)}<button type="button" onClick={() => setScoreHelpFor(scoreHelp === key ? null : { requestKey, key })} aria-expanded={scoreHelp === key} aria-label={t.scoreHow} title={t.scoreHow} className="pointer-events-auto grid h-4 w-4 place-items-center rounded-full border border-[#9aa59f] text-[10px] font-bold leading-none text-[#59635f] hover:border-[#536d64] hover:text-[#273c38]">i</button></span></span>
         {scoreHelp === key && <ScoreBreakdown option={option} language={language} />}
         {highlightFor.get(key)?.length ? <span className="mt-2 flex flex-wrap gap-1.5">{highlightFor.get(key)!.map((reason) => <span key={reason} className="rounded-full bg-[#e6efe9] px-2 py-0.5 text-[11px] font-semibold text-[#315c43]">{t.highlight[reason]}</span>)}</span> : null}
         <span className="mt-3 block text-xs leading-5 text-[#5d6561]">{option.selectedSections.map((section) => section.section_id).join(" · ")}</span>
