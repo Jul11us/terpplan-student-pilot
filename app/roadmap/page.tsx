@@ -196,17 +196,21 @@ function CourseRow({ id, term, info, issues, roadmap, places, language, onRemove
       </div>
     </div>
     {issues.map((issue, index) => <p key={index} className="mt-1 text-[11px] leading-4 text-[#8a5a17]">⚠ {issueText(issue)}</p>)}
-    {(() => {
-      const seasonIssue = issues.find((issue): issue is Extract<CourseIssue, { kind: "season" }> => issue.kind === "season");
-      // A one-click fix for the wrong regular semester: the nearest later term of the course's one season
-      // (term codes sort in time order). A winter placement stays a check, not a move.
-      const target = seasonIssue && term !== null && termSeason(term) !== "winter" ? places.filter((place) => place !== "earlier" && place > term && termSeason(place) === seasonIssue.only).sort()[0] : undefined;
-      return target ? <button type="button" onClick={() => onMove(id, target)} className="mt-1 rounded-md border border-[#cfdcd3] bg-white px-1.5 py-0.5 text-[11px] font-semibold text-[#273c38] hover:bg-[#edf3ef]">{fill(t.moveThere, { term: termLabel(target, language) })}</button> : null;
-    })()}
-    <select value="" onChange={(event) => { if (event.target.value) onMove(id, event.target.value); }} aria-label={fill(t.moveFor, { id })} className="mt-1 min-h-6 max-w-full cursor-pointer bg-transparent text-[11px] text-[#646c68] hover:text-[#273c38]">
-      <option value="">{t.move}</option>
-      {places.filter((place) => place !== (term ?? "earlier")).map((place) => <option key={place} value={place}>{place === "earlier" ? t.earlierTitle : termLabel(place, language)}</option>)}
-    </select>
+    {/* The one-click move, when there is one, and the full "Move to…" list share a line with room between them,
+        and wrap onto two lines in a narrow column. */}
+    <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+      {(() => {
+        const seasonIssue = issues.find((issue): issue is Extract<CourseIssue, { kind: "season" }> => issue.kind === "season");
+        // A one-click fix for the wrong regular semester: the nearest later term of the course's one season
+        // (term codes sort in time order). A winter placement stays a check, not a move.
+        const target = seasonIssue && term !== null && termSeason(term) !== "winter" ? places.filter((place) => place !== "earlier" && place > term && termSeason(place) === seasonIssue.only).sort()[0] : undefined;
+        return target ? <button type="button" onClick={() => onMove(id, target)} className="rounded-md border border-[#cfdcd3] bg-white px-1.5 py-0.5 text-[11px] font-semibold text-[#273c38] hover:bg-[#edf3ef]">{fill(t.moveThere, { term: termLabel(target, language) })}</button> : null;
+      })()}
+      <select value="" onChange={(event) => { if (event.target.value) onMove(id, event.target.value); }} aria-label={fill(t.moveFor, { id })} className="min-h-6 max-w-full cursor-pointer bg-transparent text-[11px] text-[#646c68] hover:text-[#273c38]">
+        <option value="">{t.move}</option>
+        {places.filter((place) => place !== (term ?? "earlier")).map((place) => <option key={place} value={place}>{place === "earlier" ? t.earlierTitle : termLabel(place, language)}</option>)}
+      </select>
+    </div>
   </li>;
 }
 
