@@ -70,6 +70,15 @@ test("checks prerequisite order, fall-only and spring-only courses, repeats and 
   assert.deepEqual(check.earlierUnknown, ["MATH140"]);
 });
 
+test("a seasonal course in a winter term is flagged for checking, but never in summer or the term under way", () => {
+  const plan = { start: "202608", years: 4, earlier: [], terms: { 202612: ["CMSC250"], 202705: ["CMSC250"] }, credits: {} };
+  const info = { CMSC250: course("4") };
+  const fromFall = checkRoadmap(plan, info, { CMSC250: "fall" }, "202608");
+  assert.deepEqual(fromFall.issues["202612|CMSC250"], [{ kind: "season", only: "fall" }], "January comes after fall 2026");
+  assert.deepEqual(fromFall.issues["202705|CMSC250"], [{ kind: "repeat" }], "summer is left alone: many seasonal courses still run then");
+  assert.equal(checkRoadmap(plan, info, { CMSC250: "fall" }, "202612").issues["202612|CMSC250"], undefined, "the term under way is not checked");
+});
+
 test("the Gen Ed rows are filled the way that covers the most, earlier courses first", () => {
   const rows = genEdTable([
     { id: "ENGL101", term: null, groups: [["FSAW"]] },

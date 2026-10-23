@@ -47,7 +47,7 @@ const copy = {
     past: "Done", current: "This term", earlierTitle: "Before the plan", earlierHint: "AP and transfer credit, and terms before year 1. They count toward credits and prerequisites.",
     add: "Add a course", addPlaceholder: "Code or title, e.g. CMSC216", full: "A term holds up to 12 courses.", notInCatalog: "Not offered in Fall 2026 or Spring 2027; enter its credits.",
     move: "Move to…", moveFor: "Move {id}", remove: "Remove {id}", creditsFor: "Credits for {id}", cr: "cr",
-    issuePrereq: "Prerequisite not planned earlier: {list}", issueSeason: { fall: "Only offered in fall lately", spring: "Only offered in spring lately" }, issueRepeat: "Already planned earlier", and: "; ",
+    issuePrereq: "Prerequisite not planned earlier: {list}", issueSeason: { fall: "Only offered in fall lately", spring: "Only offered in spring lately" }, issueSeasonWinter: "Runs only in {season} lately; January (winter) offerings are unusual — check before planning it there", issueRepeat: "Already planned earlier", and: "; ", moveThere: "Move to {term}",
     orHigher: " or higher", sameTerm: " (can be same term)", of: (k: number) => `${k} of`,
     majorTitle: "Major requirements", majorLabel: "Major", trackLabel: "Track", majorNone: "Not chosen", majorCs: "Computer Science",
     majorPrompt: "Choose your major to check its requirements one by one. Computer Science is checked rule by rule, with its four specializations; other majors are checked against the catalog's course lists, and rules the catalog writes only in words are left for you to check.",
@@ -85,7 +85,7 @@ const copy = {
     past: "已修完", current: "本学期", earlierTitle: "之前修过", earlierHint: "AP、转学分，以及第一年之前的学期。会算进总学分和先修课。",
     add: "加课程", addPlaceholder: "课号或课名，例如 CMSC216", full: "一个学期最多放 12 门课。", notInCatalog: "Fall 2026 和 Spring 2027 都没开这门课，学分请自己填。",
     move: "移到…", moveFor: "移动 {id}", remove: "移除 {id}", creditsFor: "{id} 的学分", cr: "学分",
-    issuePrereq: "先修课没排在前面：{list}", issueSeason: { fall: "最近只在秋季开", spring: "最近只在春季开" }, issueRepeat: "前面已经排过这门课", and: "；",
+    issuePrereq: "先修课没排在前面：{list}", issueSeason: { fall: "最近只在秋季开", spring: "最近只在春季开" }, issueSeasonWinter: "最近只在{season}开课；冬季（1 月）一般不开，放进去之前先确认", issueRepeat: "前面已经排过这门课", and: "；", moveThere: "移到 {term}",
     orHigher: " 或更高", sameTerm: "（可同学期修）", of: (k: number) => `任选 ${k} 门：`,
     majorTitle: "专业要求", majorLabel: "专业", trackLabel: "方向", majorNone: "未选择", majorCs: "计算机科学 Computer Science",
     majorPrompt: "选你的专业，按专业要求逐项检查。计算机科学按系里的规则逐条检查（含四个方向）；其他专业按 catalog 列出的课程检查，catalog 只用文字描述的要求留给你自己核对。",
@@ -180,7 +180,7 @@ function CourseRow({ id, term, info, issues, roadmap, places, language, onRemove
   const credits = courseCredits(id, info, roadmap);
   const editable = info === null || variableCredits(info);
   const issueText = (issue: CourseIssue) => issue.kind === "prereq" ? fill(t.issuePrereq, { list: issue.missing.map((node) => describeRequirement(node, labels)).join(t.and) })
-    : issue.kind === "season" ? t.issueSeason[issue.only] : t.issueRepeat;
+    : issue.kind === "season" ? (term !== null && termSeason(term) === "winter" ? fill(t.issueSeasonWinter, { season: t.seasons[issue.only] }) : t.issueSeason[issue.only]) : t.issueRepeat;
   return <li className="rounded-lg border border-[#e7e4dc] bg-white px-2.5 py-2">
     <div className="flex items-start justify-between gap-2">
       <div className="min-w-0">
@@ -196,6 +196,13 @@ function CourseRow({ id, term, info, issues, roadmap, places, language, onRemove
       </div>
     </div>
     {issues.map((issue, index) => <p key={index} className="mt-1 text-[11px] leading-4 text-[#8a5a17]">⚠ {issueText(issue)}</p>)}
+    {(() => {
+      const seasonIssue = issues.find((issue): issue is Extract<CourseIssue, { kind: "season" }> => issue.kind === "season");
+      // A one-click fix for the wrong regular semester: the nearest later term of the course's one season
+      // (term codes sort in time order). A winter placement stays a check, not a move.
+      const target = seasonIssue && term !== null && termSeason(term) !== "winter" ? places.filter((place) => place !== "earlier" && place > term && termSeason(place) === seasonIssue.only).sort()[0] : undefined;
+      return target ? <button type="button" onClick={() => onMove(id, target)} className="mt-1 rounded-md border border-[#cfdcd3] bg-white px-1.5 py-0.5 text-[11px] font-semibold text-[#273c38] hover:bg-[#edf3ef]">{fill(t.moveThere, { term: termLabel(target, language) })}</button> : null;
+    })()}
     <select value="" onChange={(event) => { if (event.target.value) onMove(id, event.target.value); }} aria-label={fill(t.moveFor, { id })} className="mt-1 min-h-6 max-w-full cursor-pointer bg-transparent text-[11px] text-[#646c68] hover:text-[#273c38]">
       <option value="">{t.move}</option>
       {places.filter((place) => place !== (term ?? "earlier")).map((place) => <option key={place} value={place}>{place === "earlier" ? t.earlierTitle : termLabel(place, language)}</option>)}
@@ -347,8 +354,9 @@ export default function RoadmapPage() {
 
   const ids = useMemo(() => roadmap ? [...new Set([...roadmap.earlier, ...Object.values(roadmap.terms).flat()])] : [], [roadmap]);
 
-  // Fall-only and spring-only courses, for the fall and spring terms still ahead.
-  const regularAhead = useMemo(() => roadmap && now ? Object.entries(roadmap.terms).filter(([term]) => term > now && ["fall", "spring"].includes(termSeason(term))).flatMap(([, list]) => list) : [], [roadmap, now]);
+  // Fall-only and spring-only courses, for the fall, spring and winter terms still ahead (winter placements
+  // of such a course are flagged for checking; summer is left alone, see checkRoadmap).
+  const regularAhead = useMemo(() => roadmap && now ? Object.entries(roadmap.terms).filter(([term]) => term > now && ["fall", "spring", "winter"].includes(termSeason(term))).flatMap(([, list]) => list) : [], [roadmap, now]);
   const seasons = useOfferingSeasons(regularAhead);
   const check = useMemo(() => roadmap && now ? checkRoadmap(roadmap, info, seasons, now) : null, [roadmap, info, seasons, now]);
   const rows = useMemo(() => roadmap ? genEdTable([

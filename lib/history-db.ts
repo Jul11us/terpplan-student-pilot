@@ -2,7 +2,8 @@
 
 import { getDb } from "@/db";
 import { seatHistory, planActivity, courseOfferings, courseSeatHistory, courseFill } from "@/db/schema";
-import { and, eq, gte, desc, inArray, sql } from "drizzle-orm";
+import { and, eq, gte, lt, desc, inArray, sql } from "drizzle-orm";
+import { courseFillRisk, type EndingRow, type FillRisk, type RaceRow } from "@/lib/fill-risk";
 import { getTestudoSectionsBatch, parseCount, type UmdSection } from "@/lib/umd";
 import type { SeatSnapshot, SeatTrend, OfferingHistory, PopularCourse } from "@/lib/seat-trends";
 import { fetchTermOffering, summarizeSections, termEnd, termStatus, type TermOffering } from "@/lib/offering-backfill";
@@ -430,6 +431,41 @@ export async function getPopularCourses(term: string, limit = POPULAR_LIMIT): Pr
 export async function countSharers(term: string) {
   const [row] = await getDb().all<{ n: number }>(sql`SELECT COUNT(DISTINCT user_hash) AS n FROM plan_activity WHERE term = ${term} AND removed_at IS NULL`);
   return Number(row?.n ?? 0);
+}
+
+// Each course's fill risk for the term being planned: the races (course_fill) and end-of-term readings
+// (course_offerings) from the terms before it, with the bundled hard-courses snapshot filling in for
+// courses with no stored readings. Every requested course gets an answer, null when nothing says it was
+// ever hard to get.
+export async function getFillRisks(term: string, courseIds: string[]): Promise<Map<string, FillRisk | null>> {
+  const ids = [...new Set(courseIds)];
+  const result = new Map<string, FillRisk | null>(ids.map((id) => [id, null]));
+  if (!ids.length) return result;
+  const db = getDb();
+  const [races, endings] = await Promise.all([
+    db.select({ courseId: courseFill.courseId, term: courseFill.term, startedAt: courseFill.startedAt, filledAt: courseFill.filledAt, totalSeats: courseFill.totalSeats })
+      .from(courseFill).where(and(inArray(courseFill.courseId, ids), lt(courseFill.term, term))),
+    db.select({ courseId: courseOfferings.courseId, term: courseOfferings.term, sectionCount: courseOfferings.sectionCount, totalSeats: courseOfferings.totalSeats, openSeats: courseOfferings.openSeats, fullSections: courseOfferings.fullSections })
+      .from(courseOfferings).where(and(inArray(courseOfferings.courseId, ids), lt(courseOfferings.term, term), sql`${courseOfferings.sectionCount} > 0`)),
+  ]);
+  const racesByCourse = new Map<string, RaceRow[]>(ids.map((id) => [id, []]));
+  const endingsByCourse = new Map<string, EndingRow[]>(ids.map((id) => [id, []]));
+  for (const race of races) racesByCourse.get(race.courseId)?.push(race);
+  for (const ending of endings) endingsByCourse.get(ending.courseId)?.push(ending);
+  // A snapshot term the database has no reading for still says how full the course was then.
+  const snapshot = new Map((hardCourseData as HardCourseData).courses.map((course) => [course.id, course]));
+  for (const id of ids) {
+    const course = snapshot.get(id);
+    if (!course) continue;
+    const stored = new Set(endingsByCourse.get(id)!.map((ending) => ending.term));
+    for (const past of (hardCourseData as HardCourseData).terms) {
+      if (past >= term || stored.has(past)) continue;
+      const reading = course.terms[past];
+      if (reading) endingsByCourse.get(id)!.push({ term: past, sectionCount: reading.sections, totalSeats: reading.seats, openSeats: reading.open, fullSections: reading.fullSections });
+    }
+  }
+  for (const id of ids) result.set(id, courseFillRisk(racesByCourse.get(id)!, endingsByCourse.get(id)!));
+  return result;
 }
 
 /**

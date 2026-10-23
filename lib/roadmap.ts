@@ -214,7 +214,8 @@ export type RoadmapCheck = {
 
 // Checks every term after `now` (terms already taken or under way are what they are): prerequisites must come
 // in an earlier term (or the same term, where the catalog allows it), a fall-only course in a fall, a spring-only
-// one in a spring. Credits are totalled for every term.
+// one in a spring, and a fall-only or spring-only course in a winter (January) term, where the page words it
+// as unusual rather than impossible. Credits are totalled for every term.
 export function checkRoadmap(roadmap: SavedRoadmap, info: Record<string, CourseInfo | null | undefined>, seasons: Record<string, "fall" | "spring" | null | undefined>, now: string): RoadmapCheck {
   const issues: Record<string, CourseIssue[]> = {};
   const terms: Record<string, TermSummary> = {};
@@ -241,7 +242,13 @@ export function checkRoadmap(roadmap: SavedRoadmap, info: Record<string, CourseI
         if (missing.length) found.push({ kind: "prereq", missing });
       }
       const only = seasons[id];
-      if (ahead && only && (season === "fall" || season === "spring") && only !== season) found.push({ kind: "season", only });
+      // In the other regular semester the course cannot run. In a winter term it almost never does, so winter
+      // placements of a seasonal course are flagged for checking too; summer is left alone, since many courses
+      // that skip one regular semester still run in the summer.
+      if (ahead && only) {
+        if ((season === "fall" || season === "spring") && only !== season) found.push({ kind: "season", only });
+        else if (season === "winter") found.push({ kind: "season", only });
+      }
       if (before.has(id)) found.push({ kind: "repeat" });
       if (found.length) issues[`${term}|${id}`] = found;
       const amount = courseCredits(id, course, roadmap);

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { readRegistrationDay, REGISTRATION_DAY_EVENT, registrationCourses, writeRegistrationDay } from "@/lib/registration-day";
+import { FillRiskNote, useFillRisks } from "@/app/components/fill-risk-note";
 
 type Language = "en" | "zh";
 type ChecklistSection = { course_id: string; course_title: string; section_id: string; open_seats?: string | number | null };
@@ -58,6 +59,8 @@ export default function RegistrationChecklist({ option, others, missingCourseIds
   const t = copy[language];
   const [copied, setCopied] = useState("");
   const [failed, setFailed] = useState(false);
+  // How fast each course filled in earlier terms: the ones that go first sit next to their numbers here.
+  const risks = useFillRisks(term ? option.selectedSections.map((section) => section.course_id) : [], term);
 
   const write = async (key: string, text: string) => {
     try {
@@ -99,7 +102,7 @@ export default function RegistrationChecklist({ option, others, missingCourseIds
     <div className="mt-3 overflow-hidden rounded-lg border border-[#dfe7e1] bg-white">
       <div className="grid grid-cols-[1fr_auto_auto] gap-3 border-b border-[#eef2ef] px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#646c68]"><span /><span>{t.course}</span><span>{t.section}</span></div>
       {option.selectedSections.map((section) => <div key={section.section_id} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-b border-[#eef2ef] px-3 py-2 last:border-b-0">
-        <span className="min-w-0 text-xs leading-5 text-[#59635f]">{section.course_title}{isFull(section) && <span className="ml-2 rounded-full bg-[#f5e9e5] px-1.5 py-0.5 text-[10px] font-semibold text-[#8f4538]">{t.full}</span>}</span>
+        <span className="min-w-0 text-xs leading-5 text-[#59635f]">{section.course_title}{isFull(section) && <span className="ml-2 rounded-full bg-[#f5e9e5] px-1.5 py-0.5 text-[10px] font-semibold text-[#8f4538]">{t.full}</span>}<FillRiskNote risk={risks[section.course_id]} language={language} compact /></span>
         {chip(`${section.section_id}:course`, section.course_id)}
         {chip(`${section.section_id}:section`, sectionNumber(section))}
       </div>)}
