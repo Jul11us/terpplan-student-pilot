@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { Fragment, useEffect, useId, useState } from "react";
 import { comparisonDifferences, comparisonKey, comparisonMetrics, comparisonPlans, initialComparison, startPlanComparison, type ComparisonColumn, type ComparisonInput, type ComparisonSnapshot, type PlanSlot } from "@/lib/plan-comparison";
 import type { PlanPreferences } from "@/lib/planner";
 import type { SavedPlanCourse } from "@/lib/saved-state";
@@ -12,7 +12,7 @@ const copy = {
     note: "Both plans use your current preferences. Comparing is a preview; it does not change your pick or registration checklist.",
     plan: "Plan", loading: "Checking this plan…", empty: "No courses in this plan.", error: "Could not load this plan. Try comparing again.",
     invalid: "Complete the preferred time window above before comparing.", unavailable: "No schedule found with the current courses and preferences.",
-    saved: "Your picked schedule", unpicked: "Recommendation preview · not picked", changed: "Previous pick unavailable · recommendation preview",
+    saved: "Your picked schedule", unpicked: "Suggested · not picked", changed: "Previous pick unavailable · suggested instead",
     placed: "Placed / planned courses", credits: "Credits", first: "Earliest class", days: "Class days / week", gaps: "Gaps / week", walk: "Estimated walking / week", full: "Full sections",
     minutes: "min", unknownSeats: "with unknown seats", noFixed: "No fixed time", unknown: "Unknown",
     partial: "Not placed", timeNote: "Some meeting times are not announced, so time and walking totals are unknown.",
@@ -69,7 +69,10 @@ export default function PlanComparison({ term, language, activeSlot, currentCour
     const amount = row === "days" ? metric.days : row === "gaps" ? metric.gaps : metric.walking;
     return amount === null ? "—" : `${amount}${row === "days" ? "" : ` ${t.minutes}`}`;
   };
-  const sectionText = (sections: string[] | null) => sections === null ? t.absent : sections.length ? sections.join(", ") : t.notPlaced;
+  // A section id may wrap only after its hyphen ("CMSC330-" / "0101"), never inside the course or section number.
+  const sectionText = (sections: string[] | null) => sections === null ? t.absent : sections.length
+    ? sections.map((id, index) => { const cut = id.lastIndexOf("-") + 1; return <Fragment key={id}>{index ? ", " : ""}{id.slice(0, cut)}<wbr />{id.slice(cut)}</Fragment>; })
+    : t.notPlaced;
 
   return <section className="mt-4 rounded-xl border border-[#d9e3dc] bg-[#f7faf7] p-4">
     <button type="button" aria-expanded={open} aria-controls={bodyId} onClick={() => { setOpen(!open); setVisit((current) => current + 1); }} className="flex min-h-8 w-full items-center justify-between gap-3 text-left text-sm font-semibold text-[#273c38]">
@@ -80,7 +83,7 @@ export default function PlanComparison({ term, language, activeSlot, currentCour
       <div className="mt-3 overflow-hidden rounded-lg border border-[#d9e3dc] bg-white">
         <table className="w-full table-fixed text-left text-xs leading-5">
           <thead className="bg-[#edf3ef] text-[#273c38]"><tr>
-            <th scope="col" className="w-[36%] px-3 py-2"><span className="sr-only">{t.title}</span></th>
+            <th scope="col" className="w-[30%] px-3 py-2 sm:w-[36%]"><span className="sr-only">{t.title}</span></th>
             {(["A", "B"] as const).map((slot) => <th key={slot} scope="col" className="break-words px-2 py-2 align-top">
               <span className="block text-sm">{t.plan} {slot}</span><span role="status" className="mt-1 block text-[11px] font-normal text-[#5d6561]">{describe(state[slot])}</span>
             </th>)}
@@ -99,9 +102,9 @@ export default function PlanComparison({ term, language, activeSlot, currentCour
         {differences.length ? <table className="mt-1 w-full table-fixed text-left text-xs leading-5">
           <thead className="sr-only"><tr><th scope="col">{t.differences}</th><th scope="col">{t.plan} A</th><th scope="col">{t.plan} B</th></tr></thead>
           <tbody>{differences.map((difference) => <tr key={difference.courseId} className="border-t border-[#e3e8e1]">
-            <th scope="row" className="w-[36%] break-all px-2 py-2 font-medium text-[#48534f]">{difference.courseId}</th>
-            <td className="break-all px-2 py-2 align-top text-[#5d6561]">{sectionText(difference.A)}</td>
-            <td className="break-all px-2 py-2 align-top text-[#5d6561]">{sectionText(difference.B)}</td>
+            <th scope="row" className="w-[30%] break-words px-2 py-2 font-medium text-[#48534f] sm:w-[36%]">{difference.courseId}</th>
+            <td className="break-words px-2 py-2 align-top text-[#5d6561]">{sectionText(difference.A)}</td>
+            <td className="break-words px-2 py-2 align-top text-[#5d6561]">{sectionText(difference.B)}</td>
           </tr>)}</tbody>
         </table> : <p className="mt-1 text-xs text-[#646c68]">{t.same}</p>}
       </div>}

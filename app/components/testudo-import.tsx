@@ -34,7 +34,7 @@ const copy = {
     takenDone: "Added to courses you've taken, so prerequisites for {term} are checked against them.",
     preview: "Plan import preview", mode: "How to import", addMode: "Add or update courses", replaceMode: "Replace the whole plan", replaceHint: "Courses not listed below will be removed from this plan.",
     willAdd: "Add", willUpdate: "Update existing", skip: "Skip", limit: "plan is at the 10-course limit", duplicate: "duplicate course",
-    importing: "Import {n} course(s)", partial: "Sections that could not be found are not included when importing or saving.", weekAllFound: "Saving My week uses all found sections, including those skipped from the plan because it is full.", verifiedCount: "Saving My week or marking courses as in progress uses all {n} found courses.",
+    importing: "Import {n} courses", importingOne: "Import 1 course", partial: "Sections that could not be found are not included when importing or saving.", weekAllFound: "Saving My week uses all found sections, including those skipped from the plan because it is full.", verifiedCount: "Saving My week or marking courses as in progress uses all {n} found courses.",
     retry: "Retry failed lookups ({n})", lookupFailed: "lookup failed; retry available", pending: "looking up…", stop: "Stop lookup", stopped: "Lookup stopped. Results already found are kept; retry to check the rest.",
     cancel: "Cancel",
     close: "Done",
@@ -54,20 +54,20 @@ const copy = {
     read: "识别课程",
     reading: "正在查找班次…",
     nothing: "没有识别到课程和班号。请重新复制，或按 CMSC131 0302 的格式输入。",
-    noTerm: "TerpPlan 还没有 {term} 的数据。",
-    found: "{term} 找到 {n}/{total} 门：",
+    noTerm: "TerpPlan 还没有{term}的数据。",
+    found: "{term}找到 {n}/{total} 门：",
     noCourse: "这学期没有开这门课，已跳过",
     noSection: "没有找到 {section} 班，已跳过",
     replace: "替换当前方案",
     add: "加入当前方案",
     load: "导入当前方案",
-    switchLoad: "切换到 {term} 并导入",
+    switchLoad: "切换到{term}并导入",
     otherTerm: "这是你 {pasted} 的课表，当前在排 {term}。",
     asTaken: "算作正在修的课程",
-    takenDone: "已加入“修过的课程”，排 {term} 时会用它们检查先修课。",
+    takenDone: "已加入“修过的课程”，排{term}时会用它们检查先修课。",
     preview: "导入方案预览", mode: "导入方式", addMode: "加入或更新课程", replaceMode: "替换整个方案", replaceHint: "当前方案里未列在下方的课程会被移除。",
     willAdd: "新增", willUpdate: "更新已有", skip: "跳过", limit: "方案已达到 10 门课上限", duplicate: "重复课程",
-    importing: "导入 {n} 门课程", partial: "未查找到的班次不包含在导入或保存的课表中。", weekAllFound: "存到“我的一周”会包含所有查到的班次，包括因方案名额已满而跳过的课程。", verifiedCount: "存到“我的一周”或标为正在修，都只包含查到的这 {n} 门课程。",
+    importing: "导入 {n} 门课程", importingOne: "导入 1 门课程", partial: "未查找到的班次不包含在导入或保存的课表中。", weekAllFound: "存到“我的一周”会包含所有查到的班次，包括因方案名额已满而跳过的课程。", verifiedCount: "存到“我的一周”或标为正在修，都只包含查到的这 {n} 门课程。",
     retry: "重试查找失败的课程（{n}）", lookupFailed: "查找失败，可以重试", pending: "正在查找…", stop: "停止查找", stopped: "已停止查找。查到的结果会保留，可以重试继续查找其余课程。",
     cancel: "取消",
     close: "完成",
@@ -224,7 +224,7 @@ export default function TestudoImport({ term, terms, termName, planCourseIds, pl
       {!result && <button type="button" onClick={() => read()} disabled={!text.trim()} className={`${button} bg-[#273c38] text-white hover:bg-[#1d302c] disabled:opacity-50`}>{t.read}</button>}
       {busy && <><span className="self-center" role="status">{t.reading}</span><button type="button" onClick={stop} className={`${button} border border-[#536d64] bg-white text-[#273c38]`}>{t.stop}</button></>}
       {result && !busy && failedCount > 0 && <button type="button" onClick={() => read(true)} className={`${button} border border-[#536d64] bg-white text-[#273c38]`}>{t.retry.replace("{n}", String(failedCount))}</button>}
-      {result && !busy && importCourses.length > 0 && <button type="button" onClick={load} className={`${button} bg-[#273c38] text-white hover:bg-[#1d302c]`}>{result.term === term ? t.importing.replace("{n}", String(importCourses.length)) : t.switchLoad.replace("{term}", termName(result.term))}</button>}
+      {result && !busy && importCourses.length > 0 && <button type="button" onClick={load} className={`${button} bg-[#273c38] text-white hover:bg-[#1d302c]`}>{result.term === term ? (importCourses.length === 1 ? t.importingOne : t.importing).replace("{n}", String(importCourses.length)) : t.switchLoad.replace("{term}", termName(result.term))}</button>}
       {result && !busy && okCount > 0 && <button type="button" onClick={saveWeek} disabled={done.week} className={`${button} border border-[#536d64] bg-white text-[#273c38] disabled:opacity-60`}>{done.week ? "✓ " + t.weekSaved : t.week}</button>}
       {result && !busy && okCount > 0 && result.term < term && <button type="button" onClick={markTaken} disabled={done.taken} className={`${button} border border-[#536d64] bg-white text-[#273c38] disabled:opacity-60`}>{done.taken ? "✓ " + t.takenMarked : t.asTaken}</button>}
       <button type="button" onClick={close} className={`${button} border border-[#d9d6ce] bg-white text-[#48534f]`}>{done.week || done.taken ? t.close : t.cancel}</button>

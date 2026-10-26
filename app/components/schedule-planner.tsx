@@ -629,7 +629,8 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
   const commitContext = { choiceKey, requestKey, prefsKey, savedIds: savedChoices[choiceKey] ?? [] };
   const commitContextKey = optionCommitKey(commitContext);
   const confirmationDomain = JSON.stringify([choiceKey, requestKey, prefsKey]);
-  const selection = useMemo(() => optionSelection(options, savedChoices[choiceKey], courses.map((course) => course.courseId), commitContextKey, previewPick), [options, savedChoices, choiceKey, courses, commitContextKey, previewPick]);
+  // Left to the React Compiler to memoize: `chosen` is one of `options` either way, so its identity is stable.
+  const selection = optionSelection(options, savedChoices[choiceKey], courses.map((course) => course.courseId), commitContextKey, previewPick);
   const savedMatch = selection.match;
   // Reasons are worked out on the planner's own order (where the first option is the balanced one), then
   // looked up by option, so changing the sort never moves a reason onto a different schedule.
