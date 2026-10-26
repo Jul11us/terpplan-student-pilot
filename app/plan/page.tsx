@@ -313,7 +313,7 @@ export default function Home() {
   const rememberPrefs = useCallback((preferences: SectionPreferences) => setSchedulePrefs(preferences), []);
   // Last schedule option viewed in the planner, kept per term, for Gen Ed conflict checks.
   const [referenceSchedule, setReferenceSchedule] = useState<ReferenceSchedule | null>(null);
-  const rememberSchedule = useCallback((schedule: ReferenceSchedule) => setReferenceSchedule(schedule), []);
+  const rememberSchedule = useCallback((schedule: ReferenceSchedule | null) => setReferenceSchedule(schedule), []);
   const [searchState, setSearchState] = useState<CourseSearchState>({ key: "", status: "ready", results: [], error: "" });
   const [instructorState, setInstructorState] = useState<{ key: string } & InstructorSearch>({ key: "", results: [], more: false });
   // "@name" searches instructors only, so the course search is left out.
@@ -350,13 +350,14 @@ export default function Home() {
   const creditRequestsRef = useRef(new Set<string>());
   // Plans saved in this browser, one per term; kept in a ref so switching terms can restore them.
   const savedPlansRef = useRef<Record<string, PlanCourse[]>>({});
-  // Plan A / Plan B for the current term: which one is on screen, and how many courses the other has.
+  // Plan A / Plan B for the current term: which one is on screen, and the other plan's course inputs.
   const [showingB, setShowingB] = useState(false);
-  const [otherPlanCount, setOtherPlanCount] = useState(0);
+  const [otherPlanCourses, setOtherPlanCourses] = useState<PlanCourse[]>([]);
+  const otherPlanCount = otherPlanCourses.length;
   const syncPlanSlot = useCallback((forTerm: string) => {
     const saved = readSavedState();
     setShowingB(Boolean(saved.showingB?.[forTerm]));
-    setOtherPlanCount(saved.otherPlans?.[forTerm]?.length ?? 0);
+    setOtherPlanCourses(saved.otherPlans?.[forTerm] ?? []);
   }, []);
   const [restored, setRestored] = useState(false);
   // The Gen Ed finder's picks, saved once this browser's state has been restored (not the empty start before it).
@@ -970,14 +971,14 @@ export default function Home() {
     const next = swapPlans(readSavedState(), term, planCourses);
     writeSavedState(next);
     savedPlansRef.current = next.plans;
-    setOtherPlanCount(planCourses.length);
+    setOtherPlanCourses(planCourses);
     setShowingB(Boolean(next.showingB?.[term]));
     setPlanCourses(next.plans[term] ?? []);
   };
   const copyPlanToOther = () => {
     const saved = readSavedState();
     writeSavedState({ otherPlans: { ...saved.otherPlans, [term]: planCourses } });
-    setOtherPlanCount(planCourses.length);
+    setOtherPlanCourses(planCourses);
   };
   const planSwitch = <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
     <div role="group" aria-label={t.planSwitch} title={t.planHint} className="inline-flex rounded-lg border border-[#d9d6ce] bg-white p-0.5">
@@ -1307,7 +1308,7 @@ export default function Home() {
         </section>}
 
         {/* Mounted (hidden) outside step 02 too, so options regenerate while courses are added from search. */}
-        {restored && <div hidden={step !== "schedule"}><SchedulePlanner onChosenChange={rememberSchedule} onPreferencesChange={rememberPrefs} courses={planCourses} prereqNeeds={Object.fromEntries(planCourses.map((course) => [course.courseId, prereqNeeds(course.courseId) ?? []]))} takenEditor={<TakenCoursesEditor taken={taken} language={language} />} creditsLabel={planCreditLabel} creditWarning={planCreditWarning} creditMeter={planCreditMeter} planSwitch={planSwitch} choiceKey={choiceKey(term, showingB)} term={term} termName={termLabel(term, "en")} language={language} onUpdateCourse={(courseId, patch) => setPlanCourses((current) => current.map((course) => course.courseId === courseId ? { ...course, ...patch } : course))} onRemove={(courseId) => setPlanCourses((current) => current.filter((course) => course.courseId !== courseId))} onRestoreCourse={(course, index) => setPlanCourses((current) => current.some((item) => item.courseId === course.courseId) ? current : [...current.slice(0, index), course, ...current.slice(index)])} onBack={() => setStep("find")} /></div>}
+        {restored && <div hidden={step !== "schedule"}><SchedulePlanner otherPlanCourses={otherPlanCourses} onChosenChange={rememberSchedule} onPreferencesChange={rememberPrefs} courses={planCourses} prereqNeeds={Object.fromEntries(planCourses.map((course) => [course.courseId, prereqNeeds(course.courseId) ?? []]))} takenEditor={<TakenCoursesEditor taken={taken} language={language} />} creditsLabel={planCreditLabel} creditWarning={planCreditWarning} creditMeter={planCreditMeter} planSwitch={planSwitch} choiceKey={choiceKey(term, showingB)} term={term} termName={termLabel(term, "en")} language={language} onUpdateCourse={(courseId, patch) => setPlanCourses((current) => current.map((course) => course.courseId === courseId ? { ...course, ...patch } : course))} onRemove={(courseId) => setPlanCourses((current) => current.filter((course) => course.courseId !== courseId))} onRestoreCourse={(course, index) => setPlanCourses((current) => current.some((item) => item.courseId === course.courseId) ? current : [...current.slice(0, index), course, ...current.slice(index)])} onBack={() => setStep("find")} /></div>}
 
         {step === "watch" && <section className="mx-auto max-w-4xl rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-5 sm:p-8"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[.13em] text-[#9a5040]">03 · {t.watch}</p><h2 className="mt-2 font-serif text-3xl">{t.watchesTitle}</h2><p className="mt-2 max-w-xl text-xs leading-5 text-[#5d6561]">{t.watchCadence}</p></div><button onClick={() => void refreshWatches()} disabled={checking || !watches.length} className="rounded-lg bg-[#273c38] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{checking ? t.checking : t.refresh}</button></div>
           {/* The plan's courses, how full they got in past semesters, and the chosen sections to watch, before signing in too. */}
