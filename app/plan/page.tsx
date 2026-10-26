@@ -1138,7 +1138,7 @@ export default function Home() {
           </div>
           <div className="mt-2">{planSwitch}</div>
           {planCreditWarning && <p role="status" className="mt-2 rounded-lg bg-[#fff8e8] px-3 py-2 text-xs leading-5 text-[#745424]">⚠ {planCreditWarning}</p>}
-          <div className="mt-2 border-t border-[#ece9e2] pt-2"><TestudoImport term={term} terms={terms} termName={(item, lang = language) => termLabel(item, lang)} planCount={planCourses.length} language={language} onImport={importSchedule} /></div>
+          <div className="mt-2 border-t border-[#ece9e2] pt-2"><TestudoImport term={term} terms={terms} termName={(item, lang = language) => termLabel(item, lang)} planCourseIds={planCourses.map((course) => course.courseId)} planContext={JSON.stringify([choiceKey(term, showingB), planCourses])} language={language} onImport={importSchedule} /></div>
           <div className="mt-2 border-t border-[#ece9e2] pt-2"><TakenCoursesEditor taken={taken} language={language} /></div>
           <div className="mt-2 border-t border-[#ece9e2] pt-2 text-xs"><button type="button" onClick={() => void makeTransferLink()} className="min-h-6 font-medium text-[#a34a39] hover:underline">{t.transferButton} →</button>
             {transferLink && <div className="mt-2"><p className="text-[#48534f]">{transferCopied ? "✓ " + t.transferCopied : t.transferReady}</p><input readOnly value={transferLink} onFocus={(event) => event.target.select()} aria-label={t.transferButton} className="mt-1 w-full rounded-lg border border-[#dedbd3] bg-white px-3 py-2 text-xs text-[#273c38]" /><p className="mt-1 text-[11px] leading-5 text-[#646c68]">{t.transferPrivacy}</p></div>}

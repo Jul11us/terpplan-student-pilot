@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useDocumentLanguage } from "@/lib/document-language";
 import Link from "next/link";
 import { buildingFor, mapsUrl } from "@/lib/campus-walk";
-import { applyWeekChanges, classesOn, compareWeek, dayOf, pickWeekTerm, readMyWeeks, weekFromSections, WEEK_DAYS, writeMyWeek, type MyWeeks, type WeekChange, type WeekClass } from "@/lib/my-week";
+import { applyWeekChanges, classesOn, compareWeek, dayOf, pickWeekTerm, readMyWeeks, weekFromSections, weekSections, WEEK_DAYS, writeMyWeek, type MyWeeks, type UnscheduledKind, type WeekChange, type WeekClass } from "@/lib/my-week";
 import { roomLabel } from "@/lib/room";
 import type { MeetingTime } from "@/lib/meeting-time";
 import { readLanguage, writeSavedState } from "@/lib/saved-state";
@@ -27,11 +27,11 @@ const copy = {
     map: "Map", saved: "{term} · saved {date}", terms: "Saved terms",
     notStarted: "{term} starts on {date}. These are the classes you saved for it.", notStartedUndated: "{term} has not started yet. These are the classes you saved for it.", ended: "{term} has ended.",
     empty: "No week saved yet. Import your schedule from Testudo, or build one in TerpPlan and tap “Use as my week” under the timetable.", emptyImport: "Import from Testudo", emptyButton: "Build a schedule",
-    unscheduled: "Online or time to be announced:",
+    unscheduled: "Outside the timetable:", asyncTime: "Online · no fixed time", tbaTime: "Time to be announced", unknownTime: "Online or time to be announced",
     note: "Times and rooms are as they were when you saved. If a section changes, check Testudo and save your week again.",
     installTitle: "Keep it on your home screen",
     install: "iPhone (Safari): Share → Add to Home Screen. Android (Chrome): ⋮ → Add to Home screen or Install app. After one visit it opens without internet too.",
-    changesTitle: "Your sections changed since you saved", changedWas: "Was", changedNow: "Now", gone: "No longer listed this term. Check Testudo.", update: "Update my week", updated: "My week is up to date with the Schedule of Classes.", testudo: "Open Testudo",
+    changesTitle: "Your sections changed since you saved", changedWas: "Was", changedNow: "Now", gone: "No longer listed this term. Your saved information is kept; check Testudo.", update: "Update my week", updated: "Your saved week has been updated.", testudo: "Open Testudo",
     days: { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday" },
     gapTitle: "{n} min free · rooms nearby with nothing booked", gapSit: "sit {n} min", gapWalk: "walk {a} min there, {b} min to class", gapMore: "More empty rooms",
     gapDepartment: "department room, may be locked",
@@ -42,11 +42,11 @@ const copy = {
     map: "地图", saved: "{term} · 保存于 {date}", terms: "已保存的学期",
     notStarted: "{term}{date}开课，下面是你为这学期保存的课。", notStartedUndated: "{term}还没开始，下面是你为这学期保存的课。", ended: "{term}已经结束。",
     empty: "还没有保存课表。可以从 Testudo 导入你的课表，或者在 TerpPlan 排好课后点课表下面的“设为我的一周”。", emptyImport: "从 Testudo 导入", emptyButton: "去排课",
-    unscheduled: "线上课程或时间待定：",
+    unscheduled: "未排入时间格的课程：", asyncTime: "线上 · 无固定时间", tbaTime: "时间待公布", unknownTime: "线上课程或时间待定",
     note: "时间和教室是保存时的信息。如果班次有变化，请以 Testudo 为准，并重新保存。",
     installTitle: "放到手机主屏幕",
     install: "iPhone（Safari）：分享 → 添加到主屏幕。Android（Chrome）：⋮ → 添加到主屏幕或安装应用。打开过一次之后，没有网络也能打开。",
-    changesTitle: "保存之后，这些班次有变化", changedWas: "原来", changedNow: "现在", gone: "本学期已经找不到这个班次，请到 Testudo 确认。", update: "更新我的一周", updated: "已按最新的课程表更新。", testudo: "打开 Testudo",
+    changesTitle: "保存之后，这些班次有变化", changedWas: "原来", changedNow: "现在", gone: "本学期已经找不到这个班次，已保留原信息，请到 Testudo 确认。", update: "更新我的一周", updated: "已更新保存的课表。", testudo: "打开 Testudo",
     days: { Mon: "周一", Tue: "周二", Wed: "周三", Thu: "周四", Fri: "周五", Sat: "周六", Sun: "周日" },
     gapTitle: "空档 {n} 分钟 · 附近没有预约的教室", gapSit: "能坐 {n} 分钟", gapWalk: "走过去 {a} 分钟，再到下一节 {b} 分钟", gapMore: "更多空教室",
     gapDepartment: "系里的教室，可能上锁",
@@ -129,18 +129,21 @@ export default function MyWeekPage() {
   useEffect(() => {
     if (!week || !navigator.onLine) return;
     let cancelled = false;
-    const courses = [...new Set(week.classes.map((item) => item.courseId))];
+    const sections = weekSections(week);
+    const courses = [...new Set(sections.map((item) => item.courseId))];
     void Promise.all(courses.map(async (courseId) => {
       try {
         const response = await fetch(`/api/course?id=${encodeURIComponent(courseId)}&term=${encodeURIComponent(week.term)}`);
         if (!response.ok) return [];
-        const payload = await response.json() as { sections?: Array<{ section_id?: string; number?: string; meetings?: (MeetingTime & { classtype?: string | null })[] }> };
-        const listed = payload.sections ?? [];
-        const saved = [...new Set(week.classes.filter((item) => item.courseId === courseId).map((item) => item.sectionId))];
-        return saved.map((sectionId) => {
+        const payload = await response.json() as { course?: { name?: string }; sections?: Array<{ section_id?: string; number?: string; meetings?: (MeetingTime & { classtype?: string | null })[] }> };
+        if (!Array.isArray(payload.sections)) return [];
+        const listed = payload.sections;
+        return sections.filter((item) => item.courseId === courseId).map(({ sectionId, courseTitle }) => {
           const match = listed.find((section) => (section.section_id ?? `${courseId}-${section.number}`) === sectionId);
-          const title = week.classes.find((item) => item.sectionId === sectionId)?.courseTitle ?? courseId;
-          return [sectionId, match ? weekFromSections([{ course_id: courseId, course_title: title, section_id: sectionId, meetings: match.meetings }], week.term, week.termName).classes : null] as const;
+          if (!match) return [sectionId, null] as const;
+          const title = typeof payload.course?.name === "string" ? payload.course.name : courseTitle;
+          const fresh = weekFromSections([{ course_id: courseId, course_title: title, section_id: sectionId, meetings: match.meetings }], week.term, week.termName);
+          return [sectionId, { classes: fresh.classes, unscheduled: fresh.sections![0].unscheduled, courseTitle: title }] as const;
         });
       } catch {
         return []; // Offline or the lookup failed: this course is simply not checked.
@@ -156,6 +159,10 @@ export default function MyWeekPage() {
   const chooseTerm = (term: string) => { setSelected(term); setChanges([]); setJustUpdated(false); };
 
   const t = copy[language];
+  const describeMeetings = (classes: WeekClass[], unscheduled: UnscheduledKind[]) => [
+    ...classes.map((item) => `${item.days.map((day) => t.days[day as keyof typeof t.days].slice(0, 3)).join(" ")} ${clock(item.start)}–${clock(item.end)} · ${roomLabel(item.building, item.room, language)}`),
+    ...unscheduled.map((kind) => kind === "async" ? t.asyncTime : kind === "tba" ? t.tbaTime : t.unknownTime),
+  ].join("; ") || t.tbaTime;
   const switchLanguage = () => { const next = language === "en" ? "zh" : "en"; setLanguage(next); writeSavedState({ language: next }); };
   const termName = (term: string) => formatTermName(term, language);
   // The today box is for the term in session; another term's week says when it starts, or that it is over.
@@ -186,8 +193,8 @@ export default function MyWeekPage() {
         <h2 className="text-sm font-semibold">⚠ {t.changesTitle}</h2>
         <ul className="mt-2 space-y-2 text-xs leading-5">{changes.map((change) => <li key={change.sectionId}>
           <p className="font-semibold text-[#5a4219]">{change.sectionId}</p>
-          <p><span className="font-medium">{t.changedWas}:</span> {change.before.map((item) => `${item.days.map((day) => t.days[day as keyof typeof t.days].slice(0, 3)).join(" ")} ${clock(item.start)}–${clock(item.end)} · ${roomLabel(item.building, item.room, language)}`).join("; ")}</p>
-          {change.after ? <p><span className="font-medium">{t.changedNow}:</span> {change.after.map((item) => `${item.days.map((day) => t.days[day as keyof typeof t.days].slice(0, 3)).join(" ")} ${clock(item.start)}–${clock(item.end)} · ${roomLabel(item.building, item.room, language)}`).join("; ")}</p> : <p className="font-medium">{t.gone}</p>}
+          <p><span className="font-medium">{t.changedWas}:</span> {describeMeetings(change.before, change.beforeUnscheduled)}</p>
+          {change.after !== null ? <p><span className="font-medium">{t.changedNow}:</span> {describeMeetings(change.after, change.afterUnscheduled)}</p> : <p className="font-medium">{t.gone}</p>}
         </li>)}</ul>
         <div className="mt-3 flex flex-wrap gap-2">{changes.some((change) => change.after) && <button type="button" onClick={updateWeek} className="rounded-lg bg-[#273c38] px-3 py-2 text-xs font-semibold text-white">{t.update}</button>}<a href="https://app.testudo.umd.edu/" target="_blank" rel="noopener noreferrer" className="rounded-lg border border-[#d9c79f] bg-white px-3 py-2 text-xs font-semibold text-[#745424]">{t.testudo} ↗</a></div>
       </section>}
@@ -213,7 +220,7 @@ export default function MyWeekPage() {
             {list.length ? <ul className="mt-1.5 space-y-2">{list.map((item) => <ClassRow key={item.sectionId + item.start} item={item} language={language} />)}</ul> : <p className="mt-1 text-xs text-[#646c68]">{t.noClasses}</p>}
           </div>; })}</div>
         </section>
-        {week.unscheduled.length > 0 && <p className="mt-4 text-xs text-[#5d6561]">{t.unscheduled} {week.unscheduled.join(", ")}</p>}
+        {week.unscheduled.length > 0 && <div className="mt-4 text-xs text-[#5d6561]"><p>{t.unscheduled}</p><ul className="mt-1 space-y-1">{weekSections(week).filter((section) => section.unscheduled.length).map((section) => <li key={section.sectionId}>{section.sectionId}{section.courseTitle !== section.courseId ? ` · ${section.courseTitle}` : ""} · {describeMeetings([], section.unscheduled)}</li>)}</ul></div>}
         {!examsOver(week.term, now) && <div className="mt-5"><FinalExamsCard term={week.term} courses={examCoursesFromWeek(week)} language={language} /></div>}
         <p className="mt-5 text-[11px] leading-5 text-[#646c68]">{t.note}</p>
       </>}
