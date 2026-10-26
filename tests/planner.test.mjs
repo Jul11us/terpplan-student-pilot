@@ -4,6 +4,7 @@ import { generateOptions, applyRepair, replacementOptions } from "../lib/planner
 import { anonymousBusyBlocks, validBusyBlocks, validBuffer } from "../lib/personal-schedule.ts";
 import { readSavedState, writeSavedState, STORAGE_KEY } from "../lib/saved-state.ts";
 import { normalizeProfessorName } from "../lib/planetterp.ts";
+import { findSavedOption, optionSectionIds } from "../lib/option-choice.ts";
 
 const meeting = (start, end, days = "Mon", classtype = "Lecture") => ({ days, start_time: start, end_time: end, classtype, building: "CSI", room: "1115" });
 const section = (id, start, end, extra = {}) => ({ section_id: id, open_seats: 4, instructors: [], meetings: [meeting(start, end)], ...extra });
@@ -446,4 +447,72 @@ test("sections that differ only in room are one choice, the one with the most op
   ]);
   const ids = generateOptions([cmsc, engl], {}, {}).options.map((option) => option.selectedSections.find((item) => item.course_id === "ENGL101").section_id);
   assert.deepEqual([...ids].sort(), ["ENGL101-0102", "ENGL101-0201"]);
+});
+
+test("a still-valid saved pick survives falling below the top three after ratings change", () => {
+  const names = ["Ada Rated", "Bo Rated", "Cy Rated", "Dee Rated"];
+  const offered = [course("CMSC131", names.map((name, i) => section(`CMSC131-0${i + 1}01`, `${10 + i}:00`, `${10 + i}:50`, { instructors: [name], open_seats: 10 })))];
+  const ratings = (values) => Object.fromEntries(names.map((name, i) => [normalizeProfessorName(name), { name, matched: true, status: "ok", averageRating: values[i], reviewCount: 10 }]));
+  const before = generateOptions(offered, ratings([5, 4, 3, 2]), {}).options;
+  const saved = optionSectionIds(before[2]);
+  assert.deepEqual(saved, ["CMSC131-0301"]);
+  const changedRatings = ratings([5, 4, 1, 4.5]);
+  const recommended = generateOptions(offered, changedRatings, {}).options;
+  assert.equal(findSavedOption(recommended, saved, ["CMSC131"]).option, null);
+  const retained = generateOptions(offered, changedRatings, {}, saved).options;
+  assert.deepEqual(retained.slice(0, 3), recommended, "the top three recommendations stay intact");
+  assert.equal(retained.length, 4);
+  const match = findSavedOption(retained, saved, ["CMSC131"]);
+  assert.deepEqual(match.gone, []);
+  assert.equal(match.option.selectedSections[0].open_seats, 10);
+  assert.equal(match.option.professorRating, 1, "the saved option is scored from the current data");
+});
+
+test("a saved pick discarded as an equivalent recommendation is still independently restored", () => {
+  const offered = [course("CMSC131", [section("CMSC131-0101", "10:00", "10:50", { open_seats: 2 }), section("CMSC131-0102", "10:00", "10:50", { open_seats: 9 })])];
+  const saved = ["CMSC131-0101"];
+  assert.equal(findSavedOption(generateOptions(offered, {}, {}).options, saved, ["CMSC131"]).option, null);
+  assert.ok(findSavedOption(generateOptions(offered, {}, {}, saved).options, saved, ["CMSC131"]).option);
+});
+
+test("restoring a saved pick respects current filters instead of making the pick a pin", () => {
+  const wanted = section("CMSC131-0101", "10:00", "10:50", { instructors: ["Ada Rated"] });
+  const alternate = section("CMSC131-0201", "14:00", "14:50", { instructors: ["Bo Rated"], meetings: [meeting("14:00", "14:50", "Tue")] });
+  const saved = [wanted.section_id];
+  const cases = [
+    ["instructors", { instructors: ["Bo Rated"] }, {}, wanted],
+    ["excluded section", { excludedSectionIds: [wanted.section_id] }, {}, wanted],
+    ["different explicit pin", { pinnedSectionId: alternate.section_id }, {}, wanted],
+    ["earliest start", {}, { earliestStart: "12:00" }, wanted],
+    ["excluded day", {}, { excludedDays: ["Mon"] }, wanted],
+    ["strict time window", {}, { strictTime: true, windowStart: "12:00", windowEnd: "16:00" }, wanted],
+    ["personal commitment", {}, { busyBlocks: [block] }, wanted],
+    ["open seats only", {}, { openSeatsOnly: true }, { ...wanted, open_seats: 0 }],
+    ["section no longer offered", {}, {}, null],
+  ];
+  for (const [label, fields, preferences, current] of cases) {
+    const offered = [course("CMSC131", [current, alternate].filter(Boolean), fields)];
+    const options = generateOptions(offered, {}, preferences, saved).options;
+    assert.equal(findSavedOption(options, saved, ["CMSC131"]).option, null, label);
+    assert.ok(options.some((option) => option.selectedSections.some((section) => section.section_id === alternate.section_id)), `${label}: valid alternative remains`);
+  }
+});
+
+test("restoring a saved combination rejects new meeting conflicts and class buffers", () => {
+  const saved = ["CMSC131-0101", "MATH140-0101"];
+  const offered = [a, course("MATH140", [section("MATH140-0101", "10:30", "11:20")])];
+  assert.equal(findSavedOption(generateOptions(offered, {}, {}, saved).options, saved, ["CMSC131", "MATH140"]).option, null);
+  assert.equal(findSavedOption(generateOptions([a, b], {}, { bufferMinutes: 11 }, saved).options, saved, ["CMSC131", "MATH140"]).option, null);
+});
+
+test("restoring a saved pick finds compatible added courses and forgets removed courses", () => {
+  const offered = course("CMSC131", Array.from({ length: 4 }, (_, i) => section(`CMSC131-0${i + 1}01`, `${10 + i}:00`, `${10 + i}:50`)));
+  const saved = ["CMSC131-0401", "STAT400-0101"];
+  const added = course("MATH140", [section("MATH140-0101", "09:00", "09:50")]);
+  const options = generateOptions([offered, added], {}, {}, saved).options;
+  const match = findSavedOption(options, saved, ["CMSC131", "MATH140"]);
+  assert.deepEqual(match.wanted, ["CMSC131-0401"]);
+  assert.deepEqual(optionSectionIds(match.option), ["CMSC131-0401", "MATH140-0101"]);
+  const removed = generateOptions([offered], {}, {}, saved).options;
+  assert.deepEqual(optionSectionIds(findSavedOption(removed, saved, ["CMSC131"]).option), ["CMSC131-0401"]);
 });

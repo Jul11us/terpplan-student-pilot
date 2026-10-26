@@ -19,7 +19,7 @@ import { optionKey, OPTION_SORTS, sortOptions, type OptionSort } from "@/lib/opt
 import { formatScore, optionDifference } from "@/lib/score-display";
 import { PRESET_KEYS, presetActive, togglePreset, type PresetFields, type PresetKey } from "@/lib/schedule-presets";
 import { planKey } from "@/lib/plan-key";
-import { findSavedOption, optionSectionIds } from "@/lib/option-choice";
+import { findSavedOption, optionSectionIds, savedOptionSections } from "@/lib/option-choice";
 import { sharePath } from "@/lib/shared-schedule";
 import { weekFromSections, writeMyWeek } from "@/lib/my-week";
 import { anonymousBusyBlocks, type BusyBlock } from "@/lib/personal-schedule";
@@ -98,8 +98,8 @@ const copy = {
     exportNote: "Regular class weeks only, without holidays or final exams. Confirm times and rooms in Testudo.",
     onlineAsync: "Online, no set time (not shown on the grid):", onlineNoTime: "Online · no set time",
     pickedTag: "Your pick",
-    pickedGone: "The schedule you picked is no longer among the options: {gone} cannot be placed any more (full, filtered out or no longer offered). Showing the top-ranked option; tap a card to pick again.",
-    pickedApart: "The sections you picked ({ids}) no longer fit together in any option. Showing the top-ranked option; tap a card to pick again.",
+    pickedGone: "Your picked schedule could not be restored with the current courses and preferences ({gone}). Showing the top-ranked option; tap a card to pick again.",
+    pickedApart: "The sections you picked ({ids}) could not be restored together with the current courses and preferences. Showing the top-ranked option; tap a card to pick again.",
     incompleteTag: "Missing", incompleteTitle: "This schedule is incomplete",
     incompleteBody: "These courses could not be placed and are not in this schedule, its share link, calendar file, or registration checklist:",
     updating: "Updating options for your latest changes…", autoNote: "Options update automatically when you change courses or preferences.",
@@ -174,8 +174,8 @@ const copy = {
     exportNote: "只包含正常上课周，已去掉假期，不含期末考试。请以 Testudo 的时间和教室为准。",
     onlineAsync: "线上、无固定时间（不显示在课表格子里）：", onlineNoTime: "线上 · 无固定时间",
     pickedTag: "你选的方案",
-    pickedGone: "你之前选的方案已经不在结果里了：{gone} 现在排不进去（可能满了、被筛掉了或不再开设）。先显示排名第一的方案，点一张卡片可以重新选。",
-    pickedApart: "你之前选的班次（{ids}）现在凑不成同一套方案。先显示排名第一的方案，点一张卡片可以重新选。",
+    pickedGone: "按当前课程和偏好，没能恢复你之前选的方案（{gone}）。先显示排名第一的方案，点一张卡片可以重新选。",
+    pickedApart: "按当前课程和偏好，没能把你之前选的班次（{ids}）恢复成同一套方案。先显示排名第一的方案，点一张卡片可以重新选。",
     incompleteTag: "缺少", incompleteTitle: "这个方案不完整",
     incompleteBody: "下面这些课没能排进来，不在这个方案里，也不会出现在分享链接、日历文件和选课清单中：",
     updating: "正在根据最新的改动更新方案…", autoNote: "修改课程或排课偏好后，方案会自动更新。",
@@ -530,7 +530,7 @@ export function CalendarExport({ sections, term, termName, language, incomplete,
 
 export default function SchedulePlanner({ courses, term, termName, language, creditsLabel, creditWarning, creditMeter, prereqNeeds = {}, takenEditor, planSwitch, choiceKey = `${term}:A`, onRemove, onBack, onChosenChange, onPreferencesChange, onUpdateCourse, onRestoreCourse }: Props) {
   const t = copy[language];
-  const [generated, setGenerated] = useState<{ requestKey: string; prefsKey: string; options: ScheduleOption[]; warnings: PlanWarning[]; diagnostics?: PlanDiagnosis[]; repairs?: PlanRepair[] }>({ requestKey: "", prefsKey: "", options: [], warnings: [] });
+  const [generated, setGenerated] = useState<{ requestKey: string; choiceKey: string; savedKey: string; prefsKey: string; options: ScheduleOption[]; warnings: PlanWarning[]; diagnostics?: PlanDiagnosis[]; repairs?: PlanRepair[] }>({ requestKey: "", choiceKey: "", savedKey: "", prefsKey: "", options: [], warnings: [] });
   // The option picked for each term and plan, kept in saved state so a reload or new options bring it back.
   const [savedChoices, setSavedChoices] = useState(() => readSavedState().chosen ?? {});
   useEffect(() => {
@@ -604,10 +604,14 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
   // Preferences only mark results as out of date: the options stay visible with a notice to regenerate.
   const preferences = { earliestStart: earliestStart || null, earlyBefore: earlyBefore || null, excludedDays, windowStart: windowStart || null, windowEnd: windowEnd || null, strictTime, openSeatsOnly, preferGpa, preferFewerDays, preferNearbyClasses, campusAreas, includeFreshmanConnection, busyBlocks: anonymousBusyBlocks(busyBlocks), bufferMinutes };
   const prefsKey = JSON.stringify(preferences);
+  const savedSectionIds = savedOptionSections(savedChoices[choiceKey], courses.map((course) => course.courseId));
+  const savedKey = savedSectionIds.join("|");
   const scheduleRequest = { courseIds: courses.map((course) => course.courseId), term, preferences,
+    savedSectionIds,
     instructorFilters: Object.fromEntries(courses.filter((course) => course.instructors?.length).map((course) => [course.courseId, course.instructors])),
     sectionFilters: Object.fromEntries(courses.filter((course) => course.pinnedSectionId || course.excludedSectionIds?.length).map((course) => [course.courseId, { pinnedSectionId: course.pinnedSectionId, excludedSectionIds: course.excludedSectionIds }])) };
-  const options = useMemo(() => generated.requestKey === requestKey ? generated.options : [], [generated, requestKey]);
+  const options = useMemo(() => generated.requestKey === requestKey && generated.choiceKey === choiceKey ? generated.options : [], [generated, requestKey, choiceKey]);
+  const savedMatch = useMemo(() => findSavedOption(options, savedChoices[choiceKey], courses.map((course) => course.courseId)), [options, savedChoices, choiceKey, courses]);
   // Reasons are worked out on the planner's own order (where the first option is the balanced one), then
   // looked up by option, so changing the sort never moves a reason onto a different schedule.
   const highlightFor = useMemo(() => new Map(optionHighlights(options).map((list, index) => [optionKey(options[index]), list])), [options]);
@@ -615,7 +619,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
   // Which card's score explanation is open, for this set of options only.
   const [scoreHelpFor, setScoreHelpFor] = useState<{ requestKey: string; key: string } | null>(null);
   const scoreHelp = scoreHelpFor?.requestKey === requestKey ? scoreHelpFor.key : null;
-  const warnings = generated.requestKey === requestKey ? generated.warnings : [];
+  const warnings = generated.requestKey === requestKey && generated.choiceKey === choiceKey ? generated.warnings : [];
 
   const presetFields: PresetFields = { excludedDays, earliestStart, windowStart, windowEnd, strictTime, preferFewerDays, preferNearbyClasses };
   // A preset writes the same fields the form below writes, so the form always shows what is in effect.
@@ -652,7 +656,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
       const payload = await response.json() as { error?: string; options?: ScheduleOption[]; warnings?: PlanWarning[]; diagnostics?: PlanDiagnosis[]; repairs?: PlanRepair[] };
       if (seq !== generationSeq.current) return;
       if (!response.ok) throw new Error(payload.error || t.loadError);
-      setGenerated({ requestKey, prefsKey, options: payload.options ?? [], warnings: payload.warnings ?? [], diagnostics: payload.diagnostics ?? [], repairs: payload.repairs ?? [] });
+      setGenerated({ requestKey, choiceKey, savedKey, prefsKey, options: payload.options ?? [], warnings: payload.warnings ?? [], diagnostics: payload.diagnostics ?? [], repairs: payload.repairs ?? [] });
       // How the run ended, for /admin: a full schedule, only options missing a course, or nothing that fits.
       if (payload.options?.length) {
         countUse("schedule");
@@ -664,7 +668,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
       if (seq !== generationSeq.current) return;
       countUse("loadFailed");
       setError(t.loadError);
-      setGenerated({ requestKey, prefsKey, options: [], warnings: [] });
+      setGenerated({ requestKey, choiceKey, savedKey, prefsKey, options: [], warnings: [] });
     } finally {
       if (seq === generationSeq.current) setLoading(false);
     }
@@ -672,18 +676,20 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
 
   // Regenerate on its own shortly after the plan or preferences change (this panel stays mounted while hidden,
   // so edits made in course search update the options too). A failed run is recorded, so it does not retry in a loop.
-  const upToDate = generated.requestKey === requestKey && generated.prefsKey === prefsKey;
+  // Clicking an existing card needs no extra request. A different pick arriving from another tab does,
+  // if this result set has not independently checked it yet. A/B requests stay separate even for identical courses.
+  const upToDate = generated.requestKey === requestKey && generated.choiceKey === choiceKey && generated.prefsKey === prefsKey
+    && (generated.savedKey === savedKey || !savedKey || Boolean(savedMatch.option));
   const generateRef = useRef(generate);
   useEffect(() => { generateRef.current = generate; });
   useEffect(() => {
     if (!courses.length || upToDate || !windowValid) return;
     const timer = window.setTimeout(() => void generateRef.current(), 600);
     return () => window.clearTimeout(timer);
-  }, [courses.length, upToDate, windowValid, requestKey, prefsKey]);
+  }, [courses.length, upToDate, windowValid, requestKey, choiceKey, prefsKey, savedKey]);
 
   // The option picked for this term and plan, else the first card. The saved map also keeps this visit's
   // picks in memory when storage is unavailable; a separate selection would leak between Plan A and B.
-  const savedMatch = useMemo(() => findSavedOption(options, savedChoices[choiceKey], courses.map((course) => course.courseId)), [options, savedChoices, choiceKey, courses]);
   const chosen = savedMatch.option ?? options[0];
   const pickedKey = savedMatch.option ? optionKey(savedMatch.option) : "";
   // Clicking a card is the pick: it is saved for this term and plan straight away.
@@ -735,7 +741,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
     generationSeq.current++;
     onUpdateCourse(courseId, { pinnedSectionId: replacement.section_id });
     const nextCourses = courses.map((course) => course.courseId === courseId ? { ...course, pinnedSectionId: replacement.section_id } : course);
-    setGenerated({ requestKey: planKey(nextCourses, term), prefsKey, options: [option], warnings: [], diagnostics: [], repairs: [] });
+    setGenerated({ requestKey: planKey(nextCourses, term), choiceKey, savedKey: optionSectionIds(option).join("|"), prefsKey, options: [option], warnings: [], diagnostics: [], repairs: [] });
     setShareUrl(""); setShareCopied(false);
     pickOption(option);
   };
@@ -762,7 +768,7 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
       <button onClick={onBack} className="rounded-lg border border-[#d9d6ce] px-3 py-2 text-sm font-medium hover:bg-white">{t.back}</button>
     </div>
     {planSwitch && <div className="mt-4">{planSwitch}</div>}
-    {!courses.length ? <p className="mt-6 rounded-xl bg-[#f2f0eb] p-5 text-sm text-[#646c68]">{t.addCourse}</p> : <>
+    {!courses.length ? <p id="schedule-results" data-ready="true" className="mt-6 scroll-mt-6 rounded-xl bg-[#f2f0eb] p-5 text-sm text-[#646c68]">{t.addCourse}</p> : <>
       {creditMeter && <CreditMeter meter={creditMeter} language={language} />}
       {creditsLabel && <p className={`${creditMeter ? "mt-2" : "mt-6"} text-xs font-medium text-[#48534f]`}>{creditsLabel}</p>}
       {creditWarning && <p role="status" className="mt-2 rounded-lg bg-[#fff8e8] px-3 py-2 text-xs leading-5 text-[#745424]">⚠ {creditWarning}</p>}
@@ -824,7 +830,6 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
         <PersonalSchedule blocks={busyBlocks} buffer={bufferMinutes} onBlocks={setBusyBlocks} onBuffer={setBufferMinutes} language={language} />
         </div>
       </div>
-      {error && <p role="alert" className="mt-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]">{error}</p>}
       <div className="mt-5 flex flex-wrap items-center justify-end gap-3"><p className="text-xs text-[#646c68]">{t.autoNote}</p><button onClick={() => void generate()} disabled={loading} className="rounded-lg bg-[#273c38] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1d302c] disabled:opacity-60">{loading ? t.generating : t.generate}</button></div>
     </>}
     {undo && <div role="status" className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-[#cddbd1] bg-[#edf3ef] px-4 py-3 text-sm text-[#273c38]">
@@ -832,8 +837,12 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
       <button type="button" onClick={() => { undo.restore(); setUndo(null); }} className="rounded-lg border border-[#536d64] bg-white px-3 py-1.5 text-xs font-semibold hover:bg-[#f4f8f5]">{language === "zh" ? "撤销" : "Undo"}</button>
       <button type="button" onClick={() => setUndo(null)} aria-label={language === "zh" ? "关闭" : "Dismiss"} className="rounded-lg px-2 py-1 text-xs text-[#5d6561] hover:bg-white">✕</button>
     </div>}
+    <div id={courses.length ? "schedule-results" : undefined} className="scroll-mt-6" data-ready={(upToDate || !windowValid) && !loading ? "true" : "false"} data-loading={loading ? "true" : "false"} aria-busy={loading}>
+    {loading && <p role="status" className="mt-5 text-sm text-[#5d6561]">{t.generating}</p>}
+    {error && <p role="alert" className="mt-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]">{error}</p>}
+    {!windowValid && !error && <p role="alert" className="mt-4 rounded-xl border border-[#e7c6bf] bg-[#fff0ec] px-4 py-3 text-sm text-[#8c352c]">{t.invalidWindow}</p>}
     {warnings.length > 0 && <ul className="mt-5 space-y-2 rounded-xl border border-[#ead8b5] bg-[#fff8e8] p-4 text-sm text-[#745424]">{warnings.map((warning, index) => <li key={index}>{warningText(warning, language)}</li>)}</ul>}
-    {generated.requestKey === requestKey && <ScheduleRecovery diagnostics={generated.diagnostics ?? []} repairs={generated.repairs ?? []} blocks={busyBlocks} pinned={pinned} language={language} disabled={loading || !upToDate} onRepair={applyRepair} onBack={onBack} />}
+    {generated.requestKey === requestKey && generated.choiceKey === choiceKey && <ScheduleRecovery diagnostics={generated.diagnostics ?? []} repairs={generated.repairs ?? []} blocks={busyBlocks} pinned={pinned} language={language} disabled={loading || !upToDate} onRepair={applyRepair} onBack={onBack} />}
     {courses.length > 0 && options.length === 0 && !loading && !error && warnings.length > 0 && <p className="mt-4 text-sm text-[#5d6561]">{t.noOptions}</p>}
     {options.length > 0 && <div className="mt-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -927,5 +936,6 @@ export default function SchedulePlanner({ courses, term, termName, language, cre
         <RegistrationChecklist option={chosen} others={options.filter((option) => option !== chosen)} missingCourseIds={chosenMissing} language={language} termName={termName} term={term} />
       </div>}
     </div>}
+    </div>
   </section>;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { readRegistrationDay, REGISTRATION_DAY_EVENT, registrationCourses, writeRegistrationDay } from "@/lib/registration-day";
+import { registrationCourses, registrationDayIsSaved, saveRegistrationSchedule } from "@/lib/registration-day";
 import { FillRiskNote, useFillRisks } from "@/app/components/fill-risk-note";
 
 type Language = "en" | "zh";
@@ -33,6 +33,7 @@ const copy = {
     copyFailed: "Copy failed. Select the text and copy it manually.",
     missing: "Not in this checklist because they could not be placed:",
     dayButton: "Open registration-day view", dayHint: "One page with these numbers, each course's backups next to it, and boxes to tick as you register. It works offline, so keep it open next to Testudo.",
+    saveFailed: "This checklist could not be saved in your browser. Keep this page open and retry saving to use registration-day view.", retrySave: "Retry saving",
   },
   zh: {
     title: "选课清单",
@@ -49,6 +50,7 @@ const copy = {
     copyFailed: "复制失败，请手动选中文字复制。",
     missing: "这些课没能排进方案，所以不在清单里：",
     dayButton: "打开“选课当天”页面", dayHint: "一个页面集中显示这些课号和班号、每门课的备选班次，注册好一门就勾掉一门。离线也能打开，选课时开在 Testudo 旁边就行。",
+    saveFailed: "浏览器没能保存这份清单。请保持页面打开，重试保存后即可打开“选课当天”页面。", retrySave: "重试保存",
   },
 } as const;
 
@@ -59,6 +61,7 @@ export default function RegistrationChecklist({ option, others, missingCourseIds
   const t = copy[language];
   const [copied, setCopied] = useState("");
   const [failed, setFailed] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
   // How fast each course filled in earlier terms: the ones that go first sit next to their numbers here.
   const risks = useFillRisks(term ? option.selectedSections.map((section) => section.course_id) : [], term);
 
@@ -77,16 +80,18 @@ export default function RegistrationChecklist({ option, others, missingCourseIds
     .filter((section) => !chosenIds.has(section.section_id))
     .map((section) => [section.section_id, section])).values()];
   const allText = option.selectedSections.map((section) => `${section.course_id} ${sectionNumber(section)}`).join("\n");
-  // The chosen option is kept for /register whenever it changes (what was already ticked off stays), so the
+  // The chosen option is kept for /register whenever it changes (ticks for the same term and section stay), so the
   // registration-day page and its link on the home page are always up to date.
   const saveKey = JSON.stringify([term, option.selectedSections.map((section) => [section.section_id, section.open_seats]), others.map((other) => other.selectedSections.map((section) => section.section_id)), missingCourseIds]);
-  useEffect(() => {
+  const saveSchedule = () => {
     if (!term) return;
     const courses = registrationCourses(option.selectedSections, others.map((other) => other.selectedSections));
-    const previous = readRegistrationDay();
-    const done = previous?.term === term ? previous.done.filter((id) => courses.some((course) => course.courseId === id)) : [];
-    writeRegistrationDay({ term, termName, savedAt: new Date().toISOString(), courses, missing: missingCourseIds, done });
-    window.dispatchEvent(new Event(REGISTRATION_DAY_EVENT));
+    saveRegistrationSchedule({ term, termName, savedAt: new Date().toISOString(), courses, missing: missingCourseIds });
+    setSaveFailed(!registrationDayIsSaved());
+  };
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    saveSchedule();
     // saveKey stands for the option, the other options and the missing courses.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saveKey, termName]);
@@ -111,10 +116,11 @@ export default function RegistrationChecklist({ option, others, missingCourseIds
     <p className="mt-4 text-xs font-medium text-[#48534f]">{t.before}</p>
     <ul className="mt-1.5 space-y-1 text-xs leading-5 text-[#59635f]">{t.tips.map(([text, link, label]) => <li key={link}>• {text} <a href={LINKS[link]} target="_blank" rel="noreferrer" className="font-medium text-[#a34a39] underline underline-offset-2">{label} ↗</a></li>)}</ul>
     <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-      <button type="button" onClick={openRegistrationDay} className="rounded-lg border border-[#536d64] bg-white px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef]">{t.dayButton} ↗</button>
+      <button type="button" onClick={openRegistrationDay} disabled={saveFailed} className="rounded-lg border border-[#536d64] bg-white px-3 py-2 text-xs font-semibold text-[#273c38] hover:bg-[#edf3ef] disabled:opacity-60">{t.dayButton} ↗</button>
       <p className="min-w-0 flex-1 basis-56 text-[11px] leading-5 text-[#646c68]">{t.dayHint}</p>
     </div>
     <p className="mt-3 text-[11px] leading-5 text-[#646c68]">{t.confirm}</p>
+    {saveFailed && <p role="alert" className="mt-2 text-xs leading-5 text-[#745424]">{t.saveFailed} <button type="button" onClick={saveSchedule} className="font-semibold underline underline-offset-2">{t.retrySave}</button></p>}
     {failed && <p role="alert" className="mt-2 text-xs text-[#8c352c]">{t.copyFailed}</p>}
   </section>;
 }

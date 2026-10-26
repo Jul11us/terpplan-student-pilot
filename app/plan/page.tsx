@@ -254,30 +254,36 @@ const DEMO_COPY = {
     title: "You are trying a sample plan",
     body: "A sophomore's spring plan: 5 courses, a campus job Tuesday and Thursday 1–4pm, MATH140 and CMSC131 already done. Change anything; your own plan is kept aside and comes back when you leave.",
     steps: ["These are the schedules built from this sample course list", "Change a preference (no Friday classes, a longer shift) and see what changes", "Click a class in the timetable to swap sections", "Open Watch seats to see why COMM107 is worth a seat alert"],
-    schedule: "Go to Schedule", leave: "Leave sample",
+    schedule: "View schedules", leave: "Leave sample", details: "About this sample",
+    short: "Try changes freely; your own plan is kept aside.",
   },
   zh: {
     title: "你正在试用示例课表",
     body: "一位大二学生的春季计划：5 门课，周二、周四下午 1–4 点要打工，已修 MATH140 和 CMSC131。可以随便改，你自己的课表已经单独保存好，退出示例后就会回来。",
     steps: ["这就是按示例课程排好的方案", "改一个偏好（比如周五不上课、打工时间更长），看看结果怎么变", "点课表里的一门课换班次", "打开“关注余位”，看看为什么 COMM107 值得开余位提醒"],
-    schedule: "去排课", leave: "退出示例",
+    schedule: "查看课表", leave: "退出示例", details: "示例说明",
+    short: "示例可以随便改，你自己的课表保持原样。",
   },
 } as const;
 
 function DemoBanner({ language, onSchedule }: { language: "en" | "zh"; onSchedule: () => void }) {
   const t = DEMO_COPY[language];
   return <div role="region" aria-label={t.title} className="border-b border-[#ead8b5] bg-[#fff8e8]"><div className="mx-auto max-w-[1320px] px-5 py-3 sm:px-8">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="min-w-0 max-w-3xl">
+    <div className="flex flex-wrap items-center justify-between gap-2.5">
+      <div className="min-w-0">
         <p className="text-sm font-semibold text-[#5f4316]">{t.title}</p>
-        <p className="mt-1 text-xs leading-5 text-[#745424]">{t.body}</p>
-        <ol className="mt-2 grid gap-x-5 gap-y-1 text-xs text-[#5f4316] sm:grid-cols-2">{t.steps.map((step, index) => <li key={step} className="flex gap-1.5"><span className="font-semibold">{index + 1}.</span><span>{step}</span></li>)}</ol>
+        <p className="mt-0.5 text-xs leading-5 text-[#745424]">{t.short}</p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <button type="button" onClick={onSchedule} className="rounded-lg bg-[#273c38] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1d302c]">{t.schedule}</button>
         <button type="button" onClick={leaveDemo} className="rounded-lg border border-[#c99a4a] bg-white px-3 py-1.5 text-xs font-semibold text-[#5f4316] hover:bg-[#fffaf0]">{t.leave}</button>
       </div>
     </div>
+    <details className="mt-1.5 text-xs text-[#745424]">
+      <summary className="w-fit cursor-pointer py-1 font-semibold">{t.details}</summary>
+      <p className="mt-1 max-w-3xl leading-5">{t.body}</p>
+      <ol className="mt-2 grid gap-x-5 gap-y-1 text-xs text-[#5f4316] sm:grid-cols-2">{t.steps.map((step, index) => <li key={step} className="flex gap-1.5"><span className="font-semibold">{index + 1}.</span><span>{step}</span></li>)}</ol>
+    </details>
   </div></div>;
 }
 
@@ -290,6 +296,8 @@ export default function Home() {
   // A section opened from a seat alert email, checked against this device's schedule.
   const [opening, setOpening] = useState<Opening | null>(null);
   const [step, setStep] = useState<"find" | "schedule" | "watch">("find");
+  const [pendingDemoScroll, setPendingDemoScroll] = useState(false);
+  const showDemoSchedules = () => { setStep("schedule"); setPendingDemoScroll(true); };
   const [term, setTerm] = useState("202701");
   const [terms, setTerms] = useState<string[]>([]);
   const [termUnavailable, setTermUnavailable] = useState(false);
@@ -447,7 +455,7 @@ export default function Home() {
       setDemo(isDemo());
       setLanguage(readLanguage(saved));
       // A sample that was just set up opens on its ranked schedules, not on the empty "find courses" panel.
-      if (takeFreshDemo()) setStep("schedule");
+      if (takeFreshDemo()) { setStep("schedule"); setPendingDemoScroll(true); }
       if (saved.term) switchTerm(saved.term);
       // Only Gen Ed category codes and course counts travel in this link; nothing else from the audit does.
       const preset = parseGenEdParam(new URLSearchParams(window.location.search).get("gened"));
@@ -500,6 +508,27 @@ export default function Home() {
     }, 0);
     return () => window.clearTimeout(restore);
   }, [switchTerm, readTransferLink]);
+
+  // Wait for the first sample result (including an empty/error result) before scrolling: before the
+  // cards arrive, the page may be too short to put this section at the top of the viewport.
+  useEffect(() => {
+    if (!demo || !restored || step !== "schedule" || !pendingDemoScroll) return;
+    let frame = 0, scheduled = false;
+    const observer = new MutationObserver(() => reveal());
+    const reveal = () => {
+      const target = document.getElementById("schedule-results");
+      if (scheduled || target?.dataset.ready !== "true") return;
+      scheduled = true;
+      observer.disconnect();
+      frame = window.requestAnimationFrame(() => {
+        target.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+        setPendingDemoScroll(false);
+      });
+    };
+    observer.observe(document.getElementById("top") ?? document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-ready"] });
+    reveal();
+    return () => { observer.disconnect(); window.cancelAnimationFrame(frame); };
+  }, [demo, restored, step, pendingDemoScroll]);
 
   useEffect(() => {
     const initialLoad = window.setTimeout(() => loadWatches().catch(() => setError(t.error)), 0);
@@ -1068,13 +1097,13 @@ export default function Home() {
     <main className="min-h-screen bg-[#f5f3ef] text-[#202728]">
       <SiteHeader language={language} onLanguage={() => setLanguage(language === "en" ? "zh" : "en")} current="plan" wide actions={<>{restored && !demo && <button type="button" onClick={enterDemo} className="min-h-8 whitespace-nowrap rounded-lg px-2 text-xs font-medium text-[#a34a39] hover:bg-[#fff5f1]"><span className="sm:hidden">{language === "en" ? "Sample" : "示例"}</span><span className="hidden sm:inline">{language === "en" ? "Try a sample" : "试用示例"}</span></button>}<button type="button" onClick={() => setAboutOpen(true)} className="min-h-8 whitespace-nowrap rounded-lg px-2 text-xs font-medium text-[#59635f] hover:bg-[#eeece6]">{language === "en" ? "About" : "关于"}</button></>} />
       {aboutOpen && <AboutDialog language={language} onClose={closeAbout} />}
-      {demo && <DemoBanner language={language} onSchedule={() => { setStep("schedule"); window.scrollTo({ top: 0, behavior: "smooth" }); }} />}
+      {demo && <DemoBanner language={language} onSchedule={showDemoSchedules} />}
 
       {/* On phones and tablets the plan summary and sharing box come after course search (order-1), so the search box
           is near the top of the screen; on wide screens they stay above it. */}
       <div id="top" className="mx-auto flex max-w-[1320px] flex-col px-5 pb-16 pt-5 sm:px-8 sm:pt-12 lg:block">
         <PlanSync active={restored && authenticated === true && !demo} language={language} onApplied={reloadAfterSync} />
-        {restored && <RegistrationDayLink term={term} language={language} />}
+        {restored && !demo && <RegistrationDayLink term={term} language={language} />}
         {opening && <OpeningCheck opening={opening} planCourseIds={opening.term === term ? planCourses.map((course) => course.courseId) : []} planFull={planCourses.length >= 10} reference={opening.term === term ? fitReference : null} language={language} onPin={pinOpening} onClose={() => setOpening(null)} />}
         <div className="mb-5 grid gap-4 sm:mb-8 sm:gap-6 lg:grid-cols-[1fr_auto] lg:items-end"><div><p className="mb-2 text-[11px] font-semibold uppercase tracking-[.17em] text-[#a34a39] sm:mb-3">{t.eyebrow}</p><h1 className="font-serif text-3xl leading-tight tracking-[-.03em] sm:text-5xl">{t.title}</h1>{/* The step buttons below say the same thing; on a phone the room goes to the search box. */}<p className="mt-3 hidden max-w-xl text-sm leading-6 text-[#5d6561] sm:block">{t.subtitle}</p>{restored && !demo && !planCourses.length && <button type="button" onClick={enterDemo} className="mt-2 flex min-h-6 items-center text-left text-xs font-semibold text-[#a34a39] hover:underline">{language === "en" ? "First time here? Try a sample schedule →" : "第一次来？先试试示例课表 →"}</button>}</div>
           <nav aria-label="Planning steps" className="grid grid-cols-3 gap-1 rounded-2xl border border-[#e0ddd5] bg-[#fbfaf8] p-1.5 sm:flex sm:flex-wrap sm:gap-2 sm:p-2">{(["find", "schedule", "watch"] as const).map((item, index) => <button key={item} onClick={() => setStep(item)} aria-current={step === item ? "step" : undefined} className={`flex items-center justify-center gap-2 rounded-xl px-1.5 py-2 text-xs transition sm:justify-start sm:px-3 sm:text-sm ${step === item ? "bg-[#273c38] text-white" : "text-[#5d6561] hover:bg-[#eeece6]"}`}><span className="hidden h-5 w-5 place-items-center rounded-full bg-white/15 text-[10px] sm:grid">0{index + 1}</span>{t[item]}</button>)}</nav>

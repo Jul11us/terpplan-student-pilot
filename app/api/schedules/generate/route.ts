@@ -27,6 +27,14 @@ export async function POST(request: Request) {
     return Response.json({ error: "Choose between 1 and 10 valid course codes." }, { status: 400 });
   }
   if (!/^\d{6}$/.test(term)) return Response.json({ error: "Choose a valid term." }, { status: 400 });
+  // Optional for older clients. A saved pick is a request to revalidate, never permission to bypass a filter.
+  const savedSectionIds = body.savedSectionIds;
+  if (savedSectionIds !== undefined && (!Array.isArray(savedSectionIds) || savedSectionIds.length > 10
+    || savedSectionIds.some((id) => typeof id !== "string" || id.length > 40 || !/^[A-Z]{4}\d{3}[A-Z0-9]*-[A-Z0-9]{1,8}$/.test(id)
+      || !courseIds.includes(id.slice(0, id.lastIndexOf("-"))))
+    || new Set(savedSectionIds.map((id: string) => id.slice(0, id.lastIndexOf("-")))).size !== savedSectionIds.length)) {
+    return Response.json({ error: "Provide at most one saved section for each selected course (up to 10)." }, { status: 400 });
+  }
   const rawPreferences = body.preferences && typeof body.preferences === "object"
     ? body.preferences as Record<string, unknown>
     : {};
@@ -166,7 +174,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "The selected schedule changed or a section is no longer available. Generate it again.", code: "scheduleChanged" }, { status: 409 });
     }
   }
-  const result = generateOptions(courses, professorRatings, preferences);
+  const result = generateOptions(courses, professorRatings, preferences, savedSectionIds as string[] | undefined);
   return Response.json({
     term,
     options: result.options,

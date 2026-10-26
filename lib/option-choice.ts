@@ -7,18 +7,22 @@ export const optionSectionIds = (option: OptionLike) => option.selectedSections.
 
 const courseOf = (sectionId: string) => sectionId.slice(0, sectionId.lastIndexOf("-"));
 
+// A removed course no longer constrains the saved pick; a newly added course has no saved section yet.
+export const savedOptionSections = (saved: string[] | undefined, courseIds: string[]) =>
+  [...new Set((saved ?? []).filter((id) => courseIds.includes(courseOf(id))))].sort();
+
 export type SavedOptionMatch<T> = {
   option: T | null;
   // The picked sections still in the plan (courses removed since are left out).
   wanted: string[];
-  // Picked sections that no option has any more (full, filtered out or no longer offered).
+  // Picked sections absent from the returned options. This alone does not identify why restoration failed.
   gone: string[];
 };
 
 // The option with exactly the picked sections, else the best-ranked one that keeps them all (a course was added
 // since). None when the plan no longer has any of the picked courses, or no option keeps every picked section.
 export function findSavedOption<T extends OptionLike>(options: T[], saved: string[] | undefined, courseIds: string[]): SavedOptionMatch<T> {
-  const wanted = (saved ?? []).filter((id) => courseIds.includes(courseOf(id)));
+  const wanted = savedOptionSections(saved, courseIds);
   if (!wanted.length) return { option: null, wanted, gone: [] };
   const sets = options.map((option) => new Set(option.selectedSections.map((section) => section.section_id)));
   const keeps = (index: number) => wanted.every((id) => sets[index].has(id));

@@ -3,6 +3,7 @@ import { isAsyncOnline } from "@/lib/meeting-time";
 import { isInstructorTba, normalizeProfessorName, type ProfessorSummary } from "@/lib/planetterp";
 import { normalizeBusyBlocks, validBuffer, type BusyBlock } from "@/lib/personal-schedule";
 import { shownScore } from "@/lib/score-display";
+import { findSavedOption, savedOptionSections } from "@/lib/option-choice";
 
 export type PlanMeeting = {
   days?: string | null;
@@ -913,8 +914,32 @@ export function applyRepair(courses: PlanCourse[], preferences: PlanPreferences,
   return { courses: nextCourses, preferences: nextPreferences };
 }
 
-export function generateOptions(courses: PlanCourse[], ratings: Record<string, ProfessorSummary>, preferences: PlanPreferences): PlannerResult {
+// The recommendation pool is deliberately small, so a valid pick may fall out of it after ratings or
+// seats change. Check that pick separately under the same constraints, without turning it into a pin
+// (pins intentionally override some filters). Added courses are free to choose a compatible section.
+function restoreSavedOption(courses: PlanCourse[], ratings: Record<string, ProfessorSummary>, preferences: PlanPreferences, savedIds: string[], recommendations: ScheduleOption[]) {
+  const wanted = savedOptionSections(savedIds, courses.map((course) => course.course_id));
+  if (!wanted.length || findSavedOption(recommendations, wanted, courses.map((course) => course.course_id)).option) return null;
+  const parsed = parsePrefs(preferences);
+  const narrowed: PlanCourse[] = [];
+  for (const course of courses) {
+    const ids = wanted.filter((id) => id.startsWith(course.course_id + "-"));
+    if (!ids.length) { narrowed.push(course); continue; }
+    if (ids.length !== 1) return null;
+    const sections = eligibleSections(course, parsed).filter((section) => sectionId(section, course.course_id) === ids[0]);
+    if (sections.length !== 1) return null;
+    narrowed.push({ ...course, sections });
+  }
+  // A complete saved combination has only one possible result here, even if the normal search hit its
+  // candidate or node limit. If courses were added, the same bounded search finds compatible additions.
+  const restored = searchOptions(narrowed, ratings, preferences).options;
+  return findSavedOption(restored, wanted, courses.map((course) => course.course_id)).option;
+}
+
+export function generateOptions(courses: PlanCourse[], ratings: Record<string, ProfessorSummary>, preferences: PlanPreferences, savedSectionIds: string[] = []): PlannerResult {
   const result = searchOptions(courses, ratings, preferences);
+  const restored = restoreSavedOption(courses, ratings, preferences, savedSectionIds, result.options);
+  if (restored) result.options.push(restored);
   if (result.options.some((option) => option.selectedSections.length === courses.length)) return { ...result, diagnostics: [], repairs: [] };
   const diagnostics = diagnose(courses, preferences);
   const candidates: Array<Omit<PlanRepair, "sectionIds">> = [];

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useDocumentLanguage } from "@/lib/document-language";
 import { readLanguage, writeSavedState } from "@/lib/saved-state";
-import { readRegistrationDay, savedReminder, writeRegistrationDay, type RegistrationDay } from "@/lib/registration-day";
+import { readRegistrationDay, registrationCourseKey, registrationDayIsSaved, savedReminder, setRegistrationDone, subscribeRegistrationDay, writeRegistrationDay, type RegistrationDay } from "@/lib/registration-day";
 import { RegistrationCountdown } from "@/app/components/registration-countdown";
 import { formatTermName } from "@/lib/seat-trends";
 import { countUse } from "@/lib/usage";
@@ -21,8 +21,9 @@ const copy = {
     registered: "Registered", full: "Full", backups: "If it is full, try:", noBackups: "No backup section in your other options.",
     progress: (done: number, total: number) => `${done} of ${total} registered`,
     missing: "Not placed in this schedule, so not listed:",
-    saved: (when: string) => `Saved from TerpPlan ${when}. If you change your schedule, open this page again from the checklist.`,
+    saved: (when: string) => `Saved from TerpPlan ${when}. Schedule changes update this list; changing a section clears its registered mark.`,
     confirm: "Seat counts were read when you saved; confirm each section in Testudo. TerpPlan cannot register you.",
+    saveFailed: "Browser storage is unavailable. Changes stay in this tab for now; keep it open and retry saving before reloading or closing it.", retrySave: "Retry saving",
   },
   zh: {
     home: "返回排课", eyebrow: "选课当天", title: (term: string) => `${term} 选课`,
@@ -32,8 +33,9 @@ const copy = {
     registered: "已注册", full: "已满", backups: "满了的话可以试：", noBackups: "其他方案里没有这门课的备选班次。",
     progress: (done: number, total: number) => `已注册 ${done} / ${total} 门`,
     missing: "这些课没能排进这个方案，所以不在清单里：",
-    saved: (when: string) => `清单保存于 ${when}。如果改了课表，请从选课清单重新打开这个页面。`,
+    saved: (when: string) => `清单保存于 ${when}。课表改动会同步到这里；更换班次后需重新勾选已注册。`,
     confirm: "余位是保存时读取的，请在 Testudo 中确认每个班次。TerpPlan 不能替你注册。",
+    saveFailed: "浏览器暂时无法保存。改动暂留在这个标签页中；请保持页面打开，并在刷新或关闭前重试保存。", retrySave: "重试保存",
   },
 } as const;
 
@@ -45,18 +47,25 @@ export default function RegisterPage() {
   const [reminder, setReminder] = useState({ date: "", time: "" });
   const [copied, setCopied] = useState("");
   const [failed, setFailed] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
   const t = copy[language];
 
   useEffect(() => { countUse("register"); }, []);
   useEffect(() => {
     // Read after the first render, so the server and client HTML match.
-    const saved = readRegistrationDay();
+    const load = () => {
+      const saved = readRegistrationDay();
+      setDay(saved);
+      const persisted = registrationDayIsSaved();
+      setSaveFailed(!persisted);
+      if (persisted) setReminder(saved ? savedReminder(saved.termName) : { date: "", time: "" });
+    };
     /* eslint-disable react-hooks/set-state-in-effect */
     setLanguage(readLanguage());
-    setDay(saved);
-    if (saved) setReminder(savedReminder(saved.termName));
+    load();
     setLoaded(true);
     /* eslint-enable react-hooks/set-state-in-effect */
+    return subscribeRegistrationDay(load);
   }, []);
 
   const write = async (key: string, text: string) => {
@@ -66,10 +75,19 @@ export default function RegisterPage() {
       window.setTimeout(() => setCopied((current) => current === key ? "" : current), 1500);
     } catch { setFailed(true); }
   };
-  const toggleDone = (courseId: string) => {
+  const changeDone = (courseId: string, section: string, registered: boolean) => {
     if (!day) return;
-    const next = { ...day, done: day.done.includes(courseId) ? day.done.filter((id) => id !== courseId) : [...day.done, courseId] };
-    setDay(next); writeRegistrationDay(next);
+    const next = setRegistrationDone(day.term, courseId, section, registered);
+    setDay(next);
+    const persisted = registrationDayIsSaved();
+    setSaveFailed(!persisted);
+    if (persisted) setReminder(next ? savedReminder(next.termName) : { date: "", time: "" });
+  };
+  const retrySave = () => {
+    const latest = readRegistrationDay();
+    if (latest) writeRegistrationDay(latest);
+    setDay(latest);
+    setSaveFailed(!registrationDayIsSaved());
   };
   const chip = (key: string, text: string, large = false) => <button type="button" onClick={() => void write(key, text)} title={t.copied} className={`rounded-lg border border-[#d9d6ce] bg-[#fbfaf8] font-mono font-semibold text-[#24312d] hover:bg-white ${large ? "px-3 py-2 text-base" : "px-2 py-1 text-xs"}`}>{copied === key ? `✓ ${t.copied}` : text}</button>;
   const when = day ? new Date(day.savedAt).toLocaleString(language === "zh" ? "zh-CN" : "en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
@@ -78,6 +96,7 @@ export default function RegisterPage() {
     <SiteHeader language={language} onLanguage={() => { const next = language === "en" ? "zh" : "en"; setLanguage(next); writeSavedState({ language: next }); }} />
     <div className="mx-auto max-w-3xl px-5 pb-16 pt-8 sm:px-8">
       <p className="text-[11px] font-semibold uppercase tracking-[.17em] text-[#a34a39]">{t.eyebrow}</p>
+      {saveFailed && <p role="alert" className="mt-3 rounded-xl border border-[#ead8b5] bg-[#fff8e8] px-4 py-3 text-xs leading-5 text-[#745424]">{t.saveFailed} <button type="button" onClick={retrySave} className="font-semibold underline underline-offset-2">{t.retrySave}</button></p>}
       {loaded && !day && <div className="mt-4 rounded-xl border border-[#e0ddd5] bg-[#fbfaf8] px-4 py-4"><p className="text-sm leading-6 text-[#5d6561]">{t.none}</p><Link href="/plan" className="mt-3 inline-flex min-h-9 items-center rounded-lg bg-[#273c38] px-4 text-sm font-semibold text-white hover:bg-[#1d302c]">{t.goPlan} →</Link></div>}
       {day && <>
         <h1 className="mt-2 font-serif text-3xl sm:text-4xl">{t.title(/^\d{6}$/.test(day.term) ? formatTermName(day.term, language) : day.termName)}</h1>
@@ -91,20 +110,20 @@ export default function RegisterPage() {
         </div>
         {failed && <p role="alert" className="mt-3 text-xs text-[#8c352c]">{t.copyFailed}</p>}
         <ol className="mt-4 space-y-3">{day.courses.map((course) => {
-          const done = day.done.includes(course.courseId);
+          const done = day.done.includes(registrationCourseKey(day.term, course.courseId, course.section));
           return <li key={course.courseId} className={`rounded-2xl border p-4 ${done ? "border-[#cddbd1] bg-[#edf3ef]" : "border-[#e3e0d8] bg-white"}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className={`text-sm text-[#48534f] ${done ? "line-through" : ""}`}>{course.title}{course.full && <span className="ml-2 rounded-full bg-[#f5e9e5] px-1.5 py-0.5 text-[10px] font-semibold text-[#8f4538] no-underline">{t.full}</span>}</p>
                 <div className="mt-2 flex flex-wrap gap-2">{chip(`${course.courseId}:course`, course.courseId, true)}{chip(`${course.courseId}:section`, course.section, true)}</div>
               </div>
-              <label className="flex shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-[#d9d6ce] bg-white px-3 py-2 text-sm font-medium text-[#273c38]"><input type="checkbox" checked={done} onChange={() => toggleDone(course.courseId)} className="h-4 w-4 accent-[#273c38]" />{t.registered}</label>
+              <label className="flex shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-[#d9d6ce] bg-white px-3 py-2 text-sm font-medium text-[#273c38]"><input type="checkbox" checked={done} onChange={(event) => changeDone(course.courseId, course.section, event.target.checked)} className="h-4 w-4 accent-[#273c38]" />{t.registered}</label>
             </div>
             {!done && <div className="mt-3 border-t border-[#eeebe4] pt-2 text-xs text-[#5d6561]">{course.backups.length ? <><span>{t.backups}</span> <span className="mt-1 flex flex-wrap gap-1.5">{course.backups.map((backup) => <span key={backup.section} className="inline-flex items-center gap-1">{chip(`${course.courseId}:${backup.section}`, backup.section)}{backup.full && <span className="text-[10px] font-semibold text-[#8f4538]">{t.full}</span>}</span>)}</span></> : t.noBackups}</div>}
           </li>;
         })}</ol>
         {day.missing.length > 0 && <p className="mt-3 rounded-lg border border-[#e7c6bf] bg-[#fff0ec] px-3 py-2 text-xs text-[#8c352c]">{t.missing} {day.missing.join(", ")}</p>}
-        <p className="mt-4 text-[11px] leading-5 text-[#646c68]">{t.confirm} {t.saved(when)}</p>
+        <p className="mt-4 text-[11px] leading-5 text-[#646c68]">{t.confirm} {!saveFailed && t.saved(when)}</p>
       </>}
     </div>
   </main>;

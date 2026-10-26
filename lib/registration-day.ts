@@ -23,9 +23,21 @@ export type RegistrationDay = {
   savedAt: string;
   courses: RegistrationCourse[];
   missing: string[];
-  // Courses the student ticked off as registered.
+  // The term, course and section the student ticked off, as registrationCourseKey values.
   done: string[];
 };
+
+export const registrationCourseKey = (term: string, courseId: string, section: string) => `${term}:${courseId}:${section}`;
+
+// Older copies kept only course ids. Bind those marks to the sections in that saved copy before a new
+// schedule replaces it, so changing a section cannot carry its old "registered" mark across.
+function normalizedDone(day: Pick<RegistrationDay, "term" | "courses">, done: unknown) {
+  const values = new Set(Array.isArray(done) ? done.filter((value): value is string => typeof value === "string") : []);
+  return day.courses.flatMap((course) => {
+    const key = registrationCourseKey(day.term, course.courseId, course.section);
+    return values.has(key) || values.has(course.courseId) ? [key] : [];
+  });
+}
 
 type Section = { course_id: string; course_title: string; section_id: string; open_seats?: string | number | null };
 
@@ -79,22 +91,98 @@ export function formatCountdown(value: Extract<Countdown, { state: "upcoming" }>
   return days ? `${days}d ${hours}h` : hours ? `${hours}h ${minutes}m` : `${minutes}m ${seconds}s`;
 }
 
+type SessionCopy = { raw: string | null; day: RegistrationDay | null; dirty: boolean; readFailed: boolean };
+// A failed write must not erase this tab's preceding checkbox changes. Keep that draft only while the
+// stored copy is unchanged; a newer copy from another tab (including deletion) always takes priority.
+const sessionCopies = new WeakMap<Window, Map<string, SessionCopy>>();
+function sessionCopy() {
+  if (typeof window === "undefined") return null;
+  let copies = sessionCopies.get(window);
+  if (!copies) { copies = new Map(); sessionCopies.set(window, copies); }
+  return { copies, key: storageKey(REGISTRATION_DAY_KEY) };
+}
+
+export function registrationDayIsSaved() {
+  const session = sessionCopy();
+  const copy = session?.copies.get(session.key);
+  return Boolean(copy && !copy.dirty && !copy.readFailed);
+}
+
 export function readRegistrationDay(): RegistrationDay | null {
+  const session = sessionCopy();
+  if (!session) return null;
+  const previous = session.copies.get(session.key);
   try {
-    const value = JSON.parse(window.localStorage.getItem(storageKey(REGISTRATION_DAY_KEY)) ?? "null") as RegistrationDay | null;
-    return value && Array.isArray(value.courses) && typeof value.term === "string" ? { ...value, done: Array.isArray(value.done) ? value.done : [], missing: Array.isArray(value.missing) ? value.missing : [] } : null;
+    const raw = window.localStorage.getItem(session.key);
+    if (previous?.dirty && raw === previous.raw) {
+      previous.readFailed = false;
+      return previous.day;
+    }
+    const value = JSON.parse(raw ?? "null") as RegistrationDay | null;
+    const day = value && Array.isArray(value.courses) && typeof value.term === "string" ? { ...value, done: normalizedDone(value, value.done), missing: Array.isArray(value.missing) ? value.missing : [] } : null;
+    session.copies.set(session.key, { raw, day, dirty: false, readFailed: false });
+    return day;
   } catch {
-    return null;
+    const copy = previous ?? { raw: null, day: null, dirty: false, readFailed: true };
+    copy.readFailed = true;
+    session.copies.set(session.key, copy);
+    return copy.day;
   }
 }
 
 export function writeRegistrationDay(value: RegistrationDay) {
+  const session = sessionCopy();
+  if (!session) return false;
+  if (!session.copies.has(session.key)) readRegistrationDay();
+  const previous = session.copies.get(session.key)!;
+  const day = { ...value, done: normalizedDone(value, value.done) };
+  let raw = previous.raw;
+  let saved = false;
   try {
-    window.localStorage.setItem(storageKey(REGISTRATION_DAY_KEY), JSON.stringify(value));
-    return true;
-  } catch {
-    return false;
-  }
+    // Without a successful latest read, writing this snapshot could replace another tab's new schedule.
+    if (!previous.readFailed) {
+      const encoded = JSON.stringify(day);
+      window.localStorage.setItem(session.key, encoded);
+      raw = encoded;
+      saved = true;
+    }
+  } catch { /* Keep the unsaved draft in this tab, and tell the UI it is not persisted. */ }
+  session.copies.set(session.key, { raw, day, dirty: !saved, readFailed: previous.readFailed });
+  window.dispatchEvent(new Event(REGISTRATION_DAY_EVENT));
+  return saved;
+}
+
+// A newly chosen schedule keeps completion only for the same term and exact sections. Read the latest
+// browser copy here too, since a registration tab may have checked off another course in the meantime.
+export function saveRegistrationSchedule(value: Omit<RegistrationDay, "done">) {
+  const previous = readRegistrationDay();
+  const matching = new Set(value.courses.map((course) => registrationCourseKey(value.term, course.courseId, course.section)));
+  const next = { ...value, done: (previous?.done ?? []).filter((key) => matching.has(key)) };
+  writeRegistrationDay(next);
+  return next;
+}
+
+// Apply the checkbox's intended state to the latest saved list, never the tab's old whole snapshot.
+// If its term or section changed, return that newer list without changing it.
+export function setRegistrationDone(term: string, courseId: string, section: string, registered: boolean) {
+  const latest = readRegistrationDay();
+  if (!latest || latest.term !== term || !latest.courses.some((course) => course.courseId === courseId && course.section === section)) return latest;
+  const key = registrationCourseKey(term, courseId, section);
+  if (latest.done.includes(key) === registered) return latest;
+  const next = { ...latest, done: registered ? [...latest.done, key] : latest.done.filter((value) => value !== key) };
+  writeRegistrationDay(next);
+  return next;
+}
+
+// Same-tab writes and changes in other tabs both refresh the registration page, including its countdown.
+// Match this tab's storage keys so a sample never follows changes to the student's real list.
+export function subscribeRegistrationDay(load: () => void) {
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === null || event.key === storageKey(REGISTRATION_DAY_KEY) || event.key === storageKey(REMINDER_KEY)) load();
+  };
+  window.addEventListener(REGISTRATION_DAY_EVENT, load);
+  window.addEventListener("storage", onStorage);
+  return () => { window.removeEventListener(REGISTRATION_DAY_EVENT, load); window.removeEventListener("storage", onStorage); };
 }
 
 // The registration time the student entered in the checklist, by term name (shared with the checklist).

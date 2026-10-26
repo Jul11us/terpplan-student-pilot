@@ -34,9 +34,6 @@ export const metadata: Metadata = {
     description,
     images: ["/og-image.png"],
   },
-  other: {
-    "codex-preview": "development",
-  },
   icons: {
     icon: [
       { url: "/favicon.svg", type: "image/svg+xml" },
