@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 
 import {
   DEFAULT_LETTER_SCALE,
@@ -26,7 +27,7 @@ import {
 
 import { extractGradingScheme, schemeFromParsed } from "../lib/grades/syllabus.ts";
 import { docxXmlToText, fileKind, pdfPageLines, readZipEntry } from "../lib/grades/syllabus-file.ts";
-import { mergeCanvasData } from "../lib/grades/canvas.ts";
+import { mergeCanvasData, exportSource, bookmarkletHref } from "../lib/grades/canvas.ts";
 import { sampleTerm } from "../lib/grades/sample.ts";
 import { looksForCredit, partitionByCredit } from "../lib/grades/credit.ts";
 
@@ -1559,4 +1560,72 @@ test("a minus grade is not read as the letter above it", () => {
   assert.equal(min("B-"), 80);
   assert.equal(min("B+"), 87);
   assert.equal(r.letterScale.length, 7);
+});
+
+/* Real grading-table shapes, without the original documents or personal data. */
+const syllabusTables = JSON.parse(await readFile(new URL('./fixtures/syllabus-tables.json', import.meta.url), 'utf8'));
+for (const fixture of syllabusTables) {
+  test(`${fixture.course}: every category in the grading table is read`, () => {
+    const parsed = extractGradingScheme(fixture.text);
+    assert.equal(parsed.categories.length, fixture.expectedCount);
+    assert.equal(parsed.weightTotal, 100);
+    if (fixture.expectedPoints) assert.equal(parsed.categories[0].derivedFromPoints.total, fixture.expectedPoints);
+    if (fixture.course === 'CMSC') assert.equal(parsed.letterScale.find(s => s.letter === 'A-')?.min, 90);
+    if (fixture.course === 'GEMS') assert.equal(parsed.letterScale.find(s => s.letter === 'A')?.min, 92.5);
+  });
+}
+
+test('Word cells keep multi-paragraph assignment details beside their percentage', () => {
+  const xml = '<w:document><w:body><w:tbl>' +
+    '<w:tr><w:tc><w:p><w:r><w:t>Research Project</w:t></w:r></w:p><w:p><w:r><w:t>Draft and peer review</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>60%</w:t></w:r></w:p></w:tc></w:tr>' +
+    '<w:tr><w:tc><w:p><w:r><w:t>Final Exam</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>40%</w:t></w:r></w:p></w:tc></w:tr>' +
+    '</w:tbl></w:body></w:document>';
+  const text = docxXmlToText(xml);
+  const parsed = extractGradingScheme(text);
+  assert.equal(parsed.weightTotal, 100);
+  assert.deepEqual(parsed.categories.map(c => c.name), ['Research Project', 'Final Exam']);
+});
+
+const correctedCourse = {
+  code: 'CMSC131', weighted: false,
+  canvas: { groups: [{id:1,name:'Homework'},{id:2,name:'Practice'}],
+    items: [{id:11,name:'HW1',assignment_group_id:1,score:20,points_possible:25},
+      {id:12,name:'Practice',assignment_group_id:2,score:0,points_possible:75}] },
+  excludedCanvasGroupIds: [2], canvasScoreOverrides: {11:25},
+};
+test('local score corrections and group exclusions feed current totals and details', () => {
+  const result=computeCourseGrade(correctedCourse);
+  assert.equal(result.current.pct,100);
+  assert.equal(result.categories.length,1);
+  assert.equal(result.categories[0].earned,25);
+  assert.equal(result.categories[0].possible,25);
+  assert.equal(correctedCourse.canvas.items[0].score,20);
+});
+test('zero, cleared, and reset corrections retain their distinct meanings', () => {
+  assert.equal(computeCourseGrade({...correctedCourse,canvasScoreOverrides:{11:0}}).current.pct,0);
+  assert.equal(computeCourseGrade({...correctedCourse,canvasScoreOverrides:{11:null}}).current.pct,null);
+  assert.equal(computeCourseGrade({...correctedCourse,canvasScoreOverrides:{}}).current.pct,80);
+});
+test('local corrections, exclusions and saved syllabus survive a Canvas refresh', () => {
+  const saved={...correctedCourse,id:'c11',canvasId:1,syllabus:{fileName:'course.docx',text:'Homework 100%'},pendingSyllabus:{categories:[]}};
+  const payload={format:'terpplan.canvas-export',courses:[{canvasId:1,code:'CMSC131',title:'CS'}],detail:{1:correctedCourse.canvas}};
+  const result=mergeCanvasData([saved],payload,()=> 'new');
+  assert.deepEqual(result.courses[0].canvasScoreOverrides,{11:25});
+  assert.deepEqual(result.courses[0].excludedCanvasGroupIds,[2]);
+  assert.equal(result.courses[0].syllabus.text,'Homework 100%');
+  assert.ok(result.courses[0].pendingSyllabus);
+});
+test('deleting all syllabus categories does not resurrect excluded Canvas categories', () => {
+  assert.equal(computeCourseGrade({...correctedCourse,scheme:{source:'syllabus',confirmed:true,categories:[]}}).categories.length,0);
+});
+
+
+test('bookmarklet source remains standalone and injects its receiving URL safely', () => {
+  const target='https://example.test/grades?lang=zh';
+  const source=exportSource(target);
+  assert.ok(source.includes(target));
+  assert.ok(!source.includes('__TERPPLAN_TARGET__'));
+  assert.ok(!source.includes('__name('));
+  assert.doesNotThrow(() => new Function(source));
+  assert.equal(decodeURIComponent(bookmarkletHref(target).slice('javascript:'.length)),source);
 });

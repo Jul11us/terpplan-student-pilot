@@ -31,6 +31,7 @@ import {
   type CanvasAssignment,
   type CanvasGroup,
   type ManualItem,
+  type EngineItem,
   type Scheme,
 } from "@/lib/grades/grading";
 import {
@@ -59,7 +60,10 @@ type Course = {
   canvasCurrentGrade?: string | null;
   canvasUrl?: string | null;
   syllabusBody?: string | null;
-  syllabus?: { fileName: string; uploadedAt: string } | null;
+  syllabus?: { fileName: string; uploadedAt: string; text?: string } | null;
+  pendingSyllabus?: ParsedScheme | null;
+  excludedCanvasGroupIds?: number[];
+  canvasScoreOverrides?: Record<string, number | null>;
   canvas?: { groups?: CanvasGroup[]; items?: CanvasAssignment[] };
   /** Set by mergeCanvasData for Canvas courses; see lib/grades/credit.ts. */
   forCredit?: boolean;
@@ -73,6 +77,14 @@ const STORAGE = "terpplan:grades:v1";
 
 const copy = {
   en: {
+    pasteCanvas: "Paste Canvas data", pasteCanvasHint: "For oversized exports, paste the complete copied JSON. Replace older saved bookmarks with the updated one.",
+    excludeGroup: (name: string) => `Exclude ${name} from grading`,
+    restoreGroup: (name: string) => `Restore ${name}`,
+    excludedGroups: "Excluded Canvas groups",
+    localScore: "Local correction", editScore: (name: string) => `Edit score for ${name}`,
+    resetScore: "Restore Canvas score", reread: "Read saved syllabus again",
+    pointsHint: "Earned / possible points on graded work, after drops",
+
     pilot: "UMD · Student pilot",
     title: "Where you actually stand, in every course.",
     intro: "Pull your Canvas courses and scores, drop in each syllabus so the real weighting is used, and see the percentage you are carrying now — plus the GPA it adds up to.",
@@ -105,8 +117,8 @@ const copy = {
     step1: "Drag this button to your bookmarks bar — one time only.",
     dragInstead: "That button is a bookmark, not a link: drag it to your bookmarks bar, then use it while you are on Canvas.", dragHint: "If the bar is hidden, press ⌥⌘B (Chrome) or ⇧⌘B (Safari). This needs a desktop browser — phones and tablets have no bookmarks bar and no DevTools console, so add courses by hand there instead.",
     step2: "Open umd.instructure.com, sign in as usual, then click the bookmark. TerpPlan opens in a new tab with your courses already mapped. No file to download, no token, nothing to type.",
-    fileSummary: "Bookmark blocked? Use a file instead",
-    fileWhy: "A strict Content-Security-Policy can block bookmarklets. This route always works: the same script saves a file, and you import it by hand.",
+    fileSummary: "Import an existing JSON file",
+    fileWhy: "Older bookmarks may have saved a JSON file. Import it here; the updated bookmark no longer downloads files automatically.",
     step3: "Click the bookmark. It reads your courses and scores, then saves terpplan-canvas-export.json.",
     step4: "Come back here and choose that file.",
     bookmarklet: "⬇ Send Canvas to TerpPlan", console: "Last resort: run it from the DevTools console",
@@ -156,6 +168,14 @@ const copy = {
     official: "Your official GPA is whatever Testudo says. This is an independent student project, not affiliated with the University of Maryland.",
   },
   zh: {
+    pasteCanvas: "粘贴 Canvas 数据导入", pasteCanvasHint: "数据过大时，将复制的完整 JSON 粘贴到这里。用过旧书签的，请重新保存新版书签。",
+    excludeGroup: (name: string) => `将 ${name} 排除计分`,
+    restoreGroup: (name: string) => `恢复 ${name}`,
+    excludedGroups: "已排除的 Canvas 分组",
+    localScore: "本地修改", editScore: (name: string) => `修改 ${name} 的成绩`,
+    resetScore: "恢复 Canvas 原始成绩", reread: "重新读取已保存的大纲",
+    pointsHint: "已评分项目的得分 / 满分（已应用去最低规则）",
+
     pilot: "UMD · 学生试点",
     title: "每门课，你现在到底处在什么位置。",
     intro: "从 UMD Canvas 同步你的课程和分数，上传每门课的课程大纲以套用真实权重，看清当前折算出的百分制成绩，以及它对应的 GPA。",
@@ -189,8 +209,8 @@ const copy = {
     step1: "把这个按钮拖到你的书签栏 —— 只需做这一次。",
     dragInstead: "这个按钮是书签而不是链接：把它拖到书签栏，然后在 Canvas 页面上使用。", dragHint: "书签栏没显示就按 ⌥⌘B（Chrome）或 ⇧⌘B（Safari）。这一步需要桌面浏览器 —— 手机和平板既没有书签栏也没有开发者工具控制台，在那些设备上请改用手动添加课程。",
     step2: "打开 umd.instructure.com，照常登录，然后点一下书签 —— TerpPlan 会在新标签页里打开，课程已经映射好了。不用下载文件、不用令牌、什么都不用输。",
-    fileSummary: "书签被拦住了？改用文件",
-    fileWhy: "严格的 Content-Security-Policy 会屏蔽书签小工具。这条路径永远可用：同一个脚本保存一个文件，你手动导入。",
+    fileSummary: "导入已有的 JSON 文件",
+    fileWhy: "如果你有旧版书签保存的 JSON 文件，可以在这里导入。新版书签不会自动下载文件。",
     step3: "点一下书签。它会读取你的课程和分数，然后保存 terpplan-canvas-export.json。",
     step4: "回到这里，选择那个文件。",
     bookmarklet: "⬇ 把 Canvas 送到 TerpPlan", console: "最后手段：在开发者工具控制台里运行",
@@ -267,6 +287,7 @@ export default function GradesPage() {
   const [basis, setBasis] = useState<"current" | "projected">("current");
   const hydrated = useRef(false);
 
+  const [canvasText, setCanvasText] = useState("");
   const [showConnect, setShowConnect] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ kind: "ok" | "bad"; text: string } | null>(null);
@@ -450,7 +471,7 @@ export default function GradesPage() {
       const { text } = await readSyllabusFile(file, ({ page, total }) => setBusy(t.reading(page, total)));
       const parsed = extractGradingScheme(text, { canonicalOf: canonicalCategory });
       setPending((p) => ({ ...p, [course.id]: parsed }));
-      patch(course.id, { syllabus: { fileName: file.name, uploadedAt: new Date().toISOString() } });
+      patch(course.id, { syllabus: { fileName: file.name, uploadedAt: new Date().toISOString(), text }, pendingSyllabus: parsed });
       setOpenId(course.id);
       note(parsed.ok ? "ok" : "bad", parsed.ok ? t.foundCats(parsed.categories.length) : t.noBreakdown);
     } catch (err) {
@@ -643,6 +664,13 @@ export default function GradesPage() {
               <li>{t.step2}</li>
             </ol>
 
+            <details className="mt-3 rounded-lg border border-[#e0ddd5]">
+              <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-[#273c38]">{t.pasteCanvas}</summary>
+              <div className="space-y-2 px-3 pb-3"><p className="text-xs text-[#48534f]">{t.pasteCanvasHint}</p>
+                <textarea aria-label={t.pasteCanvas} value={canvasText} onChange={(e) => setCanvasText(e.target.value)} rows={4} className="w-full rounded border p-2 font-mono text-xs" />
+                <button type="button" className="rounded border px-3 py-1.5 text-xs" onClick={() => void importFile(new File([canvasText], "canvas.json", {type:"application/json"}))}>{t.pasteCanvas}</button>
+              </div>
+            </details>
             <details className="rounded-lg border border-[#e0ddd5] bg-[#faf9f6]">
               <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-[#273c38]">{t.fileSummary}</summary>
               <div className="px-3 pb-3">
@@ -798,13 +826,13 @@ export default function GradesPage() {
                     course={course}
                     t={t}
                     grade={grade}
-                    parsed={pending[course.id]}
+                    parsed={pending[course.id] ?? course.pendingSyllabus ?? undefined}
                     onPatch={(change) => patch(course.id, change)}
-                    onParsed={(p) => setPending((prev) => {
+                    onParsed={(p) => { patch(course.id, { pendingSyllabus: p ?? null }); setPending((prev) => {
                       const next = { ...prev };
                       if (p) next[course.id] = p; else delete next[course.id];
                       return next;
-                    })}
+                    }); }}
                     onUpload={(file) => void uploadSyllabus(course, file)}
                     onRemove={() => setCourses((list) => list.filter((c) => c.id !== course.id))}
                     fill={fill}
@@ -841,9 +869,10 @@ function CourseDetail({
   const [manual, setManual] = useState({ name: "", earned: "", possible: "", categoryId: "" });
   // The student's own group choices in the confirmation step, on top of the automatic match.
   const [mapEdits, setMapEdits] = useState<Record<string, number[]>>({});
-  const [text, setText] = useState("");
+  const [text, setText] = useState(course.syllabus?.text ?? "");
 
-  const groups = useMemo(() => course.canvas?.groups ?? [], [course]);
+  const allGroups = useMemo(() => course.canvas?.groups ?? [], [course]);
+  const groups = allGroups.filter((g) => !(course.excludedCanvasGroupIds ?? []).includes(g.id));
   const categories = course.scheme?.categories ?? [];
   const need = requiredOnRemaining(course as never, target, { ungradedFillPercent: fill });
 
@@ -855,6 +884,31 @@ function CourseDetail({
   );
   const mappingFor = (id: string): number[] =>
     mapEdits[id] ?? (autoMap[id] ? [autoMap[id]!.groupId] : []);
+
+  const correctScore = (assignmentId: number, score: number | null | undefined) => {
+    if (score !== undefined && score !== null && !Number.isFinite(score)) return;
+    const overrides = { ...course.canvasScoreOverrides };
+    if (score === undefined) delete overrides[assignmentId]; else overrides[assignmentId] = score;
+    onPatch({ canvasScoreOverrides: overrides });
+  };
+  const renderScore = (it: EngineItem, dropped = false) => (
+    <li key={it.id} className={`flex items-center justify-between gap-2 rounded px-2 py-1 ${dropped ? "opacity-60" : it.earned === null ? "bg-[#f6f4ef]" : ""}`}>
+      <span className={`min-w-0 truncate ${dropped ? "line-through" : ""}`} title={it.name}>{it.name}
+        {it.scoreOverridden && <em className="ml-1 text-[#315c43]">({t.localScore})</em>}
+        {dropped && <em> ({t.dropped})</em>}
+      </span>
+      <span className="flex shrink-0 items-center gap-1 tabular-nums">
+        {it.source === "canvas" && it.canvasId !== undefined ? <>
+          <input key={`${it.id}:${it.earned}`} type="number" step="any" defaultValue={it.earned ?? ""}
+            aria-label={t.editScore(it.name)} className="w-20 rounded border border-[#dcd9d0] px-2 py-1 text-right"
+            onBlur={(event) => correctScore(it.canvasId!, event.target.value === "" ? null : Number(event.target.value))}
+            onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
+          {it.scoreOverridden && <button type="button" aria-label={t.resetScore} title={t.resetScore} onClick={() => correctScore(it.canvasId!, undefined)}>↺</button>}
+        </> : (it.earned === null ? "—" : it.earned.toFixed(1))}
+        <span>/ {it.possible ?? "—"}</span>
+      </span>
+    </li>
+  );
 
   return (
     <div className="space-y-5 border-t border-[#e0ddd5] p-5">
@@ -946,6 +1000,10 @@ function CourseDetail({
       <div>
         <h3 className="font-semibold text-[#273c38]">{t.grading}</h3>
         <p className="text-xs text-[#7a817d]">{course.scheme?.source === "canvas" ? t.fromCanvas : t.fromSyllabus}</p>
+        {(course.excludedCanvasGroupIds?.length ?? 0) > 0 && <details className="my-2 text-xs"><summary>{t.excludedGroups}</summary>
+          <div className="mt-2 flex flex-wrap gap-2">{allGroups.filter((g) => course.excludedCanvasGroupIds?.includes(g.id)).map((g) =>
+            <button key={g.id} type="button" className="rounded border px-2 py-1" onClick={() => onPatch({ excludedCanvasGroupIds: course.excludedCanvasGroupIds?.filter((id) => id !== g.id) })}>{t.restoreGroup(g.name)}</button>)}</div>
+        </details>}
         {categories.length === 0 ? (
           <p className="mt-2 text-xs text-[#7a817d]">{t.noStructure}</p>
         ) : (
@@ -966,11 +1024,13 @@ function CourseDetail({
                   return (
                     <tr key={c.id} className="border-b border-[#f1efe9]">
                       <td className="py-1.5 pr-2">{c.name}</td>
-                      <td className="py-1.5 pr-2 text-right">{c.weight}%</td>
+                      <td className="py-1.5 pr-2 text-right">{Number(c.weight.toFixed(4))}%</td>
                       <td className="py-1.5 pr-2 text-right">{c.dropLowest || 0}</td>
                       <td className="py-1.5 pr-2">
                         <GroupPicker
                           groups={groups}
+                          onExclude={(id) => onPatch({ excludedCanvasGroupIds: [...(course.excludedCanvasGroupIds ?? []), id] })}
+                          excludeLabel={t.excludeGroup}
                           selected={categoryGroupIds(c)}
                           emptyLabel={t.notMapped}
                           noGroupsLabel={t.noGroups}
@@ -984,6 +1044,8 @@ function CourseDetail({
                       <td className="py-1.5 text-right">
                         {computed ? `${pct(computed.currentPct)} (${computed.gradedCount}/${computed.totalCount})` : "—"}
                       </td>
+                      <td><button type="button" aria-label={t.excludeGroup(c.name)} title={t.excludeGroup(c.name)}
+                        onClick={() => setScheme({ categories: categories.filter((x) => x.id !== c.id) })}>×</button></td>
                     </tr>
                   );
                 })}
@@ -1039,6 +1101,8 @@ function CourseDetail({
             {course.syllabus ? t.replace : t.upload}
             <input type="file" accept=".pdf,.docx,.txt,.md" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpload(f); e.target.value = ""; }} />
           </label>
+          {course.syllabus?.text && <button type="button" className="rounded-lg border border-[#dcd9d0] px-3 py-1.5 text-xs"
+            onClick={() => onParsed(extractGradingScheme(course.syllabus?.text ?? "", { canonicalOf: canonicalCategory }))}>{t.reread}</button>}
           {course.syllabusBody && (
             <button
               type="button"
@@ -1061,7 +1125,10 @@ function CourseDetail({
             <button
               type="button"
               className="mt-2 rounded-lg border border-[#dcd9d0] px-3 py-1.5 text-xs font-semibold text-[#273c38]"
-              onClick={() => onParsed(extractGradingScheme(text, { canonicalOf: canonicalCategory }))}
+              onClick={() => {
+                onPatch({ syllabus: { fileName: course.syllabus?.fileName ?? t.syllabus, uploadedAt: new Date().toISOString(), text } });
+                onParsed(extractGradingScheme(text, { canonicalOf: canonicalCategory }));
+              }}
             >
               {t.read}
             </button>
@@ -1075,23 +1142,11 @@ function CourseDetail({
         <div className="mt-2 space-y-3">
           {grade.categories.map((c) => (
             <div key={c.id}>
-              <p className="text-xs font-semibold text-[#48534f]">{c.name} · {c.weight}%</p>
+              <p className="text-xs font-semibold text-[#48534f]">{c.name} · {Number(c.weight.toFixed(4))}% <strong className="ml-2 tabular-nums text-[#315c43]" title={t.pointsHint}>{Number(c.earned.toFixed(2))}/{Number(c.possible.toFixed(2))}</strong></p>
               {c.items.length === 0 && c.droppedItems.length === 0 && <p className="text-xs text-[#7a817d]">{t.nothingHere}</p>}
               <ul className="mt-1 space-y-0.5 text-xs">
-                {c.items.map((it) => (
-                  <li key={it.id} className={`flex items-center justify-between gap-2 rounded px-2 py-1 ${it.earned === null ? "bg-[#f6f4ef]" : ""}`}>
-                    <span className="truncate">{it.name}{it.source === "manual" && <em className="ml-1 text-[#315c43]">({t.addedByYou})</em>}</span>
-                    <span className="shrink-0 tabular-nums text-[#48534f]">
-                      {it.earned === null ? "—" : it.earned.toFixed(1)} / {it.possible ?? "—"}
-                    </span>
-                  </li>
-                ))}
-                {c.droppedItems.map((it, i) => (
-                  <li key={`d${i}`} className="flex items-center justify-between gap-2 rounded px-2 py-1 text-[#9aa8a1] line-through">
-                    <span className="truncate">{it.name} ({t.dropped})</span>
-                    <span className="shrink-0 tabular-nums">{it.earned?.toFixed(1)} / {it.possible}</span>
-                  </li>
-                ))}
+                {c.items.map((it) => renderScore(it))}
+                {c.droppedItems.map((it) => renderScore(it, true))}
               </ul>
             </div>
           ))}
@@ -1243,7 +1298,7 @@ function Disclaimer({ compact = false, t }: { compact?: boolean; t: Copy }) {
 }
 
 function GroupPicker({
-  groups, selected, onChange, emptyLabel, noGroupsLabel, compact = false,
+  groups, selected, onChange, emptyLabel, noGroupsLabel, compact = false, onExclude, excludeLabel,
 }: {
   groups: Array<{ id: number; name: string }>;
   selected: number[];
@@ -1251,6 +1306,8 @@ function GroupPicker({
   emptyLabel: string;
   noGroupsLabel: string;
   compact?: boolean;
+  onExclude?: (id: number) => void;
+  excludeLabel?: (name: string) => string;
 }) {
   if (groups.length === 0) return <span className="text-[11px] text-[#9aa8a1]">{noGroupsLabel}</span>;
 
@@ -1259,8 +1316,8 @@ function GroupPicker({
       {groups.map((g) => {
         const on = selected.includes(g.id);
         return (
+          <span key={g.id} className="inline-flex items-center gap-0.5">
           <button
-            key={g.id}
             type="button"
             aria-pressed={on}
             onClick={() => onChange(on ? selected.filter((x) => x !== g.id) : [...selected, g.id])}
@@ -1272,6 +1329,8 @@ function GroupPicker({
           >
             {g.name}
           </button>
+          {onExclude && <button type="button" className="px-1 text-[#7a817d] hover:text-[#a34a39]" aria-label={excludeLabel?.(g.name)} title={excludeLabel?.(g.name)} onClick={() => onExclude(g.id)}>×</button>}
+          </span>
         );
       })}
       {selected.length === 0 && <span className="text-[11px] text-[#9aa8a1]">{emptyLabel}</span>}

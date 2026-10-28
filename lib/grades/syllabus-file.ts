@@ -95,28 +95,18 @@ export function docxXmlToText(xml: string): string {
   const body = xml.slice(xml.indexOf("<w:body"));
   const source = body.length > 0 ? body : xml;
 
-  return decodeEntities(
-    source
-      // Word puts a paragraph inside every table cell, so that paragraph's end must NOT become a
-      // line break or a row would fall apart into one line per cell. Drop it first; the cell end
-      // below turns into the tab instead.
-      .replace(/<\/w:p>\s*(?=<\/w:tc>)/g, "")
-      .replace(/<w:tab\b[^>]*\/?>/g, "\t")
-      .replace(/<\/w:tc>/g, "\t")
-      .replace(/<\/w:tr>/g, "\n")
-      .replace(/<w:br\b[^>]*\/?>/g, "\n")
-      .replace(/<\/w:p>/g, "\n")
-      .replace(/<[^>]+>/g, ""),
-  )
-    .split("\n")
-    // Collapse runs of indentation spaces only — a tab is the cell separator inserted above and
-    // must survive, or "Homework\t15%" degrades into a space and the table loses its structure.
-    .map((line) => line.replace(/ +/g, " ").trim())
-    // WordprocessingML is pretty-printed, so the whitespace between tags would otherwise show up as
-    // a blank line between every paragraph.
-    .filter((line) => line !== "")
-    .join("\n")
-    .trim();
+  // Serialize the whole cell first: paragraph ends inside a cell must never
+  // split an assignment name away from its weight in the next cell.
+  const tables = source.replace(/<w:tc\b[^>]*>([\s\S]*?)<\/w:tc>/g, (_, cell: string) => {
+    const text = cell.replace(/<\/w:p>/g, " ⏎ ").replace(/<w:tab\b[^>]*\/?>/g, " ")
+      .replace(/<[^>]*>/g, "").replace(/ +/g, " ").trim().replace(/(?:\s*⏎\s*)+$/, "");
+    return text + "\t";
+  });
+  return decodeEntities(tables.replace(/<\/w:tr>/g, "\n").replace(/<\/w:tbl>/g, "\n\n")
+    .replace(/<w:tab\b[^>]*\/?>/g, "\t").replace(/<\/w:p>/g, "\n")
+    .replace(/<w:br\b[^>]*\/?>/g, "\n").replace(/<[^>]*>/g, ""))
+    .split(/\r?\n/).map((line) => line.replace(/ +/g, " ").replace(/ *\t */g, "\t").trim())
+    .join("\n").trim();
 }
 
 /* --------------------------------------------------------------- readers --- */

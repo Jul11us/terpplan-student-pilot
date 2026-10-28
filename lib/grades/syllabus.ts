@@ -10,7 +10,7 @@
 // Handles both dotted-leader tables and prose that wraps across lines ("The midterm exam is worth\n30%,
 // and the final exam is worth 40%"), and tolerates Chinese syllabi (作业 20% / 期中考试 30%).
 
-import { autoMapCategories, canonicalCategory, labelsAreSameWork, hasCJK } from "@/lib/grades/grading";
+import { autoMapCategories, canonicalCategory, labelsAreSameWork, normaliseLabel, hasCJK } from "@/lib/grades/grading";
 import type { Scheme } from "@/lib/grades/grading";
 import type { LetterCut } from "@/lib/grades/gpa";
 
@@ -286,19 +286,37 @@ export function extractLetterScale(text: unknown): { scale: ScaleEntry[]; eviden
   const lines = toLines(text);
   const found: FoundCut[] = [];
   const evidence: Array<{ line: number; text: string }> = [];
+  // Some Word charts put the +/- signs in the rows above/below A, B, C, D.
+  lines.forEach((raw, line) => {
+    const cells = raw.split('\t');
+    if (cells.filter((cell) => /^[A-DF]$/.test(cell.trim())).length < 3) return;
+    cells.forEach((cell, col) => {
+      const letter = cell.trim();
+      if (!/^[A-DF]$/.test(letter) || !cells[col + 1]) return;
+      for (const [offset, suffix] of ([[0, ''], [-1, '+'], [1, '-']] as Array<[number, string]>)) {
+        const row = (lines[line + offset] || '').split('\t');
+        if (offset && row[col]?.trim() !== suffix) continue;
+        const value = row[col + 1]?.trim();
+        if (!value || !/^[<≥]?\s*\d+(?:\.\d+)?\s*%$/.test(value)) continue;
+        const min = value.includes('<') ? 0 : Number(value.replace(/[^\d.]/g, ''));
+        found.push({ letter: letter + suffix, min, line: line + offset });
+        evidence.push({ line: line + offset, text: row.join('\t') });
+      }
+    });
+  });
   const SEG_SPLIT = /\s*[,;|]\s*|\s{3,}/;
 
   const patterns: Array<{ re: RegExp; min: (m: RegExpMatchArray) => number | null }> = [
     // A 93-100 / A: 93–96 / A 93 至 96 分
     { re: /^([A-F][+-]?)(?:\s*[/&]\s*[A-F][+-]?)*\s*[:\-=]?\s*(\d{1,3}(?:\.\d+)?)\s*(?:-|–|—|to|through|~|至)\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*分?(?:\s+\d(?:\.\d+)?)?$/i, min: (m) => num(m[2]) },
     // A 93% and above / A 93+
-    { re: /^([A-F][+-]?)(?:\\s*[:=]\\s*|\\s+-\\s+|\\s*[–—]\\s*)(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:\+|and\s+(?:above|up|higher|over)|or\s+(?:above|higher|better|more)|above|or\s+better).*$/i, min: (m) => num(m[2]) },
+    { re: /^([A-F][+-]?)(?:\s*[:=]\s*|\s+-\s+|\s*[–—]\s*)(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:\+|and\s+(?:above|up|higher|over)|or\s+(?:above|higher|better|more)|above|or\s+better).*$/i, min: (m) => num(m[2]) },
     // A (93%)
     { re: /^([A-F][+-]?)\s*[\(\[]\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*[\)\]](?:\s+\d(?:\.\d+)?)?$/i, min: (m) => num(m[2]) },
     // A = 93
     // A "-" separator must stand alone: "A- 90%" is the grade A- at 90, and without the
     // whitespace requirement the engine backtracks into reading it as "A" with a "-" separator.
-    { re: /^([A-F][+-]?)(?:\\s*[:=]\\s*|\\s+-\\s+|\\s*[–—]\\s*)(\d{1,3}(?:\.\d+)?)\s*%?(?:\s+\d(?:\.\d+)?)?$/i, min: (m) => num(m[2]) },
+    { re: /^([A-F][+-]?)(?:\s*[:=]\s*|\s+-\s+|\s*[–—]\s*)(\d{1,3}(?:\.\d+)?)\s*%?(?:\s+\d(?:\.\d+)?)?$/i, min: (m) => num(m[2]) },
     // 93-100 = A
     { re: /^(\d{1,3}(?:\.\d+)?)\s*%?\s*(?:-|–|—|to|through|~|至)\s*(\d{1,3}(?:\.\d+)?)\s*%?\s*分?\s*[:\-=]?\s*([A-F][+-]?)(?:\s*[/&]\s*[A-F][+-]?)*(?:\s+\d(?:\.\d+)?)?$/i, min: (m) => num(m[1]) },
     // 93 and above → A
@@ -332,7 +350,7 @@ export function extractLetterScale(text: unknown): { scale: ScaleEntry[]; eviden
     {
       const pairs = [...line.matchAll(/\b([A-F][+-]?)\s*[:=]?\s*(\d{1,3}(?:\.\d+)?)\s*%/gi)];
       const letters = new Set(pairs.map((m) => m[1]!.toUpperCase()));
-      if (pairs.length >= 3 && letters.size >= 2) {
+      if ((pairs.length >= 3 || (pairs.length >= 2 && /\bto\b|and\s+(?:higher|above)/i.test(line))) && letters.size >= 2) {
         for (const m of pairs) {
           const letter = normaliseLetterToken(m[1]);
           const min = num(m[2]);
@@ -346,7 +364,7 @@ export function extractLetterScale(text: unknown): { scale: ScaleEntry[]; eviden
     // The segments of a line, plus the tail of any "heading: rest" opening — the letter-first
     // patterns are anchored, so "Letter grades: A 93-100" used to lose its A and leave 95%
     // matching A- instead.
-    const segments = line.split(SEG_SPLIT).flatMap((part) => {
+    const segments = [...line.split(SEG_SPLIT), ...raw.split(/\t+|\s{3,}|\s*[,;|]\s*/).map(normaliseLine)].flatMap((part) => {
       const colon = part.lastIndexOf(":");
       return colon >= 0 ? [part, part.slice(colon + 1)] : [part];
     });
@@ -398,14 +416,60 @@ type Candidate = {
   line: number;
   inGradingZone: boolean;
   fromProse: boolean;
+  fromTable?: boolean;
   raw: string;
   weight?: number;
   derivedFromPoints?: { points: number; total: number };
 };
 
+function extractTableWeights(text: unknown): Candidate[] {
+  const out: Candidate[] = [];
+  let column: { at: number; unit: "pct" | "pts" } | null = null;
+  toLines(text).forEach((raw, line) => {
+    if (!raw.includes('\t')) { column = null; return; }
+    const cells = raw.split('\t').map((cell) => cell.trim());
+    const pctAt = cells.findIndex((cell) => /^(?:percentage\s*%?|percent|weight(?:\s*\(%\))?|%)$/i.test(cell));
+    const ptsAt = cells.findIndex((cell) => /^(?:points?|pts\.?|marks?|分数|分值)$/i.test(cell));
+    if (pctAt >= 0 || ptsAt >= 0) {
+      column = { at: pctAt >= 0 ? pctAt : ptsAt, unit: pctAt >= 0 ? 'pct' : 'pts' };
+      return;
+    }
+    const at = column?.at ?? cells.findIndex((cell, i) => i > 0 && /^\d+(?:\.\d+)?\s*%/.test(cell));
+    if (at <= 0 || !cells[at]) return;
+    const unit = column?.unit || 'pct';
+    const cell = cells[at];
+    const number = unit === 'pct'
+      ? cell.match(/^(\d+(?:\.\d+)?)\s*%/)
+      : cell.match(/^(\d[\d ]*(?:\.\d+)?)\s*(?:(?:points?|pts)\b|\(|$)/i);
+    if (!number) return;
+    const value = Number(number[1].replace(/ /g, ''));
+    let name = stripLabel(cells[0].split(' ⏎ ')[0]);
+    // Explanatory parentheses in assignment cells are not separate categories.
+    name = name.replace(/\s*\([^)]*(?:points?\s+per|in-class\s+discussion)[^)]*\)\s*/gi, ' ').trim();
+    const bare = name.replace(/\([^)]*\)/g, '').trim().toLowerCase();
+    if (!/[a-z\u4e00-\u9fff]/i.test(bare) || name.length > 240 || NON_CATEGORY_LABELS.has(bare) ||
+        /^(?:note|total|week|date|grade|late policy)\b/i.test(bare) || /^[a-f](?:[+-])?$/.test(bare) || value <= 0 || (unit === 'pct' && value > 100)) return;
+    const add = (label: string, amount: number) => out.push({
+      name: label, value: amount, unit, line, raw, inGradingZone: true, fromProse: false, fromTable: true,
+    });
+    // A row such as "Midterm Exams (3 total) | 42% (13%,14%,15%)" states
+    // unequal exam weights. Keep them separate instead of averaging the exams.
+    const percentages = [...cell.matchAll(/(\d+(?:\.\d+)?)\s*%/g)].map((match) => Number(match[1]));
+    const parts = percentages.slice(1);
+    if (unit === 'pct' && parts.length >= 2 && /\b(?:exams?|midterms?|tests?)\b/i.test(name) &&
+        Math.abs(parts.reduce((sum, part) => sum + part, 0) - value) < 0.001) {
+      const base = name.replace(/\s*\(\d+\s+total\)/i, '').replace(/\b(Exams|Midterms|Tests)\b/gi, (word) => word.slice(0, -1));
+      parts.forEach((part, i) => add(base + ' ' + (i + 1), part));
+    } else add(name, value);
+  });
+  return out;
+}
+
+
 function extractWeightCandidates(text: unknown): Candidate[] {
   const lines = toLines(text);
-  const candidates: Candidate[] = [];
+  const candidates: Candidate[] = extractTableWeights(text);
+  const tableLines = new Set(candidates.map((c) => c.line));
 
   const gradingZone: boolean[] = [];
   let inZone = false;
@@ -531,7 +595,7 @@ function extractWeightCandidates(text: unknown): Candidate[] {
   // Pass 1: one candidate per physical line (tables, lists).
   lines.forEach((raw, i) => {
     const line = normaliseLine(raw);
-    if (!line || line.length > 240) return;
+    if (!line || line.length > 240 || tableLines.has(i)) return;
     push(line, i, false);
   });
 
@@ -544,7 +608,7 @@ function extractWeightCandidates(text: unknown): Candidate[] {
   let curStart = 0;
   lines.forEach((raw, i) => {
     const line = normaliseLine(raw);
-    if (!line) {
+    if (!line || raw.includes('\t')) {
       if (cur.length) blocks.push({ lines: cur, start: curStart });
       cur = [];
       return;
@@ -582,7 +646,7 @@ function extractWeightCandidates(text: unknown): Candidate[] {
   const subtotal = new Set<number>();
   for (let i = 0; i < ordered.length; i++) {
     const head = ordered[i]!;
-    if (head.unit !== "pct" || head.fromProse) continue;
+    if (head.unit !== "pct" || head.fromProse || head.fromTable) continue;
 
     // Sum the whole run beneath. A *prefix* that happens to add up is not enough: in a five-row
     // table "Projects 30 / Homework 15 / Midterm 15 / …" the first two rows sum to 30, and taking
@@ -643,7 +707,7 @@ function dedupe(candidates: Candidate[]): Candidate[] {
   const ordered = [...candidates].sort((a, b) => Number(a.fromProse) - Number(b.fromProse));
   const out: Candidate[] = [];
   for (const c of ordered) {
-    const dup = out.some((o) => o.value === c.value && o.unit === c.unit && labelsAreSameWork(o.name, c.name));
+    const dup = out.some((o) => o.value === c.value && o.unit === c.unit && (o.fromTable && c.fromTable ? normaliseLabel(o.name) === normaliseLabel(c.name) : labelsAreSameWork(o.name, c.name)));
     if (!dup) out.push(c);
   }
   return out;
@@ -658,7 +722,7 @@ function pointsToPercent(candidates: Candidate[]): Candidate[] | null {
   return pts.map((c) => ({
     ...c,
     unit: "pct" as const,
-    weight: Math.round((c.value / total) * 100 * 100) / 100,
+    weight: (c.value / total) * 100,
     derivedFromPoints: { points: c.value, total },
   }));
 }

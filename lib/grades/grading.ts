@@ -67,6 +67,8 @@ export type ManualItem = {
 };
 
 export type GradeCourse = {
+  excludedCanvasGroupIds?: number[];
+  canvasScoreOverrides?: Record<string, number | null>;
   id?: string;
   code: string;
   title?: string;
@@ -78,6 +80,9 @@ export type GradeCourse = {
 };
 
 export type EngineItem = {
+  canvasId?: number;
+  originalEarned?: number | null;
+  scoreOverridden?: boolean;
   id: string;
   name: string;
   groupId: number | null;
@@ -318,6 +323,7 @@ export function canvasItemToEngine(a: CanvasAssignment): EngineItem {
   const earned = toNumber(a.score);
   return {
     id: `c${a.id}`,
+    canvasId: a.id,
     name: a.name || "Untitled",
     groupId: a.assignment_group_id ?? null,
     earned,
@@ -390,11 +396,12 @@ export function resolveCategories(course: GradeCourse): { categories: SchemeCate
   const scheme = course.scheme;
   // A hand-entered scheme and one read from a syllabus are the same thing here: confirmed weights
   // the student owns. Only "did these come from Canvas or from you?" matters downstream.
-  if (scheme?.categories?.length) {
+  if (scheme && Array.isArray(scheme.categories)) {
     return { categories: scheme.categories, source: scheme.source === "canvas" ? "canvas" : "syllabus", pointsMode: false };
   }
 
-  const groups = course.canvas?.groups ?? [];
+  const excludedGroups = new Set(course.excludedCanvasGroupIds ?? []);
+  const groups = (course.canvas?.groups ?? []).filter((g) => !excludedGroups.has(g.id));
   if (groups.length) {
     const weights = groups.map((g) => toNumber(g.weight) ?? 0);
     const sum = weights.reduce((a, b) => a + b, 0);
@@ -449,9 +456,18 @@ export function computeCourseGrade(course: GradeCourse, settings: { ungradedFill
   const warnings: GradeWarning[] = [];
   const { categories: rawCats, source, pointsMode } = resolveCategories(course);
 
-  const allCanvasItems = (course.canvas?.items ?? []).map(canvasItemToEngine);
+  const allCanvasItems = (course.canvas?.items ?? [])
+    .filter((a) => !(course.excludedCanvasGroupIds ?? []).includes(a.assignment_group_id ?? -1))
+    .map((a) => {
+      const item = canvasItemToEngine(a);
+      const overrides = course.canvasScoreOverrides ?? {};
+      if (!Object.prototype.hasOwnProperty.call(overrides, a.id)) return item;
+      const earned = toNumber(overrides[a.id]);
+      return { ...item, earned, graded: earned !== null, originalEarned: item.earned, scoreOverridden: true };
+    });
   const manualItems = (course.manualItems ?? []).map(manualItemToEngine);
-  const groups = course.canvas?.groups ?? [];
+  const excludedGroups = new Set(course.excludedCanvasGroupIds ?? []);
+  const groups = (course.canvas?.groups ?? []).filter((g) => !excludedGroups.has(g.id));
 
   const claimedGroups = new Set<number>();
   for (const c of rawCats) for (const gid of categoryGroupIds(c)) claimedGroups.add(gid);
@@ -538,13 +554,8 @@ export function computeCourseGrade(course: GradeCourse, settings: { ungradedFill
       .filter((it) => it.earned === null && it.possible !== null && it.possible > 0)
       .reduce((s, it) => s + (it.possible ?? 0), 0);
 
-    let projEarned = 0;
-    let projPossible = 0;
-    for (const it of items) {
-      if (it.possible === null || it.possible <= 0) continue;
-      projPossible += it.possible;
-      projEarned += it.earned !== null ? it.earned : (it.possible * fill) / 100;
-    }
+    const projEarned = earned + (ungradedPossible * fill) / 100;
+    const projPossible = possible + ungradedPossible;
     const projectedPct = projPossible > 0 ? (projEarned / projPossible) * 100 : items.length === 0 ? fill : null;
 
     return {

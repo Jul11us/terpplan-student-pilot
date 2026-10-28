@@ -88,7 +88,7 @@ export type StoredCourse = {
   canvasUrl?: string | null;
   syllabusBody?: string | null;
   weighted?: boolean | null;
-  canvas?: { groups?: CanvasGroup[]; items?: CanvasItem[] };
+  canvas?: { groups?: CanvasGroup[]; items?: CanvasItem[]; error?: string };
   /** Set on Canvas courses only; see lib/grades/credit.ts. */
   forCredit?: boolean;
   manualItems?: unknown[];
@@ -108,7 +108,7 @@ export function mergeCanvasData(
   for (const c of payload.courses ?? []) {
     const detail = payload.detail?.[String(c.canvasId)];
     const found = courses.find((x) => x.canvasId === c.canvasId);
-    const canvas = { groups: detail?.groups ?? [], items: detail?.items ?? [] };
+    const canvas = { groups: detail?.groups ?? [], items: detail?.items ?? [], error: detail?.error };
 
     if (found) {
       found.code = c.code;
@@ -119,7 +119,7 @@ export function mergeCanvasData(
       found.canvasUrl = c.htmlUrl;
       found.syllabusBody = c.syllabusBody || found.syllabusBody;
       if (c.weighted !== undefined) found.weighted = c.weighted;
-      found.canvas = canvas;
+      found.canvas = detail && !detail.error ? canvas : { ...found.canvas, error: detail?.error ?? "Course details unavailable" };
       found.source = "canvas";
       found.forCredit = looksForCredit(c.code).forCredit;
       updated++;
@@ -173,189 +173,5 @@ export function readCanvasExport(text: string): { ok: true; payload: CanvasPaylo
   };
 }
 
-/**
- * The token-free exporter, as a string so the app can offer it as a bookmarklet and as a console
- * snippet. Deliberately readable — it is meant to be audited before it is run. It writes one file
- * and changes nothing. Kept free of backticks and `${}` so it survives being embedded verbatim.
- */
-export const EXPORT_SOURCE = `(async function () {
-  if (location.hostname.indexOf("instructure.com") === -1) {
-    alert("请先打开 umd.instructure.com 并登录，再运行这个脚本。\\n\\nOpen umd.instructure.com and sign in first, then run this again.");
-    return;
-  }
-  var BASE = location.origin;
-  var TARGET = "__TERPPLAN_TARGET__";
-  var log = function (m) { console.log("[TerpPlan] " + m); };
-  function qs(p) {
-    var parts = [];
-    for (var k in p) {
-      if (!Object.prototype.hasOwnProperty.call(p, k)) continue;
-      var v = p[k];
-      if (v === null || v === undefined) continue;
-      if (Object.prototype.toString.call(v) === "[object Array]") {
-        for (var i = 0; i < v.length; i++) parts.push(encodeURIComponent(k) + "=" + encodeURIComponent(v[i]));
-      } else parts.push(encodeURIComponent(k) + "=" + encodeURIComponent(v));
-    }
-    return parts.join("&");
-  }
-  async function api(path, params) {
-    var res = await fetch(BASE + "/api/v1" + path + "?" + qs(params || {}), { credentials: "include", headers: { Accept: "application/json" } });
-    if (!res.ok) throw new Error(path + " -> HTTP " + res.status);
-    return res.json();
-  }
-  async function all(path, params) {
-    var out = [];
-    for (var p = 1; p <= 12; p++) {
-      var batch = await api(path, Object.assign({}, params || {}, { per_page: 100, page: p }));
-      if (!batch || !batch.length) break;
-      out = out.concat(batch);
-      if (batch.length < 100) break;
-    }
-    return out;
-  }
-  function n(v) { if (v === null || v === undefined || v === "") return null; var x = Number(v); return isFinite(x) ? x : null; }
-  try {
-    log("reading your profile...");
-    var me = await api("/users/self/profile", {});
-    log("reading courses...");
-    var courses = (await all("/courses", { enrollment_state: "active", include: ["total_scores", "enrollments", "term", "syllabus_body"], state: ["available"] }))
-      .filter(function (c) { return c && (c.name || c.course_code); });
-    log(courses.length + " course(s) found.");
-    var payload = { format: "terpplan.canvas-export", version: 1, exportedAt: new Date().toISOString(), baseUrl: BASE,
-      me: { name: (me && (me.name || me.short_name)) || null }, courses: [], detail: {} };
-    for (var i = 0; i < courses.length; i++) {
-      var c = courses[i];
-      var es = (c.enrollments || []).filter(function (e) { return e.type === "studentenrollment"; });
-      var g = ((es[0] || (c.enrollments || [])[0] || {}).grades) || {};
-      payload.courses.push({ canvasId: c.id, code: c.course_code || c.name || String(c.id), title: c.name || c.course_code || "",
-        term: (c.term && c.term.name) || null, canvasCurrentScore: n(g.current_score), canvasCurrentGrade: g.current_grade || null,
-        canvasFinalScore: n(g.final_score), syllabusBody: c.syllabus_body || null, htmlUrl: c.html_url || null,
-        // Canvas grades by total points when this is false, which the engine has to mirror.
-        weighted: c.apply_assignment_group_weights === undefined ? null : !!c.apply_assignment_group_weights });
-      log("reading assignments for " + (c.course_code || c.id) + " (" + (i + 1) + "/" + courses.length + ")...");
-      try {
-        var groups = await all("/courses/" + c.id + "/assignment_groups", {});
-        var assignments = await all("/courses/" + c.id + "/assignments", { include: ["submission"], order_by: "due_at" });
-        payload.detail[c.id] = {
-          groups: groups.map(function (x, xi) { return { id: x.id, name: x.name || ("Group " + (xi + 1)), weight: n(x.group_weight), position: x.position === undefined ? xi : x.position }; }),
-          items: assignments.map(function (a) { var s = a.submission || {}; return { id: a.id, name: a.name || "Untitled",
-            assignment_group_id: a.assignment_group_id === undefined ? null : a.assignment_group_id, points_possible: n(a.points_possible),
-            score: n(s.score === undefined ? a.score : s.score), missing: !!s.missing, due_at: a.due_at || null, html_url: a.html_url || null }; })
-        };
-      } catch (err) {
-        log("could not read " + (c.course_code || c.id) + ": " + err.message);
-        payload.detail[c.id] = { groups: [], items: [], error: String(err.message || err) };
-      }
-    }
-    var json = JSON.stringify(payload, null, 2);
-
-    // Hand the data straight to TerpPlan through the URL fragment when we can. A fragment is
-    // never sent to a server, so nothing is uploaded, and the student skips saving a file,
-    // finding the tab again and re-picking that file. Gzip keeps the URL to a sane length: the
-    // courses are the bulk of it and they compress by roughly fifteen to one.
-    if (typeof CompressionStream === "function" && typeof TextEncoder === "function") {
-      try {
-        var gz = new Blob([new TextEncoder().encode(json)]).stream()
-          .pipeThrough(new CompressionStream("gzip"));
-        var packed = new Uint8Array(await new Response(gz).arrayBuffer());
-        var bin = "";
-        for (var i = 0; i < packed.length; i++) bin += String.fromCharCode(packed[i]);
-        var b64 = btoa(bin).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/, "");
-        var url = TARGET + "#canvas-import=" + b64;
-        if (url.length < 1000000) {
-          // Open before alerting: an alert can cost us the user-gesture context that makes a
-          // popup allowed in the first place.
-          var win = window.open(url, "_blank");
-          if (win) {
-            log("done — " + payload.courses.length + " course(s) handed to TerpPlan (" + url.length + " chars).");
-            alert("导出完成：" + payload.courses.length + " 门课程。\\n\\nTerpPlan 会在刚打开的新标签页里自动读取。\\n\\nExported " + payload.courses.length + " course(s). The tab that just opened will pick them up.");
-            return;
-          }
-          log("the popup was blocked — downloading a file instead.");
-        } else {
-          log("too long for a link (" + url.length + " chars) — downloading a file instead.");
-        }
-      } catch (err) {
-        log("could not build a link (" + err.message + ") — downloading a file instead.");
-      }
-    }
-
-    var a2 = document.createElement("a");
-    a2.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
-    a2.download = "terpplan-canvas-export.json";
-    document.body.appendChild(a2);
-    a2.click();
-    a2.remove();
-    log("done — " + payload.courses.length + " course(s) exported.");
-    alert("导出完成：" + payload.courses.length + " 门课程。\\n\\n文件 terpplan-canvas-export.json 已下载，请回到 TerpPlan 导入。\\n\\nExported " + payload.courses.length + " course(s). Import the downloaded file into TerpPlan.");
-  } catch (err) {
-    console.error("[TerpPlan] export failed:", err);
-    alert("导出失败：" + (err && err.message ? err.message : err) + "\\n\\n请确认你已登录 Canvas，然后重试。\\nExport failed — make sure you are signed in to Canvas and try again.");
-  }
-})();`;
-
-/** Where the bookmarklet should send the student back to: this very page. */
-export function defaultTarget(): string {
-  if (typeof location === "undefined") return "";
-  return location.origin + location.pathname;
-}
-
-/** The exporter with the return address filled in. */
-export function exportSource(target?: string): string {
-  return EXPORT_SOURCE.split("__TERPPLAN_TARGET__").join(target || defaultTarget() || "__TERPPLAN_TARGET__");
-}
-
-export function bookmarkletHref(target?: string): string {
-  return `javascript:${encodeURIComponent(exportSource(target))}`;
-}
-
-/** The fragment key the bookmarklet appends its payload under. */
-export const IMPORT_HASH_KEY = "canvas-import";
-
-function b64urlToBytes(b64: string): Uint8Array<ArrayBuffer> {
-  const padded = b64.replace(/-/g, "+").replace(/_/g, "/");
-  const bin = atob(padded + "=".repeat((4 - (padded.length % 4)) % 4));
-  const bytes = new Uint8Array(new ArrayBuffer(bin.length));
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
-
-/**
- * Decode a `#canvas-import=…` fragment the bookmarklet produced: base64url over gzipped JSON.
- * Returns the parsed payload, or null when the fragment is absent or unreadable.
- *
- * The data travelled in the fragment rather than the query string precisely so it never reaches
- * a server — a student's grades stay between their Canvas tab and this one.
- */
-export async function readImportFragment(hash: string): Promise<CanvasPayload | null> {
-  const raw = String(hash || "");
-  const marker = `${IMPORT_HASH_KEY}=`;
-  const at = raw.indexOf(marker);
-  if (at === -1) return null;
-
-  const encoded = raw.slice(at + marker.length);
-  if (!encoded) return null;
-
-  let json: string;
-  try {
-    if (typeof DecompressionStream !== "function") return null;
-    // Same shape as readZipEntry in syllabus-file.ts: drive the stream with a writer rather than
-    // wrapping bytes in a Blob, which keeps the typed-array generics out of it.
-    const stream = new DecompressionStream("gzip");
-    const writer = stream.writable.getWriter();
-    writer.write(b64urlToBytes(encoded));
-    writer.close();
-    json = await new Response(stream.readable).text();
-  } catch {
-    return null;
-  }
-
-  try {
-    const data = JSON.parse(json) as { format?: unknown; courses?: unknown };
-    if (!data || data.format !== "terpplan.canvas-export") return null;
-    if (!Array.isArray(data.courses)) return null;
-    return data as CanvasPayload;
-  } catch {
-    return null;
-  }
-}
+// Shared browser-only exporter: pre-open the receiving tab before reading Canvas.
+export { EXPORT_SOURCE, IMPORT_HASH_KEY, defaultTarget, exportSource, bookmarkletHref, readImportFragment } from "./canvas-export-source.js";
