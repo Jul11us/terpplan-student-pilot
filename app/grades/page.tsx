@@ -1013,9 +1013,9 @@ function CourseDetail({
                 <tr className="border-b border-[#e0ddd5] text-left text-[11px] uppercase tracking-[.08em] text-[#5d6561]">
                   <th className="py-2 pr-2">{t.category}</th>
                   <th className="py-2 pr-2 text-right">{t.weight}</th>
-                  <th className="py-2 pr-2 text-right">{t.drop}</th>
                   <th className="py-2 pr-2">{t.group}</th>
                   <th className="py-2 text-right">{t.score}</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -1025,7 +1025,6 @@ function CourseDetail({
                     <tr key={c.id} className="border-b border-[#f1efe9]">
                       <td className="py-1.5 pr-2">{c.name}</td>
                       <td className="py-1.5 pr-2 text-right">{Number(c.weight.toFixed(4))}%</td>
-                      <td className="py-1.5 pr-2 text-right">{c.dropLowest || 0}</td>
                       <td className="py-1.5 pr-2">
                         <GroupPicker
                           groups={groups}
