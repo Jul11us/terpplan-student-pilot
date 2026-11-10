@@ -42,6 +42,15 @@ test("full before TerpPlan watched counts as full, small courses are left out", 
   assert.deepEqual(courseFillRisk([], [ending("202601", 100, 1, 4, 4)]), { level: "full", hours: null, term: "202601" }, "at most 2% left, or every section full");
 });
 
+test("with a planned term, 'full' only counts from the year before it", () => {
+  const full = (term) => ending(term, 200, 0, 5, 5);
+  assert.equal(courseFillRisk([], [full("202501")], "202701"), null, "last full two years earlier is not a warning");
+  assert.deepEqual(courseFillRisk([], [full("202601")], "202701"), { level: "full", hours: null, term: "202601" }, "the same season a year earlier still counts");
+  assert.deepEqual(courseFillRisk([], [full("202501"), full("202608")], "202701"), { level: "full", hours: null, term: "202608" });
+  assert.equal(courseFillRisk([race("202408", 2, 120, false)], [], "202701"), null);
+  assert.deepEqual(courseFillRisk([race("202408", 3)], [], "202701"), { level: "hours", hours: 3, term: "202408" }, "a fast race is kept: it was watched, not guessed");
+});
+
 test("the route rejects bad terms and course lists before reading anything", async () => {
   assert.equal((await fillRisk(request({ term: "bad", courses: "CMSC131" }))).status, 400);
   assert.equal((await fillRisk(request({ term: "202701", courses: "" }))).status, 400);

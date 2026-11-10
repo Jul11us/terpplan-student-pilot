@@ -27,9 +27,14 @@ const fullWhenRead = (ending: EndingRow) =>
   ((ending.openSeats !== null && isFull(ending.totalSeats, ending.openSeats)) ||
     (ending.fullSections !== null && ending.sectionCount > 0 && ending.fullSections >= ending.sectionCount));
 
+// Term codes are YYYYMM, so the same season one year earlier is 100 less (202701 → 202601).
+const ONE_YEAR = 100;
+
 // The strongest answer: null when neither kind of evidence says the course was ever hard to get. A race
-// slower than three days is not urgent, so it defers to how full the endings were.
-export function courseFillRisk(races: RaceRow[], endings: EndingRow[]): FillRisk | null {
+// slower than three days is not urgent, so it defers to how full the endings were. Given the term being
+// planned, "full" only counts from the year before it: a course last full two years ago (when it may have
+// had fewer sections) says little about this registration, and naming that old term reads as stale data.
+export function courseFillRisk(races: RaceRow[], endings: EndingRow[], plannedTerm?: string): FillRisk | null {
   const raced = races
     .filter((race) => worthJudging(race.totalSeats))
     .map((race) => ({ term: race.term, hours: hoursToFill(race) }))
@@ -44,5 +49,6 @@ export function courseFillRisk(races: RaceRow[], endings: EndingRow[]): FillRisk
     ...endings.filter(fullWhenRead).map((ending) => ending.term),
     ...races.filter((race) => worthJudging(race.totalSeats) && race.filledAt && !race.startedAt).map((race) => race.term),
   ].sort().at(-1);
-  return lastFull ? { level: "full", hours: null, term: lastFull } : null;
+  const recent = !plannedTerm || (lastFull !== undefined && Number(lastFull) >= Number(plannedTerm) - ONE_YEAR);
+  return lastFull && recent ? { level: "full", hours: null, term: lastFull } : null;
 }

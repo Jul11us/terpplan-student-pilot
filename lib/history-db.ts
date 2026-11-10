@@ -464,7 +464,7 @@ export async function getFillRisks(term: string, courseIds: string[]): Promise<M
       if (reading) endingsByCourse.get(id)!.push({ term: past, sectionCount: reading.sections, totalSeats: reading.seats, openSeats: reading.open, fullSections: reading.fullSections });
     }
   }
-  for (const id of ids) result.set(id, courseFillRisk(racesByCourse.get(id)!, endingsByCourse.get(id)!));
+  for (const id of ids) result.set(id, courseFillRisk(racesByCourse.get(id)!, endingsByCourse.get(id)!, term));
   return result;
 }
 

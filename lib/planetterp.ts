@@ -1,5 +1,6 @@
 import { reviewThemes, type ReviewTheme } from "@/lib/review-themes";
 import { BoundedCache } from "@/lib/bounded-cache";
+import professorRatingData from "@/data/professor-ratings.json";
 
 export type ProfessorStatus = "ok" | "empty" | "unmatched" | "failed" | "tba" | "limited";
 
@@ -107,11 +108,31 @@ export async function getProfessorSummary(name: string): Promise<ProfessorSummar
   }
 }
 
+// Every instructor PlanetTerp lists, built by scripts/build-professor-ratings.mjs: name, rating, slug.
+let ratingIndex: Map<string, readonly [string, number | null, string]> | null = null;
+function indexedSummary(name: string): ProfessorSummary | null {
+  ratingIndex ??= new Map((professorRatingData.professors as [string, number | null, string][])
+    .map((entry) => [normalizeProfessorName(entry[0]), entry] as const));
+  const entry = ratingIndex.get(normalizeProfessorName(name));
+  if (!entry) return null;
+  const [indexedName, averageRating, slug] = entry;
+  return {
+    name: indexedName, matched: true, status: averageRating === null ? "empty" : "ok", averageRating, reviewCount: null,
+    sourceUrl: "https://planetterp.com/professor/" + encodeURIComponent(slug),
+  };
+}
+
 export async function getProfessorSummaries(names: string[]) {
   const unique = [...new Map(names.map((name) => [normalizeProfessorName(name), name.trim()])).values()]
     .filter((name) => name && !isInstructorTba(name));
   const results: Record<string, ProfessorSummary> = {};
-  const toFetch = unique.slice(0, MAX_SUMMARY_LOOKUPS);
+  // Instructors in the bundled index cost nothing; only the rest (new this term) go to PlanetTerp, within the limit.
+  const unindexed = unique.filter((name) => {
+    const found = indexedSummary(name);
+    if (found) results[normalizeProfessorName(name)] = found;
+    return !found;
+  });
+  const toFetch = unindexed.slice(0, MAX_SUMMARY_LOOKUPS);
   let cursor = 0;
   const worker = async () => {
     while (cursor < toFetch.length) {
@@ -120,7 +141,7 @@ export async function getProfessorSummaries(names: string[]) {
     }
   };
   await Promise.all(Array.from({ length: Math.min(8, toFetch.length) }, worker));
-  for (const name of unique.slice(MAX_SUMMARY_LOOKUPS)) {
+  for (const name of unindexed.slice(MAX_SUMMARY_LOOKUPS)) {
     results[normalizeProfessorName(name)] = {
       name, matched: false, status: "limited", averageRating: null, reviewCount: null, sourceUrl: null,
     };

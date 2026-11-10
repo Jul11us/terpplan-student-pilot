@@ -306,7 +306,7 @@ function warningText(warning: PlanWarning, language: Language) {
       case "sectionsSkipped": return course + "：有 " + count + " 个班次因课程数据缺少可用的班号而未纳入排课。";
       case "noValidSections": return course + " 本学期没有可用班号的班次。";
       case "courseLoadFailed": return course + " 加载失败，已从方案中略去。";
-      case "ratingsLimited": return "有 " + count + " 位教师的评分未查询，因为本次请求达到了查询上限。";
+      case "ratingsLimited": return "有 " + count + " 位老师这次没查到评分，按教师评分的排序仅供参考。";
       case "noEligibleSections": return course + " 没有符合当前排课偏好的班次。";
       case "noSelectedInstructors": return course + " 本学期没有你选中的老师开的班次。";
       case "pinnedSectionUnavailable": return (warning.sectionId ?? course) + " 已不在本学期班次列表中，请重新指定。";
@@ -325,7 +325,7 @@ function warningText(warning: PlanWarning, language: Language) {
     case "sectionsSkipped": return course + ": " + count + (count === 1 ? " section was" : " sections were") + " left out because the course data did not include a usable section number.";
     case "noValidSections": return course + " has no sections with valid section IDs for this term.";
     case "courseLoadFailed": return course + " could not be loaded. It was left out of the options.";
-    case "ratingsLimited": return count + " instructor ratings were not looked up because the request reached the lookup safety limit.";
+    case "ratingsLimited": return count + (count === 1 ? " instructor's rating" : " instructors' ratings") + " couldn't be loaded this time, so rating-based ordering is approximate.";
     case "noEligibleSections": return course + " has no sections that satisfy the selected schedule preferences.";
     case "noSelectedInstructors": return course + " has no sections taught by the instructors you kept.";
     case "pinnedSectionUnavailable": return (warning.sectionId ?? course) + " is no longer listed for this term. Choose another required section.";
