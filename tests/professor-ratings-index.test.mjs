@@ -27,5 +27,5 @@ test("instructors in the bundled index are answered without PlanetTerp and do no
 
 test("the index is large enough to be the real PlanetTerp list", () => {
   assert.ok(data.professors.length > 5000);
-  assert.match(data.generatedAt, /^\d{4}-\d{2}-\d{2}$/);
+  assert.match(data.builtAt, /^\d{4}-\d{2}-\d{2}$/);
 });

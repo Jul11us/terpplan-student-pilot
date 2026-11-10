@@ -32,7 +32,7 @@ test("?demo=1 sets up the sample beside the real plan, and leaving brings the re
   // The planner now reads and writes the sample; the student's own plan is untouched.
   const sample = readSavedState();
   assert.equal(sample.language, "en", "keeps the language the visitor already chose");
-  assert.deepEqual(sample.plans[DEMO_TERM].map((course) => course.courseId), ["MATH141", "CMSC132", "COMM107", "PSYC100", "ENGL101"]);
+  assert.deepEqual(sample.plans[DEMO_TERM].map((course) => course.courseId), ["MATH141", "CMSC132", "COMM107", "ENGL101"], "14 credits: under the 16 allowed before classes start, so the sample opens without a credit warning");
   assert.equal(sample.preferences.busyBlocks.length, 1);
   assert.deepEqual(readTaken().completed, ["MATH140", "CMSC131"]);
   writeSavedState({ plans: { [DEMO_TERM]: [] } });

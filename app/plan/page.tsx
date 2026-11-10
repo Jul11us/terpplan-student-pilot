@@ -252,14 +252,14 @@ startDemoFromUrl();
 const DEMO_COPY = {
   en: {
     title: "You are trying a sample plan",
-    body: "A sophomore's spring plan: 5 courses, a campus job Tuesday and Thursday 1–4pm, MATH140 and CMSC131 already done. Change anything; your own plan is kept aside and comes back when you leave.",
+    body: "A sophomore's spring plan: 4 courses (14 credits), a campus job Tuesday and Thursday 1–4pm, MATH140 and CMSC131 already done. Change anything; your own plan is kept aside and comes back when you leave.",
     steps: ["These are the schedules built from this sample course list", "Change a preference (no Friday classes, a longer shift) and see what changes", "Click a class in the timetable to swap sections", "Open Watch seats to see why COMM107 is worth a seat alert"],
     schedule: "View schedules", leave: "Leave sample", details: "About this sample",
     short: "Try changes freely; your own plan is kept aside.",
   },
   zh: {
     title: "你正在试用示例课表",
-    body: "一位大二学生的春季计划：5 门课，周二、周四下午 1–4 点要打工，已修 MATH140 和 CMSC131。可以随便改，你自己的课表已经单独保存好，退出示例后就会回来。",
+    body: "一位大二学生的春季计划：4 门课（14 学分），周二、周四下午 1–4 点要打工，已修 MATH140 和 CMSC131。可以随便改，你自己的课表已经单独保存好，退出示例后就会回来。",
     steps: ["这就是按示例课程排好的方案", "改一个偏好（比如周五不上课、打工时间更长），看看结果怎么变", "点课表里的一门课换班次", "打开“关注余位”，看看为什么 COMM107 值得开余位提醒"],
     schedule: "查看课表", leave: "退出示例", details: "示例说明",
     short: "示例可以随便改，你自己的课表保持原样。",

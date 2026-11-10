@@ -44,7 +44,6 @@ export function demoState(language: "en" | "zh"): SavedState {
       { courseId: "MATH141", courseTitle: "Calculus II" },
       { courseId: "CMSC132", courseTitle: "Object-Oriented Programming II" },
       { courseId: "COMM107", courseTitle: "Oral Communication: Principles and Practices" },
-      { courseId: "PSYC100", courseTitle: "Introduction to Psychology" },
       { courseId: "ENGL101", courseTitle: "Academic Writing" },
     ] },
     preferences: {

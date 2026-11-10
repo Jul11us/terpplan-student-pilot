@@ -37,7 +37,7 @@ for (const row of rows) {
 const entries = Object.values(professors);
 if (entries.length < 1000) throw new Error(`Only ${entries.length} instructors were returned; not overwriting the file.`);
 writeFileSync(new URL("../data/professor-ratings.json", import.meta.url), JSON.stringify({
-  generatedAt: new Date().toISOString().slice(0, 10),
+  builtAt: new Date().toISOString().slice(0, 10),
   professors: entries,
 }) + "\n");
 console.log(`${entries.length} instructors (${entries.filter((entry) => entry[1] !== null).length} rated) from ${rows.length} rows`);
